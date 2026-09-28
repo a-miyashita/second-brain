@@ -1,0 +1,6 @@
+# Static CRT on Windows MSVC so the binary has no runtime dependencies (ADR-0001).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

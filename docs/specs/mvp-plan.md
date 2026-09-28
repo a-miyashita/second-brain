@@ -47,6 +47,26 @@ early, so real imported data is available for testing search.
   expected entries in the top results.
 - `sb doctor` is clean.
 
+### Status (2026-09-29)
+
+| # | State |
+|---|---|
+| 1 | Workspace and CI done. `dist-workspace.toml` is written; the release workflow still has to be generated with `dist generate` |
+| 2–9 | Done, with the tests described below (mock HTTP servers, stub executables, resume and incremental tests) |
+| 10–13 | Done (`sb refetch`/`reextract`, `sb auth`/`account`/`config`, `sb doctor`, `sb setup` and the wizard) |
+| 14 | Done (`assets/skills/second-brain/`) |
+| 15 | Done (README guides) |
+
+Not done yet:
+
+- Phase 0 spikes S1–S5 need real accounts and machines. Choices made without them
+  are marked in the specs: `copilot -p` via stdin (S4), `conhost --headless` (S5),
+  the Windows install path (S3) and the Gemini notes format (S2, parser built from
+  the documented observations).
+- The MVP exit criteria (import of real data, a scheduled daily sync on Windows,
+  a sample question set, a clean `sb doctor`) need the user's data.
+- The Gemini API summarizer is left for phase 2 (it was listed under both).
+
 ## Phase 2
 
 - MCP server + `setup mcp`.

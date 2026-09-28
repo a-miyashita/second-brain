@@ -6,11 +6,11 @@ Related ADR: 0009.
 
 ```sh
 # macOS / Linux
-curl -LsSf https://github.com/<owner>/second-brain/releases/latest/download/second-brain-installer.sh | sh
+curl -LsSf https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.sh | sh
 # Windows (PowerShell)
-irm https://github.com/<owner>/second-brain/releases/latest/download/second-brain-installer.ps1 | iex
+irm https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.ps1 | iex
 # Homebrew
-brew install <owner>/tap/second-brain
+brew install a-miyashita/tap/second-brain
 ```
 
 The installer places `second-brain` and `sb` in the bin directory from ADR-0009 and

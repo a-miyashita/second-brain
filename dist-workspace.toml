@@ -1,0 +1,23 @@
+# cargo-dist release configuration (ADR-0009).
+# The GitHub workflow is generated from this file with `dist generate`.
+[workspace]
+members = ["cargo:."]
+
+[dist]
+cargo-dist-version = "0.32.0"
+ci = "github"
+installers = ["shell", "powershell", "homebrew"]
+tap = "a-miyashita/homebrew-tap"
+publish-jobs = ["homebrew"]
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "aarch64-unknown-linux-musl",
+  "x86_64-unknown-linux-musl",
+  "aarch64-pc-windows-msvc",
+  "x86_64-pc-windows-msvc",
+]
+# macOS / Linux: ~/.local/bin. The Windows location
+# (%LOCALAPPDATA%\Programs\second-brain\bin) is verified by spike S3.
+install-path = ["~/.local/bin"]
+install-updater = false
