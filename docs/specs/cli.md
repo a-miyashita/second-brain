@@ -78,6 +78,24 @@ Common filters: `--account`, `--source <source_kind>`, `--since`, `--until`,
 | `sb mcp` | 2 | Run the MCP server over stdio |
 | `sb version` | M | Version, build target, skill version |
 
+### Implementation notes
+
+Options added during implementation (all additive):
+
+- Hidden global `--trigger schedule`: marks a run as scheduled where the job
+  definition cannot set `SB_TRIGGER` (Windows Task Scheduler).
+- `sb search --all-sections`: every matching section instead of the best one per
+  entry (search.md).
+- `sb setup llm [--preset anthropic|openai|claude_cli|copilot_cli|local] [--name N]
+  [--model M] [--base-url URL] [--no-default] [--no-test]` for non-interactive use.
+- `sb setup schedule --dry-run` prints the task XML, plists, crontab block or
+  systemd units without installing them.
+- `sb account add google --no-browser`, `sb auth login <id> --no-browser`,
+  `sb auth status --online`, `sb account remove <id> --purge --yes`.
+- `sb summarize --estimate`.
+- Error codes in `sb.error/v1` include `usage`, `home.not_initialized`,
+  `sync.locked`, `entry.not_found`, `account.not_found` and `failed`.
+
 ## Exit codes
 
 | Code | Meaning |

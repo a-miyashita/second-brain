@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, SetupError, run};
 
@@ -462,7 +462,7 @@ pub fn render_systemd(spec: &ScheduleSpec, job: Job) -> (String, String, String,
 // ---------- Registration ----------
 
 /// Mechanism used on this machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mechanism {
     TaskScheduler,

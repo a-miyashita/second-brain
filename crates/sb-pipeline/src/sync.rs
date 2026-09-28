@@ -251,6 +251,13 @@ impl Pipeline {
             let cat = self.catalog();
             match res {
                 Ok(stop) => {
+                    let now = serde_json::json!(sb_core::util::ts(cat.now()));
+                    cat.cache_put(
+                        account.id.as_str(),
+                        "auth.last_ok",
+                        &now,
+                        chrono::Duration::days(3650),
+                    )?;
                     cat.resolve_issues("auth.", Some(account.id.as_str()))?;
                     cat.resolve_issues("sync.", Some(account.id.as_str()))?;
                     if let Some(s) = stop {

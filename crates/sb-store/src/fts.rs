@@ -246,7 +246,7 @@ pub fn search(conn: &Connection, q: &SearchQuery) -> std::result::Result<Vec<Hit
         hits.push(Hit {
             entry_id,
             section,
-            score: (score * 1000.0).round() / 1000.0,
+            score,
             snippet: snippet.replace('\n', " "),
         });
         if hits.len() >= limit {

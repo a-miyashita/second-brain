@@ -1,0 +1,50 @@
+[package]
+name = "sb-cli"
+description = "second-brain: a personal knowledge base for AI agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+default-run = "second-brain"
+
+[[bin]]
+name = "second-brain"
+path = "src/main.rs"
+
+[[bin]]
+name = "sb"
+path = "src/bin/sb.rs"
+
+[dependencies]
+sb-core.workspace = true
+sb-store.workspace = true
+sb-pipeline.workspace = true
+sb-llm.workspace = true
+sb-google.workspace = true
+sb-slack.workspace = true
+sb-setup.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+fs4.workspace = true
+open.workspace = true
+rpassword.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.dist]
+dist = true
