@@ -55,9 +55,9 @@ JSON with the whole organization.
 
 ### Prerequisite: Slack app
 
-The manifest is shipped in `assets/slack-app-manifest.yaml`. It is the same as old
-sb's (user scopes: `channels:*`, `groups:*`, `im:*`, `mpim:*` history/read,
-`users:read`, `users:read.email`, `search:read`, `files:read`).
+The manifest is shipped in `assets/slack-app-manifest.yaml`. It requests only user
+scopes: `channels:*`, `groups:*`, `im:*`, `mpim:*` history/read, `users:read`,
+`users:read.email`, `search:read` and `files:read`.
 
 - Do **not** enable Distribute App. Internal-only apps keep the normal rate limits
   (~50 req/min for `conversations.history`). Distributed non-Marketplace apps are

@@ -1,0 +1,31 @@
+# Slack app manifest for second-brain.
+#
+# Create the app at https://api.slack.com/apps -> "Create New App" ->
+# "From an app manifest", pick your workspace and paste this file.
+# Then install it to the workspace and copy the "User OAuth Token" (xoxp-...).
+#
+# Do NOT enable "Distribute App": internal apps keep the normal rate limits,
+# while distributed non-Marketplace apps are limited to 1 request per minute
+# for conversations.history.
+display_information:
+  name: second-brain
+  description: Personal knowledge base reader (user token, read-only)
+oauth_config:
+  scopes:
+    user:
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - mpim:history
+      - mpim:read
+      - users:read
+      - users:read.email
+      - search:read
+      - files:read
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

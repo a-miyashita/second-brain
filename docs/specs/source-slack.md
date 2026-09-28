@@ -157,6 +157,26 @@ State is kept in:
 
 The user directory is kept in `cache`.
 
+## Implementation notes
+
+- Conversations are listed with `users.conversations`, which returns only
+  conversations the user is a member of, including DMs and group DMs.
+- History windows are requested with `inclusive=true`, so a message on a window
+  boundary is never missed. The duplicate is harmless: day entries only append
+  messages newer than their `fetch_state.last_ts`, and the queue is keyed by the
+  natural key.
+- In involvement-only channels, a parent that involves me but has no replies is
+  stored as a one-message `slack.thread`, so that it can grow later.
+- Permalinks are built locally from the workspace URL returned by `auth.test`
+  (stored as `team_url` in the account config). Without it, `chat.getPermalink`
+  is called.
+- `sync_state` keys (source kind `slack.thread`): `conv:<channel_id>` holds
+  `{"oldest": <window end ts>, "last_activity": <newest ts seen>}`, and
+  `watch:<channel_id>:<thread_ts>` holds `{"last_activity": <latest reply ts>}`.
+- The `cache` keys are `slack.users` (the user directory, including harvested
+  Slack Connect users) and `slack.channels` (conversation names and kinds, used to
+  build titles without extra API calls).
+
 ## `--estimate`
 
 It counts pending summarization inputs and
