@@ -422,6 +422,8 @@ pub struct SyncOptions {
     pub mode: SyncMode,
     /// Back-fill from this date instead of the source default.
     pub since: Option<DateTime<Utc>>,
+    /// Only these source kinds (empty = all kinds of the adapter).
+    pub kinds: Vec<SourceKind>,
 }
 
 #[cfg(test)]

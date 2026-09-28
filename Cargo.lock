@@ -1248,6 +1248,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "sb-pipeline"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures",
+ "sb-core",
+ "sb-llm",
+ "sb-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
 name = "sb-store"
 version = "0.1.0"
 dependencies = [

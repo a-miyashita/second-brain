@@ -1,0 +1,31 @@
+[package]
+name = "sb-pipeline"
+description = "Ingestion and summarization pipeline for second-brain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sb-core.workspace = true
+sb-store.workspace = true
+sb-llm.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+wiremock.workspace = true
+
+[lints]
+workspace = true

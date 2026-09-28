@@ -7,6 +7,7 @@ pub mod entries;
 pub mod error;
 pub mod fts;
 pub mod home;
+pub mod import;
 pub mod lock;
 pub mod perms;
 pub mod rawstore;

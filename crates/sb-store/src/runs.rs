@@ -113,12 +113,12 @@ impl Catalog {
     }
 
     /// Mark runs left `running` by a killed process as `interrupted`.
-    pub fn close_stale_runs(&self, older_than: DateTime<Utc>) -> Result<u64> {
+    pub fn close_stale_runs(&self, command_prefix: &str, older_than: DateTime<Utc>) -> Result<u64> {
         let n = self.conn.execute(
             "UPDATE runs SET status = 'interrupted', finished_at = IFNULL(finished_at, started_at),
                error = IFNULL(error, 'process ended without finishing the run')
-             WHERE status = 'running' AND started_at < ?1",
-            [sb_core::util::ts(older_than)],
+             WHERE status = 'running' AND started_at < ?1 AND substr(command, 1, length(?2)) = ?2",
+            params![sb_core::util::ts(older_than), command_prefix],
         )?;
         Ok(n as u64)
     }

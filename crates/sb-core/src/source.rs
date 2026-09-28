@@ -72,6 +72,11 @@ pub trait SyncHost: Send + Sync {
     fn commit(&self, batch: DiscoveryBatch) -> Result<(), SourceError>;
     /// Read an unexpired cache value.
     fn cache_get(&self, key: &str) -> Result<Option<Value>, SourceError>;
+    /// Read a cache value even if it has expired (e.g. a stale user directory
+    /// is better than none for normalization).
+    fn cache_get_stale(&self, key: &str) -> Result<Option<Value>, SourceError> {
+        self.cache_get(key)
+    }
     /// Store a cache value.
     fn cache_put(&self, key: &str, value: &Value, ttl: Duration) -> Result<(), SourceError>;
     /// Whether the run is being stopped. Sources check this between units of work.
