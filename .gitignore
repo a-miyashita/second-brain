@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+
+# Local data and credentials: never commit.
+*.db
+*.db-wal
+*.db-shm
+client_secret*.json
+credentials*.json
+token*.json
+.env
+.env.*
+/second-brain-home/
+/import-bundle/
