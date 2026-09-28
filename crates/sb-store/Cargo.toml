@@ -1,0 +1,29 @@
+[package]
+name = "sb-store"
+description = "SQLite catalog, raw file store, secrets and the sqlite-fts search backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sb-core.workspace = true
+chrono.workspace = true
+directories.workspace = true
+fs4.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+ulid.workspace = true
+sys-locale = "0.3"
+iana-time-zone.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

@@ -182,13 +182,17 @@ occurrences update `last_seen_at`.
 
 ```sql
 CREATE VIRTUAL TABLE fts_sections USING fts5(
-  title, text, content='', tokenize='trigram'
+  title, text, tokenize='trigram'
 );  -- rowid = sections.id; title denormalized from entries
 ```
 
-The table is contentless-delete (or external-content, whichever is simpler with the
-bundled SQLite version) and maintained by the backend, not by triggers. That keeps
-backends swappable.
+The table is a regular FTS5 table, which stores its own copy of the text. This is
+the simplest option that keeps `snippet()` working: a contentless table cannot
+produce snippets, and an external-content table would need the exact old values
+for every delete. The text copy is small next to the trigram index. The table is
+maintained by the backend, not by triggers: before an entry's sections change,
+its rows are deleted by `rowid`, and afterwards they are inserted again. That
+keeps backends swappable.
 
 ## Metadata JSON (common keys)
 
@@ -209,5 +213,7 @@ backends swappable.
    contiguous from 0.
 5. A `sync_state` cursor never points past an item that is neither committed as an
    entry nor present in `sync_queue`.
-3. `summary_status = done` ⇔ a `summaries` row exists.
+3. `summary_status = done` ⇒ a `summaries` row exists. The row is kept while an
+   entry whose input changed waits for re-summarization (`pending`), so its old
+   generated sections stay searchable and attributed until they are replaced.
 4. A `source_native` summary never gets a `prompt_version`.

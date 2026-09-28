@@ -108,3 +108,13 @@ own, non-interactively:
 - cargo-dist's support for custom install paths (especially on Windows) must be
   verified. If it cannot target `%LOCALAPPDATA%\Programs\second-brain\bin`, a
   small custom PowerShell installer is used instead.
+
+## Amendments
+
+### 2026-09-29: sync lock
+
+The sync lock is an OS advisory lock on `locks/sync.lock` (`flock` on Unix,
+`LockFileEx` on Windows) rather than a lock file with a timestamp. The OS releases
+it when the holding process exits or crashes, so a stale lock cannot exist and no
+timeout-based takeover is needed. A run left `running` in the `runs` table by a
+killed process is marked `interrupted` by the next run.
