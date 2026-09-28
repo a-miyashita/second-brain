@@ -1,0 +1,67 @@
+---
+name: second-brain
+description: >-
+  Search the user's personal knowledge base of past Slack conversations, Google
+  Meet notes and documents with the `sb` CLI, and cite the original links. Use it
+  for questions about past discussions, decisions, owners, meetings, history or
+  context ("what did we decide about X", "who owns Y", "when did we discuss Z",
+  "why did we choose W"), and in Japanese (「〜について何を決めた？」「担当は誰？」
+  「前に話した〜」「議事録」「経緯」「Slackで話した〜」).
+version: 1
+---
+
+# second-brain
+
+The user's knowledge base is searched with the `sb` command (also installed as
+`second-brain`). Always use `--json`: the output is a stable, versioned contract.
+
+## 1. Search first — never read everything
+
+```sh
+sb search <terms>... --json [--section decisions] [--source slack.thread|slack.day|google.meet] \
+  [--account <id>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit N]
+```
+
+- Terms are ANDed. Use 1–3 distinctive terms: names, identifiers, product words.
+- Two-character Japanese terms (契約, 要件, 納期) work.
+- No hits? Retry with synonyms, fewer terms, the other language, or no
+  `--section`. Do not conclude "nothing exists" after one query.
+- Pick the section by question type (details in
+  [references/search-guide.md](references/search-guide.md)):
+  - "What was decided about X?" → `--section decisions` first. Agreed outcomes are
+    often **only** there.
+  - "Who does it / by when?" → `--section action_items`.
+  - "Why? What was the history?" → `--section details`.
+  - General → no section, or `overview`.
+
+## 2. Read only the hits
+
+```sh
+sb show <entry_uid> --json [--section decisions] [--section details]
+```
+
+Read the sections you need, not whole entries. Raw data (`sb show <uid> --raw
+--role <role>`) is only for when the user asks for verbatim content.
+
+## 3. Always cite
+
+Put the hit's `cite_url` next to each claim, with the date and the meeting or
+channel name (`title`), for example:
+
+> CSV was chosen for the export (Daily Dev Standup, 2026-09-03,
+> https://docs.google.com/document/d/…/edit).
+
+If sources disagree, show both with their dates; newer usually wins.
+
+## 4. Adding documents
+
+Adding documents (`sb ingest`) is not available yet in this version. Never add
+content without the user asking. See
+[references/ingest-guide.md](references/ingest-guide.md).
+
+## Troubleshooting
+
+- `sb.error/v1` with a message about the home or database: tell the user to run
+  `sb setup` or `sb doctor`.
+- Results look stale: `sb doctor` shows the last sync and any accounts that need
+  `sb auth login <account>`. Do not run `sb sync` unless the user asks.

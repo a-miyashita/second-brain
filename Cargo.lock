@@ -1320,6 +1320,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sb-setup"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "sb-core",
+ "sb-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "which",
+]
+
+[[package]]
 name = "sb-slack"
 version = "0.1.0"
 dependencies = [

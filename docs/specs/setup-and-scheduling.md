@@ -49,7 +49,9 @@ The command line is always:
 ```
 
 The trigger is `schedule`, detected from the env var `SB_TRIGGER=schedule` set in
-the job definition.
+the job definition. Task Scheduler actions cannot set environment variables, so
+the Windows task passes the hidden global flag `--trigger schedule` instead.
+Scheduled runs also write their log to `logs/<date>.log`.
 
 ### Windows (Task Scheduler)
 
@@ -60,13 +62,15 @@ the job definition.
   - `StartWhenAvailable = true`;
   - `MultipleInstancesPolicy = IgnoreNew`;
   - `ExecutionTimeLimit = PT6H`.
-- No console window flashes: the binary is a console app, so the task uses
-  `conhost --headless` where available, or a `windows_subsystem` variant `sbw.exe`.
-  Chosen at implementation time.
+- No console window flashes: the binary is a console app, so the task runs
+  `conhost.exe --headless <binary> ...`. Spike S5 verifies this on current
+  Windows versions; the fallback is a `windows_subsystem` variant `sbw.exe`.
+- The task XML is written in UTF-16 LE with a BOM, as `schtasks /XML` expects.
+- The task inherits the user's environment, so `PATH` is not embedded.
 
 ### macOS (launchd)
 
-- `~/Library/LaunchAgents/com.github.<owner>.second-brain.sync.plist`, plus
+- `~/Library/LaunchAgents/com.github.a-miyashita.second-brain.sync.plist`, plus
   `sync-deep`.
 - Uses `StartCalendarInterval`, with `EnvironmentVariables` holding `PATH` and
   `SB_TRIGGER`, and `StandardOutPath`/`StandardErrorPath` pointing to `logs/`.
@@ -77,8 +81,9 @@ the job definition.
 - Default: crontab lines between the markers `# BEGIN second-brain` and
   `# END second-brain`. They are edited through `crontab -l` / `crontab -`, and only
   the block between the markers is replaced.
-- `--systemd`: `~/.config/systemd/user/second-brain-sync.{service,timer}` with
-  `Persistent=true`, enabled with `systemctl --user enable --now`.
+- `--systemd`: `~/.config/systemd/user/second-brain-sync.{service,timer}` and
+  `second-brain-sync-deep.{service,timer}` with `Persistent=true`, enabled with
+  `systemctl --user enable --now`.
 
 ### PATH for LLM CLIs
 
