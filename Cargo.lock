@@ -1258,6 +1258,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "sb-google"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "rand 0.9.5",
+ "regex",
+ "reqwest",
+ "sb-core",
+ "sb-pipeline",
+ "sb-store",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
 name = "sb-llm"
 version = "0.1.0"
 dependencies = [

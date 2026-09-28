@@ -118,6 +118,21 @@ processing has proven sufficient for Gemini notes and transcripts.
 - **Dates** come from API timestamps, not from the document text, whose date
   formats vary.
 
+## Implementation notes
+
+- Per-account settings live in `accounts.config`: `features` (e.g. `["meet"]`),
+  `meet_strategies` (default `["calendar", "drive"]`; this is the per-account
+  `google.meet.strategies`), `calendar_days` (default 3), `drive_backfill_days`
+  (default 30, the first drive look-back) and an optional `meet_folder_id`.
+- `sync_state` keys (source kind `google.meet`): `calendar`
+  (`{"last_time_max"}`), `drive` (`{"modified_after"}`) and `drive_folder`
+  (`{"id"}`, the detected "Meet Recordings" folder).
+- Calendar event details (title, start, recurring, link, attendees) travel as the
+  queue `hint` and are stored in the entry metadata at fetch time, so that
+  `normalize` (and `sb reextract`) can use them without network access.
+- The fetch stage parses the exported notes once, so documents that are not
+  Gemini notes (agenda docs) are dropped before any raw data is written.
+
 ## Summarization
 
 - Default profile for google.meet: `native`. The Gemini notes are kept and no LLM
