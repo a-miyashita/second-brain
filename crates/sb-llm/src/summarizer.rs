@@ -54,8 +54,31 @@ impl LlmSummarizer {
         Ok(c.text)
     }
 
-    /// One structured call with a single repair attempt.
+    /// A structured call retried from scratch when the output stays invalid.
     async fn structured(
+        &self,
+        system: &str,
+        user: String,
+        want_details: bool,
+        usage: &mut Usage,
+    ) -> Result<SummaryOutput, LlmError> {
+        let mut attempt = 1;
+        loop {
+            match self
+                .structured_once(system, user.clone(), want_details, usage)
+                .await
+            {
+                Err(LlmError::BadOutput(e)) if attempt < BAD_OUTPUT_ATTEMPTS => {
+                    tracing::warn!(attempt, error = %e, "bad summarizer output; retrying");
+                    attempt += 1;
+                }
+                r => return r,
+            }
+        }
+    }
+
+    /// One structured call with a single repair attempt.
+    async fn structured_once(
         &self,
         system: &str,
         user: String,
@@ -84,6 +107,9 @@ impl LlmSummarizer {
         }
     }
 }
+
+/// Fresh generations attempted (each with one repair) before giving up.
+const BAD_OUTPUT_ATTEMPTS: u32 = 3;
 
 #[async_trait]
 impl Summarizer for LlmSummarizer {
@@ -212,7 +238,7 @@ mod tests {
 
     #[tokio::test]
     async fn bad_output_after_repair_fails() {
-        let (_b, s) = summarizer(&["oops", "still oops"], 40_000);
+        let (_b, s) = summarizer(&["oops"; 6], 40_000);
         assert!(matches!(
             s.summarize(&input("x".into())).await,
             Err(LlmError::BadOutput(_))

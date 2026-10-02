@@ -56,14 +56,24 @@ impl GoogleApi {
         loop {
             attempt += 1;
             let token = self.tokens.access_token().await?;
-            let resp = self
+            let resp = match self
                 .http
                 .get(url)
                 .bearer_auth(token.expose())
                 .query(query)
                 .send()
                 .await
-                .map_err(|e| SourceError::Network(e.to_string()))?;
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    if attempt >= MAX_ATTEMPTS {
+                        return Err(SourceError::Network(e.to_string()));
+                    }
+                    tracing::info!(attempt, "Google API network error; retrying");
+                    tokio::time::sleep(Duration::from_secs(2u64.pow(attempt).min(60))).await;
+                    continue;
+                }
+            };
             let status = resp.status();
             if status.is_success() {
                 return Ok(Some(resp));

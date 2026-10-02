@@ -98,14 +98,24 @@ impl SlackClient {
         let mut attempt = 0;
         loop {
             attempt += 1;
-            let resp = self
+            let resp = match self
                 .http
                 .get(&url)
                 .bearer_auth(self.token.expose())
                 .query(params)
                 .send()
                 .await
-                .map_err(|e| SourceError::Network(format!("{method}: {e}")))?;
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    if attempt >= MAX_ATTEMPTS {
+                        return Err(SourceError::Network(format!("{method}: {e}")));
+                    }
+                    tracing::info!(method, attempt, "Slack network error; retrying");
+                    tokio::time::sleep(Duration::from_secs(2u64.pow(attempt))).await;
+                    continue;
+                }
+            };
             let status = resp.status();
             let headers = resp.headers().clone();
             if status.as_u16() == 429 {
