@@ -36,6 +36,9 @@ sb search <terms>... --json [--section decisions] [--source slack.thread|slack.d
 
 ## 2. Read only the hits
 
+A `snippet` is a truncated fragment (cut with `…`) for choosing which hits to
+open. Never quote it or base a conclusion on it; read the entry with `sb show`.
+
 ```sh
 sb show <entry_uid> --json [--section decisions] [--section details]
 ```
