@@ -57,6 +57,21 @@ fn print_estimate(e: &Estimate) {
             e.unpriced_models.join(", ")
         ),
     }
+    if let Some(b) = &e.budget {
+        if b.fits {
+            eprintln!(
+                "Budget: {} left under the strictest cap; the estimate fits.",
+                super::budget::usd(b.remaining_usd)
+            );
+        } else {
+            eprintln!(
+                "Budget: {} left under the strictest cap; only {} of {} paid summaries fit, then the run stops (see `sb budget`).",
+                super::budget::usd(b.remaining_usd),
+                b.entries_that_fit,
+                b.paid_entries
+            );
+        }
+    }
 }
 
 fn print_summary_stats(r: &SummarizeReport) {
@@ -81,6 +96,16 @@ fn stop_hint(stop: &Option<Stop>, command: &str) {
     match stop {
         Some(Stop::Cancelled) => {
             eprintln!("Interrupted. Committed work is kept; run `{command}` again to continue.")
+        }
+        Some(Stop::Limit(l)) if l.starts_with("budget.") => {
+            let (which, key) = if l == "budget.monthly" {
+                ("monthly", "monthly")
+            } else {
+                ("weekly", "weekly")
+            };
+            eprintln!(
+                "Stopped: the {which} summarization budget is used up (see `sb budget`). Run `{command}` again after it resets, or raise it with `sb config set summary.budget.{key}_usd <amount>`."
+            );
         }
         Some(Stop::Limit(l)) => eprintln!("Stopped by {l}. Run `{command}` again to continue."),
         None => {}

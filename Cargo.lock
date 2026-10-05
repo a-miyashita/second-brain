@@ -1466,6 +1466,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "chrono-tz",
  "hex",
  "serde",
  "serde_json",
@@ -1522,6 +1523,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "chrono",
+ "chrono-tz",
  "futures",
  "sb-core",
  "sb-llm",
@@ -1579,6 +1581,7 @@ name = "sb-store"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "chrono-tz",
  "directories",
  "fs4",
  "iana-time-zone",

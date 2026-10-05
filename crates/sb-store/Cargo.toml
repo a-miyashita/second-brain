@@ -23,6 +23,7 @@ sys-locale = "0.3"
 iana-time-zone.workspace = true
 
 [dev-dependencies]
+chrono-tz.workspace = true
 tempfile.workspace = true
 
 [lints]

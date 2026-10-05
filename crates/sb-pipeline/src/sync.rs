@@ -121,6 +121,7 @@ impl Pipeline {
             cat.close_stale_runs("sync", cat.now())?;
             cat.start_run(command, self.trigger)?
         };
+        self.set_run_id(run_id);
         let mut stats = RunStats::default();
         let result = self.sync_inner(opts, &mut stats).await;
         let mut summarize = None;

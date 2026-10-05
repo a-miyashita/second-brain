@@ -66,7 +66,8 @@ Common filters: `--account`, `--source <source_kind>`, `--since`, `--until`,
 | `sb search <term>... [--section K] [--source ..] [--account ..] [--since ..] [--until ..] [--limit N]` | M | See [search.md](search.md) |
 | `sb show <entry_uid> [--section K]... [--raw [--role R]] [--meta]` | M | Print an entry (Markdown by default). `--raw` prints the raw file path(s) and, with `--role`, the content |
 | `sb list [filters] [--limit N]` | M | List entries, newest first |
-| `sb stats` | M | Counts by account, source, raw status and summary status/model |
+| `sb stats` | M | Counts by account, source, raw status and summary status/model, and summarization spend against the weekly and monthly budget (ADR-0013) |
+| `sb budget [--weeks N] [--months N] [--by-model]` | M | Summarization spend (computed by this tool) against the weekly and monthly budget: current periods, history, total and breakdown by model. See [summarization.md](summarization.md#history) (ADR-0013) |
 | `sb review [filters] [--channel ..] [--limit N] [--detail-lines N] [--full] [--all]` | M | Show generated sections next to the source text (Slack: the rendered conversation; Meet: the transcript excerpt) to check summary quality by eye. Newest first; `--all` includes entries without summaries. Also useful before and after `sb resummarize` |
 
 ### Operations

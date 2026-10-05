@@ -1,6 +1,7 @@
 //! The ingestion and summarization pipeline (ADR-0008, ADR-0012):
 //! fetch → store raw → normalize → upsert → summarize → index.
 
+pub mod budget;
 pub mod error;
 mod host;
 pub mod import;
@@ -42,6 +43,8 @@ pub struct Pipeline {
     pub cancel: CancellationToken,
     pub trigger: RunTrigger,
     progress: Option<ProgressFn>,
+    /// The run recorded in the usage ledger (0 = none).
+    run_id: std::sync::atomic::AtomicI64,
 }
 
 impl Pipeline {
@@ -56,6 +59,19 @@ impl Pipeline {
             cancel: CancellationToken::new(),
             trigger: RunTrigger::Manual,
             progress: None,
+            run_id: std::sync::atomic::AtomicI64::new(0),
+        }
+    }
+
+    /// Record the run that the following paid calls belong to (usage ledger).
+    pub(crate) fn set_run_id(&self, id: i64) {
+        self.run_id.store(id, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn run_id(&self) -> Option<i64> {
+        match self.run_id.load(std::sync::atomic::Ordering::SeqCst) {
+            0 => None,
+            id => Some(id),
         }
     }
 

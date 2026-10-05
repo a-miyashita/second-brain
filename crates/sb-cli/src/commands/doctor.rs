@@ -80,6 +80,11 @@ fn issue_hint(code: &str, account: Option<&str>, entry_uid: Option<&str>) -> Opt
             "start the local LLM server, or check the profile with `sb setup llm`".into()
         }
         "llm.failed" | "llm.bad_output" => "sb summarize --retry-failed".into(),
+        "llm.budget_exhausted" => {
+            "see `sb budget`; raise the cap with `sb config set summary.budget.weekly_usd <amount>`"
+                .into()
+        }
+        "llm.unpriced" => "set llm.prices for the model, or disable the caps explicitly".into(),
         "llm.auth" | "llm.config" => {
             "check the summarizer profile and its API key (`sb config set-secret ...`)".into()
         }
@@ -286,6 +291,7 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
     let scheduled = check_schedule(ctx, &cat, &a, &mut r)?;
     check_runs(&cat, scheduled, &mut r)?;
     check_summaries(&cat, &mut r)?;
+    check_budget(&cat, &mut r)?;
     check_skills(&a, &mut r)?;
 
     // index.consistency
@@ -721,6 +727,51 @@ fn check_summaries(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
             )),
             None,
         );
+    }
+    Ok(())
+}
+
+fn check_budget(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
+    let policy = sb_pipeline::policy::SummaryPolicy::load(cat)?;
+    let b = sb_pipeline::budget::status(cat, &policy)?;
+    let line = |label: &str, p: &sb_pipeline::budget::PeriodStatus| match p.cap_usd {
+        Some(c) => format!(
+            "{label} {} / {}",
+            super::budget::usd(p.spent_usd),
+            super::budget::usd(c)
+        ),
+        None => format!("{label} {} (no cap)", super::budget::usd(p.spent_usd)),
+    };
+    let msg = format!(
+        "{}; {}",
+        line("this week", &b.week),
+        line("this month", &b.month)
+    );
+    let unpriced = cat
+        .open_issues()?
+        .into_iter()
+        .any(|i| i.code == "llm.unpriced");
+    let reached = [&b.week, &b.month]
+        .iter()
+        .any(|p| p.cap_usd.is_some_and(|c| p.spent_usd >= c));
+    if unpriced {
+        r.add(
+            "llm.budget",
+            Status::Error,
+            Some(format!(
+                "{msg}; a paid profile has no known price, so the budget cannot be enforced"
+            )),
+            Some("set llm.prices for the model, or disable the caps explicitly"),
+        );
+    } else if reached {
+        r.add(
+            "llm.budget",
+            Status::Warning,
+            Some(format!("{msg}; a cap is reached, so summaries wait")),
+            Some("sb budget"),
+        );
+    } else {
+        r.ok("llm.budget", Some(msg));
     }
     Ok(())
 }

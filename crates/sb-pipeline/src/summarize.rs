@@ -8,14 +8,18 @@ use std::time::Duration;
 
 use futures::StreamExt;
 use sb_core::summarizer::{LlmError, Summarizer};
-use sb_core::{EntryOrigin, NormalizeOutcome, RawStatus, Severity, SummaryInput, SummaryStatus};
-use sb_llm::prices::{ESTIMATED_OUTPUT_TOKENS, estimate_tokens, price_for, usage_cost};
+use sb_core::{
+    EntryOrigin, GeneratorKind, NormalizeOutcome, RawStatus, Severity, SummaryInput, SummaryStatus,
+    Usage,
+};
+use sb_llm::prices::{ESTIMATED_OUTPUT_TOKENS, Price, estimate_tokens, price_for, usage_cost};
 use sb_llm::prompts::split_chunks;
 use sb_llm::{BuildOptions, Built, NATIVE};
-use sb_store::{Entry, EntryFilter, SummaryCommit, SummaryDecision};
+use sb_store::{Entry, EntryFilter, NewUsage, SummaryCommit, SummaryDecision, UsageOutcome};
 use serde::Serialize;
 
 use crate::Pipeline;
+use crate::budget::{Blocked, BudgetGate, Gate};
 use crate::error::PipelineError;
 use crate::host::Host;
 use crate::policy::SummaryPolicy;
@@ -57,6 +61,21 @@ pub struct Estimate {
     pub cost_usd: Option<f64>,
     pub unpriced_models: Vec<String>,
     pub by_profile: BTreeMap<String, u64>,
+    /// How the estimate compares with the remaining budget (ADR-0013); `None`
+    /// when no cap is enabled or nothing in the estimate is paid.
+    pub budget: Option<BudgetEstimate>,
+}
+
+/// An estimate against the remaining weekly and monthly budget.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct BudgetEstimate {
+    /// Left under the strictest cap right now.
+    pub remaining_usd: f64,
+    /// Entries summarized by a priced paid profile.
+    pub paid_entries: u64,
+    /// How many of them fit, taken in the order they would be processed.
+    pub entries_that_fit: u64,
+    pub fits: bool,
 }
 
 /// Result of a summarize or resummarize run.
@@ -82,6 +101,24 @@ struct RunState {
     started: u64,
     stop: Option<Stop>,
     errors: Vec<String>,
+    /// Entries too large for the budget, left `pending`.
+    too_large: u64,
+    /// The `llm.budget_exhausted` issue has been resolved in this run.
+    budget_issue_resolved: bool,
+}
+
+/// The calls, tokens and cost one summary is expected to take (the estimate
+/// shared by `--estimate` and the budget gate).
+fn unit_estimate(input: &SummaryInput, max_chars: usize) -> (u64, u64, u64) {
+    let chunks = split_chunks(&input.body, max_chars).len() as u64;
+    let calls = if chunks > 1 { chunks + 1 } else { 1 };
+    let in_tok = estimate_tokens(&input.body) + 400 * calls;
+    let out_tok = ESTIMATED_OUTPUT_TOKENS * calls;
+    (calls, in_tok, out_tok)
+}
+
+fn unit_cost(price: Option<Price>, in_tok: u64, out_tok: u64) -> Option<f64> {
+    price.map(|p| (in_tok as f64 * p.input + out_tok as f64 * p.output) / 1e6)
 }
 
 impl Pipeline {
@@ -326,6 +363,14 @@ impl Pipeline {
                 cost_usd: Some(0.0),
                 ..Default::default()
             };
+            let gate = BudgetGate::from_policy(policy);
+            let remaining = if gate.enabled() {
+                gate.remaining(&self.catalog())?
+            } else {
+                None
+            };
+            let (mut paid_entries, mut fit, mut spent_est, mut still_fits) =
+                (0u64, 0u64, 0.0f64, true);
             for (name, entries) in &groups {
                 let profile = policy.profile(name);
                 let max_chars = profile
@@ -343,10 +388,7 @@ impl Pipeline {
                     if !replace_existing && policy.below_thresholds(&input) {
                         continue;
                     }
-                    let chunks = split_chunks(&input.body, max_chars).len() as u64;
-                    let calls = if chunks > 1 { chunks + 1 } else { 1 };
-                    let in_tok = estimate_tokens(&input.body) + 400 * calls;
-                    let out_tok = ESTIMATED_OUTPUT_TOKENS * calls;
+                    let (calls, in_tok, out_tok) = unit_estimate(&input, max_chars);
                     est.entries += 1;
                     est.calls += calls;
                     est.input_tokens += in_tok;
@@ -354,9 +396,19 @@ impl Pipeline {
                     *est.by_profile.entry(name.clone()).or_default() += 1;
                     match (price, cli) {
                         (_, true) => {}
-                        (Some(p), false) => {
+                        (Some(_), false) => {
+                            let unit = unit_cost(price, in_tok, out_tok).unwrap_or(0.0);
                             if let Some(c) = est.cost_usd.as_mut() {
-                                *c += (in_tok as f64 * p.input + out_tok as f64 * p.output) / 1e6;
+                                *c += unit;
+                            }
+                            if let Some(rem) = remaining {
+                                paid_entries += 1;
+                                if still_fits && spent_est + unit <= rem {
+                                    spent_est += unit;
+                                    fit += 1;
+                                } else {
+                                    still_fits = false;
+                                }
                             }
                         }
                         (None, false) => {
@@ -370,6 +422,16 @@ impl Pipeline {
             if !est.unpriced_models.is_empty() {
                 est.cost_usd = None;
             }
+            if let Some(rem) = remaining
+                && paid_entries > 0
+            {
+                est.budget = Some(BudgetEstimate {
+                    remaining_usd: rem,
+                    paid_entries,
+                    entries_that_fit: fit,
+                    fits: fit == paid_entries,
+                });
+            }
             report.estimate = Some(est);
             return Ok(report);
         }
@@ -380,7 +442,10 @@ impl Pipeline {
             started: 0,
             stop: None,
             errors: Vec::new(),
+            too_large: 0,
+            budget_issue_resolved: false,
         });
+        let gate = BudgetGate::from_policy(policy);
         let grace = Duration::from_secs(
             self.catalog()
                 .setting_or("pipeline.shutdown_grace_secs", 30u64)?,
@@ -426,6 +491,27 @@ impl Pipeline {
             self.catalog().resolve_issues("llm.config", None)?;
             self.catalog().resolve_issues("llm.auth", None)?;
             let price = price_for(&built.profile.model_name(), policy.prices.as_ref());
+            let paid = built.profile.kind != GeneratorKind::LocalLlm;
+            if paid {
+                if gate.enabled() {
+                    gate.record_periods(&self.catalog())?;
+                }
+                // A cap that cannot be measured is not a cap (ADR-0013).
+                if gate.enabled() && built.profile.kind == GeneratorKind::LlmApi && price.is_none()
+                {
+                    let msg = format!(
+                        "summarizer profile {name}: no price is known for model {}, so the budget cannot be enforced; set llm.prices or disable the caps (summary.budget.*)",
+                        built.profile.model_name()
+                    );
+                    self.catalog()
+                        .open_issue("llm.unpriced", Severity::Error, None, None, &msg)?;
+                    self.emit(Progress::Warning(msg.clone()));
+                    report.errors.push(msg);
+                    report.deferred += entries.len() as u64;
+                    continue;
+                }
+                self.catalog().resolve_issues("llm.unpriced", None)?;
+            }
             let aborted = AtomicBool::new(false);
             let concurrency = built.profile.concurrency.max(1);
 
@@ -434,6 +520,7 @@ impl Pipeline {
                     let built = &built;
                     let state = &state;
                     let hosts = &hosts;
+                    let gate = &gate;
                     let aborted = &aborted;
                     async move {
                         // Check limits and cancellation before starting a unit.
@@ -465,33 +552,90 @@ impl Pipeline {
                             s.started += 1;
                         }
                         let res = self
-                            .summarize_one(policy, hosts, built, e, replace_existing)
+                            .summarize_one(policy, hosts, built, gate, price, e, replace_existing)
                             .await;
                         let Ok(mut s) = state.lock() else { return };
                         match res {
-                            Ok(Outcome::Done(usage)) => {
+                            Ok(Outcome::Done(usage, cost)) => {
                                 s.stats.summarized += 1;
                                 s.stats.input_tokens += usage.input_tokens;
                                 s.stats.output_tokens += usage.output_tokens;
-                                match usage_cost(&usage, price) {
+                                match cost {
                                     Some(c) => s.stats.cost_usd += c,
-                                    None if built.profile.kind
-                                        == sb_core::GeneratorKind::LlmApi =>
-                                    {
+                                    None if built.profile.kind == GeneratorKind::LlmApi => {
                                         s.stats.unpriced += 1
                                     }
                                     None => {}
                                 }
+                                if !s.budget_issue_resolved {
+                                    s.budget_issue_resolved = true;
+                                    if let Err(err) = self
+                                        .catalog()
+                                        .resolve_issues("llm.budget_exhausted", None)
+                                    {
+                                        s.errors.push(format!("{err}"));
+                                    }
+                                }
                             }
                             Ok(Outcome::Skipped) => s.stats.skipped += 1,
-                            Err(err) => {
+                            Ok(Outcome::Blocked(b)) => {
+                                // Not started: it neither counts as started nor fails.
+                                s.started = s.started.saturating_sub(1);
+                                if s.stop.is_none() {
+                                    s.stop = Some(Stop::Limit(b.stop_detail()));
+                                    let msg = b.message();
+                                    let cat = self.catalog();
+                                    if let Err(err) = gate
+                                        .record_stop(&cat, &b)
+                                        .and_then(|_| {
+                                            cat.open_issue(
+                                                "llm.budget_exhausted",
+                                                Severity::Warning,
+                                                None,
+                                                None,
+                                                &msg,
+                                            )
+                                            .map(|_| ())
+                                            .map_err(Into::into)
+                                        })
+                                    {
+                                        s.errors.push(format!("{err}"));
+                                    }
+                                    drop(cat);
+                                    self.emit(Progress::Warning(msg));
+                                }
+                            }
+                            Ok(Outcome::TooLarge {
+                                needed_usd,
+                                cap_usd,
+                            }) => {
+                                s.started = s.started.saturating_sub(1);
+                                s.too_large += 1;
+                                if s.too_large == 1 {
+                                    self.emit(Progress::Warning(format!(
+                                        "{} alone is estimated at ${needed_usd:.2}, more than a whole budget period (${cap_usd:.2}); it stays pending",
+                                        e.entry_uid
+                                    )));
+                                }
+                            }
+                            Ok(Outcome::Failed { err, usage, cost }) => {
+                                // A billed attempt still counts against the run.
                                 s.stats.failed += 1;
+                                s.stats.input_tokens += usage.input_tokens;
+                                s.stats.output_tokens += usage.output_tokens;
+                                if let Some(c) = cost {
+                                    s.stats.cost_usd += c;
+                                }
                                 if matches!(
                                     err,
                                     PipelineError::Llm(LlmError::Auth(_) | LlmError::Config(_))
                                 ) {
                                     aborted.store(true, Ordering::SeqCst);
                                 }
+                                s.errors.push(format!("{}: {err}", e.entry_uid));
+                            }
+                            Err(err) => {
+                                s.stats.failed += 1;
                                 s.errors.push(format!("{}: {err}", e.entry_uid));
                             }
                         }
@@ -523,6 +667,7 @@ impl Pipeline {
             .into_inner()
             .map_err(|_| PipelineError::Invalid("state poisoned".into()))?;
         report.stats = s.stats;
+        report.deferred += s.too_large;
         report.stop = s.stop;
         report.errors.extend(s.errors);
         if report.stop.is_none() && self.is_cancelled() {
@@ -536,11 +681,14 @@ impl Pipeline {
     }
 
     /// Summarize one entry and commit the result on its own.
+    #[allow(clippy::too_many_arguments)]
     async fn summarize_one(
         &self,
         policy: &SummaryPolicy,
         hosts: &HashMap<String, Host<'_>>,
         built: &Built,
+        gate: &BudgetGate,
+        price: Option<Price>,
         e: &Entry,
         replace_existing: bool,
     ) -> Result<Outcome, PipelineError> {
@@ -559,6 +707,8 @@ impl Pipeline {
                 return Err(err);
             }
         };
+        // The thresholds are checked again here, so a raised `summary.min_chars`
+        // also applies to entries that are already pending. No LLM call is made.
         if !replace_existing && policy.below_thresholds(&input) {
             self.catalog()
                 .set_summary_status(e.id, SummaryStatus::Skipped)?;
@@ -566,9 +716,44 @@ impl Pipeline {
         }
         let hash = policy.input_hash(&input, &built.profile);
         let generator = built.summarizer.generator(&input);
-        match built.summarizer.summarize(&input).await {
-            Ok(out) => {
-                let usage = out.usage.clone();
+
+        // The budget gate (ADR-0013): local models are free and never gated.
+        let paid = built.profile.kind != GeneratorKind::LocalLlm;
+        let _reservation = if paid && gate.enabled() {
+            let (_, in_tok, out_tok) = unit_estimate(&input, built.profile.max_input_chars);
+            // An unknown price (a CLI that reports its own cost) reserves nothing,
+            // but still cannot start on an exhausted budget.
+            let needed = unit_cost(price, in_tok, out_tok).unwrap_or(0.0);
+            match gate.try_reserve(&self.catalog(), needed)? {
+                Gate::Go(r) => Some(r),
+                Gate::Stop(b) => return Ok(Outcome::Blocked(b)),
+                Gate::TooLarge {
+                    needed_usd,
+                    cap_usd,
+                    ..
+                } => {
+                    return Ok(Outcome::TooLarge {
+                        needed_usd,
+                        cap_usd,
+                    });
+                }
+            }
+        } else {
+            None
+        };
+
+        let mut usage = Usage::default();
+        let result = built.summarizer.summarize_tracked(&input, &mut usage).await;
+        // Local models cost nothing; otherwise the provider's cost, else tokens
+        // times price, else unknown.
+        let cost = if paid {
+            usage_cost(&usage, price)
+        } else {
+            Some(0.0)
+        };
+        match result {
+            Ok(mut out) => {
+                out.usage = usage.clone();
                 self.catalog().commit_summary(&SummaryCommit {
                     entry_id: e.id,
                     sections: out.to_sections(input.want_details),
@@ -576,14 +761,28 @@ impl Pipeline {
                     profile: Some(built.name.clone()),
                     input_hash: hash,
                     usage: usage.clone(),
+                    cost_usd: cost,
+                    run_id: self.run_id(),
                 })?;
                 let cat = self.catalog();
                 cat.resolve_entry_issues("llm.failed", e.id)?;
                 cat.resolve_entry_issues("llm.bad_output", e.id)?;
-                Ok(Outcome::Done(usage))
+                Ok(Outcome::Done(usage, cost))
             }
             Err(err) => {
                 let cat = self.catalog();
+                // Calls that were made before the failure are billed: record them.
+                if usage.calls > 0 {
+                    cat.record_usage(&NewUsage {
+                        run_id: self.run_id(),
+                        entry_id: Some(e.id),
+                        profile: built.name.clone(),
+                        generator,
+                        usage: usage.clone(),
+                        cost_usd: cost,
+                        outcome: UsageOutcome::Failed,
+                    })?;
+                }
                 match &err {
                     // Configuration problems are not the entry's fault: do not
                     // count an attempt.
@@ -607,13 +806,31 @@ impl Pipeline {
                         )?;
                     }
                 }
-                Err(err.into())
+                Ok(Outcome::Failed {
+                    err: err.into(),
+                    usage,
+                    cost,
+                })
             }
         }
     }
 }
 
 enum Outcome {
-    Done(sb_core::Usage),
+    /// Summarized and committed; the usage and its cost (`None` = unknown).
+    Done(Usage, Option<f64>),
     Skipped,
+    /// A budget cap is used up: stop the stage (ADR-0013).
+    Blocked(Blocked),
+    /// Too expensive for any period of the budget: left pending.
+    TooLarge {
+        needed_usd: f64,
+        cap_usd: f64,
+    },
+    /// The summarizer failed. `usage` and `cost` are what the attempt used.
+    Failed {
+        err: PipelineError,
+        usage: Usage,
+        cost: Option<f64>,
+    },
 }

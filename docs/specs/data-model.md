@@ -1,6 +1,6 @@
 # Data model (catalog schema)
 
-Related ADRs: 0002, 0003, 0005, 0007, 0011.
+Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013.
 
 SQLite, WAL mode, `foreign_keys = ON`. Timestamps are stored as RFC 3339 text in UTC.
 IDs named `id INTEGER` are internal rowids. Entry IDs exposed to users are
@@ -16,7 +16,7 @@ Key-value settings, with dotted keys and JSON values.
 
 | Column | Type | Notes |
 |---|---|---|
-| `key` | TEXT PK | e.g. `summary.profile.default`, `search.backends`, `notify.sinks` |
+| `key` | TEXT PK | e.g. `summary.profile.default`, `summary.budget.weekly_usd`, `search.backends`, `notify.sinks` |
 | `value` | TEXT (JSON) | |
 | `updated_at` | TEXT | |
 
@@ -125,6 +125,48 @@ At most one row per entry, overwritten on regeneration (ADR-0005).
 | `generated_at` | TEXT | for imported entries, the original time if known |
 | `usage` | TEXT (JSON) NULL | tokens in/out, duration |
 
+### `llm_usage`
+
+Append-only ledger of paid summarization attempts (ADR-0013). Migration `0002`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `at` | TEXT | RFC 3339 UTC time the attempt finished |
+| `run_id` | INTEGER NULL | the `sync` run that made the call, if any (no foreign key: runs may be pruned) |
+| `entry_id` | INTEGER NULL | the entry the attempt was for; no foreign key, so the ledger outlives deleted entries |
+| `profile` | TEXT | summarizer profile name |
+| `generator_kind` | TEXT | `llm_api`, `llm_cli`, `local_llm` |
+| `provider` | TEXT | |
+| `model` | TEXT | |
+| `input_tokens`, `output_tokens` | INTEGER | |
+| `calls` | INTEGER | LLM calls the attempt made (more than one for a repair, a retry or map-reduce) |
+| `cost_usd` | REAL NULL | provider-reported or tokens times price; `0` for `local_llm`; NULL when no price is known |
+| `outcome` | TEXT | `ok`, `failed` (billed but no usable summary) |
+
+Index: `llm_usage(at)`. Rows are never updated or deleted by the tool. The same
+migration creates `budget_periods` and inserts the budget settings with `INSERT OR IGNORE`:
+`summary.budget.weekly_usd = 2.0` and `summary.budget.monthly_usd = 10.0`.
+
+### `budget_periods`
+
+One row per budget period that the tool has evaluated (ADR-0013). It holds the
+**budget side** of the history. The spend is never stored here: it is the sum of
+`llm_usage.cost_usd` for `at` in `[starts_at, ends_at)`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `kind` | TEXT | `week` or `month` |
+| `period_start` | TEXT | Local calendar date of the first day: the Monday of a week, or the 1st of a month (e.g. `2026-10-05`). Primary key together with `kind` |
+| `starts_at`, `ends_at` | TEXT | The period boundaries as UTC instants, fixed when the row is created. A later change of the OS time zone does not move past periods |
+| `cap_usd` | REAL NULL | The cap at the last evaluation in this period. NULL = the cap was disabled |
+| `cap_updated_at` | TEXT | When `cap_usd` was last written |
+| `stopped_at` | TEXT NULL | When the cap first stopped a run in this period; NULL if it never did |
+
+The summarize stage upserts the rows of the current week and month each time it
+evaluates the budget (and when it stops because of a cap). Reading never writes.
+Periods in which the tool did not run summarization have no row.
+
 ### `sync_state`
 Per-account, per-source cursors (Slack conversation `last_ts`, thread watch lists,
 Calendar sync window, and so on).
@@ -217,3 +259,10 @@ keeps backends swappable.
    entry whose input changed waits for re-summarization (`pending`), so its old
    generated sections stay searchable and attributed until they are replaced.
 4. A `source_native` summary never gets a `prompt_version`.
+5. A summary written by a paid summarizer has at least one `llm_usage` row written
+   in the same transaction. The spend of a period is `SUM(cost_usd)` over
+   `llm_usage`, never derived from `summaries.usage` (which is overwritten) or
+   `runs.stats` (written at the end of a run).
+6. `llm_usage` and `budget_periods` are never rewritten or pruned by the tool, so
+   the history of spend and caps can be looked up at any time. The only copy of
+   a period's spend is the ledger.

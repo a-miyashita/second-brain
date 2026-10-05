@@ -23,6 +23,29 @@ pub struct SummaryPolicy {
     pub max_attempts: i64,
     pub language: String,
     pub prices: Option<serde_json::Value>,
+    /// Weekly and monthly spend caps in USD; `None` = disabled (ADR-0013).
+    pub weekly_cap_usd: Option<f64>,
+    pub monthly_cap_usd: Option<f64>,
+    /// IANA time zone that defines the week and month boundaries.
+    pub budget_timezone: String,
+}
+
+/// Fallback caps if a stored cap is not a number (ADR-0013).
+const DEFAULT_WEEKLY_CAP_USD: f64 = 2.0;
+const DEFAULT_MONTHLY_CAP_USD: f64 = 10.0;
+
+/// A cap setting: a positive number, `0` or `null` (disabled). Anything else
+/// falls back to the default, so a damaged value never removes the guard.
+fn cap_setting(cat: &Catalog, key: &str, default: f64) -> Result<Option<f64>, PipelineError> {
+    Ok(match cat.setting(key)? {
+        Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Number(n)) => match n.as_f64() {
+            Some(0.0) => None,
+            Some(v) if v > 0.0 && v.is_finite() => Some(v),
+            _ => Some(default),
+        },
+        _ => Some(default),
+    })
 }
 
 impl SummaryPolicy {
@@ -60,6 +83,14 @@ impl SummaryPolicy {
             max_attempts: cat.setting_or("summary.max_attempts", 3i64)?,
             language: cat.setting_or("summary.language", "auto".to_string())?,
             prices: cat.setting("llm.prices")?,
+            weekly_cap_usd: cap_setting(cat, "summary.budget.weekly_usd", DEFAULT_WEEKLY_CAP_USD)?,
+            monthly_cap_usd: cap_setting(
+                cat,
+                "summary.budget.monthly_usd",
+                DEFAULT_MONTHLY_CAP_USD,
+            )?,
+            budget_timezone: cat
+                .setting_or("summary.budget.timezone", sb_store::settings::os_timezone())?,
         })
     }
 
@@ -168,6 +199,9 @@ mod tests {
             max_attempts: 3,
             language: "auto".into(),
             prices: None,
+            weekly_cap_usd: None,
+            monthly_cap_usd: None,
+            budget_timezone: "UTC".into(),
         }
     }
 

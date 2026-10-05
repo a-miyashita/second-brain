@@ -1,5 +1,6 @@
 //! Domain types and traits for second-brain. This crate performs no I/O.
 
+pub mod budget;
 pub mod clock;
 pub mod kinds;
 pub mod model;

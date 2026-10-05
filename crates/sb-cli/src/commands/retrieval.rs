@@ -321,8 +321,18 @@ pub fn list(ctx: &Ctx, a: ListArgs) -> anyhow::Result<i32> {
 pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
     let cat = ctx.catalog()?;
     let s = cat.stats()?;
+    let policy = sb_pipeline::policy::SummaryPolicy::load(&cat)?;
+    let b = sb_pipeline::budget::status(&cat, &policy)?;
     if ctx.json {
-        ctx.out_json("sb.stats/v1", serde_json::to_value(&s)?);
+        let mut v = serde_json::to_value(&s)?;
+        if let Some(o) = v.as_object_mut() {
+            let one = |p: &sb_pipeline::budget::PeriodStatus| json!({"spent_usd": p.spent_usd, "cap_usd": p.cap_usd, "resets_at": p.resets_at});
+            o.insert(
+                "budget".into(),
+                json!({"weekly": one(&b.week), "monthly": one(&b.month)}),
+            );
+        }
+        ctx.out_json("sb.stats/v1", v);
         return Ok(exit::OK);
     }
     println!(
@@ -352,6 +362,8 @@ pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
     for c in &s.by_summary_model {
         println!("  {:<48} {:>7}", c.key, c.count);
     }
+    println!("\nSummarization budget (estimated; see `sb budget`):");
+    super::budget::print_current(&b.week, &b.month, true);
     Ok(exit::OK)
 }
 

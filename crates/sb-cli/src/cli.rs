@@ -67,6 +67,8 @@ pub enum Command {
     List(ListArgs),
     /// Counts by account, source, raw status and summary status/model.
     Stats,
+    /// Summarization spend against the weekly and monthly budget.
+    Budget(BudgetArgs),
     /// Show generated sections next to the source text.
     Review(ReviewArgs),
     /// Health checks and open issues.
@@ -425,6 +427,19 @@ pub struct ShowArgs {
     /// Include metadata.
     #[arg(long)]
     pub meta: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BudgetArgs {
+    /// Weeks of history to show.
+    #[arg(long, default_value_t = 8, value_name = "N")]
+    pub weeks: u32,
+    /// Months of history to show.
+    #[arg(long, default_value_t = 6, value_name = "N")]
+    pub months: u32,
+    /// Also show the spend per model.
+    #[arg(long)]
+    pub by_model: bool,
 }
 
 #[derive(Debug, Args)]
