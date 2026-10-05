@@ -2,6 +2,7 @@
 //! search backend.
 
 pub mod accounts;
+pub mod budget;
 pub mod catalog;
 pub mod entries;
 pub mod error;
@@ -18,6 +19,7 @@ pub mod stats;
 pub mod sync;
 
 pub use accounts::Account;
+pub use budget::{ModelSpend, NewUsage, PeriodRow, Spend, UsageOutcome};
 pub use catalog::{Catalog, SCHEMA_VERSION};
 pub use entries::{
     Entry, EntryFilter, EntryUpdate, NormalizedUpdate, RawObjectRow, Section, StoredRaw,

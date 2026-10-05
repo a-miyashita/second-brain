@@ -302,3 +302,206 @@ fn skills_install_into_user_home() {
     );
     assert!(!user.join(".claude/skills/second-brain").exists());
 }
+
+#[test]
+fn budget_settings_are_validated_and_stored() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("h");
+    sb(&home, &["setup", "home"]);
+
+    // The defaults are stored values, not just built-in defaults.
+    let v = json_of(&sb(&home, &["config", "list", "--json"]));
+    let item = |key: &str| {
+        v["settings"]
+            .as_array()
+            .or_else(|| v.as_array())
+            .unwrap_or_else(|| panic!("no list in {v}"))
+            .iter()
+            .find(|i| i["key"] == key)
+            .unwrap_or_else(|| panic!("{key} missing in {v}"))
+            .clone()
+    };
+    assert_eq!(item("summary.budget.weekly_usd")["value"], 2.0);
+    assert_eq!(item("summary.budget.monthly_usd")["value"], 10.0);
+    assert_eq!(item("summary.budget.weekly_usd")["default"], false);
+
+    for ok in ["3.5", "0", "null", "10"] {
+        let o = sb(&home, &["config", "set", "summary.budget.weekly_usd", ok]);
+        assert!(
+            o.status.success(),
+            "{ok}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+    }
+    for bad in ["-1", "\"two\"", "true", "[1]"] {
+        let o = sb(&home, &["config", "set", "summary.budget.monthly_usd", bad]);
+        assert_eq!(o.status.code(), Some(64), "{bad} must be rejected");
+    }
+    let v = json_of(&sb(
+        &home,
+        &["config", "get", "summary.budget.monthly_usd", "--json"],
+    ));
+    assert_eq!(v["value"], 10.0, "a rejected value changes nothing");
+
+    assert!(
+        sb(
+            &home,
+            &["config", "set", "summary.budget.timezone", "Asia/Tokyo"]
+        )
+        .status
+        .success()
+    );
+    assert_eq!(
+        sb(
+            &home,
+            &["config", "set", "summary.budget.timezone", "Nowhere/Land"]
+        )
+        .status
+        .code(),
+        Some(64)
+    );
+}
+
+#[test]
+fn budget_command_reports_history_and_feeds_stats_and_doctor() {
+    use sb_core::budget::{PeriodKind, Tz, period_containing};
+    use sb_core::clock::FixedClock;
+    use sb_core::{Generator, GeneratorKind, Usage};
+    use sb_store::{Catalog, Home, NewUsage, UsageOutcome};
+    use std::sync::Arc;
+
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("h");
+    sb(&home, &["setup", "home"]);
+    assert!(
+        sb(&home, &["config", "set", "summary.budget.timezone", "UTC"])
+            .status
+            .success()
+    );
+    assert!(
+        sb(&home, &["config", "set", "summary.budget.weekly_usd", "2"])
+            .status
+            .success()
+    );
+
+    // An empty ledger works, in both forms.
+    let v = json_of(&sb(&home, &["budget", "--json"]));
+    assert_eq!(v["schema"], "sb.budget/v1");
+    assert_eq!(v["total"]["calls"], 0);
+    assert_eq!(v["weeks"].as_array().unwrap().len(), 0);
+    assert_eq!(v["by_model"].as_array().unwrap().len(), 0);
+    let o = sb(&home, &["budget"]);
+    assert!(o.status.success());
+    assert!(
+        String::from_utf8_lossy(&o.stdout).contains("Nothing has been spent yet"),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+
+    let usage = |model: &str, usd: f64| NewUsage {
+        run_id: None,
+        entry_id: None,
+        profile: "claude".into(),
+        generator: Generator {
+            kind: GeneratorKind::LlmApi,
+            provider: "anthropic".into(),
+            model: model.into(),
+            prompt_version: None,
+        },
+        usage: Usage {
+            input_tokens: 1_900_000,
+            output_tokens: 200_000,
+            calls: 4,
+            ..Default::default()
+        },
+        cost_usd: Some(usd),
+        outcome: UsageOutcome::Ok,
+    };
+    // Two weeks ago: the whole $2 cap was used and a run was stopped.
+    let past = chrono::Utc::now() - chrono::Duration::days(14);
+    let past_week = period_containing(PeriodKind::Week, past, Tz::UTC);
+    {
+        let cat =
+            Catalog::open_with_clock(&Home::new(&home), Arc::new(FixedClock::new(past))).unwrap();
+        cat.upsert_period(&past_week, Some(2.0)).unwrap();
+        cat.record_usage(&usage("claude-haiku-4-5", 2.0)).unwrap();
+        cat.mark_period_stopped(PeriodKind::Week, past_week.start)
+            .unwrap();
+    }
+    // This week: $0.50 so far.
+    {
+        let cat = Catalog::open(&Home::new(&home)).unwrap();
+        cat.record_usage(&usage("claude-haiku-4-5", 0.5)).unwrap();
+    }
+
+    let v = json_of(&sb(&home, &["budget", "--json", "--weeks", "3"]));
+    assert_eq!(v["current"]["week"]["spent_usd"], 0.5);
+    assert_eq!(v["current"]["week"]["cap_usd"], 2.0);
+    let weeks = v["weeks"].as_array().unwrap();
+    assert_eq!(weeks.len(), 1, "only evaluated weeks are listed");
+    assert_eq!(weeks[0]["spent_usd"], 2.0);
+    assert_eq!(weeks[0]["cap_usd"], 2.0);
+    assert!(weeks[0]["stopped_at"].is_string());
+    assert_eq!(
+        weeks[0]["period_start"],
+        past_week.start.format("%Y-%m-%d").to_string()
+    );
+    assert_eq!(v["total"]["spent_usd"], 2.5);
+    assert_eq!(v["total"]["calls"], 8);
+    assert_eq!(v["by_model"][0]["model"], "claude-haiku-4-5");
+    assert_eq!(v["by_model"][0]["spent_usd"], 2.5);
+
+    let o = sb(&home, &["budget", "--by-model"]);
+    let out = String::from_utf8_lossy(&o.stdout);
+    for want in [
+        "Summarization spend (estimated",
+        "Weeks",
+        "Months",
+        "$2.00",
+        "$0.50",
+        "claude-haiku-4-5",
+        "3.8M in",
+    ] {
+        assert!(out.contains(want), "{want:?} missing in:\n{out}");
+    }
+
+    // `sb stats` carries the short form.
+    let v = json_of(&sb(&home, &["stats", "--json"]));
+    assert_eq!(v["budget"]["weekly"]["spent_usd"], 0.5);
+    assert_eq!(v["budget"]["weekly"]["cap_usd"], 2.0);
+    assert!(v["budget"]["monthly"]["resets_at"].is_string());
+    let o = sb(&home, &["stats"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Summarization budget"));
+
+    // `sb doctor` warns when a cap is reached, and is quiet otherwise.
+    let check = |home: &Path| {
+        json_of(&sb(home, &["doctor", "--json"]))["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == "llm.budget")
+            .unwrap_or_else(|| panic!("llm.budget check missing"))
+            .clone()
+    };
+    assert_eq!(check(&home)["status"], "ok");
+    assert!(
+        sb(
+            &home,
+            &["config", "set", "summary.budget.weekly_usd", "0.5"]
+        )
+        .status
+        .success()
+    );
+    assert_eq!(check(&home)["status"], "warning");
+    // A disabled cap shows as such and never warns.
+    assert!(
+        sb(&home, &["config", "set", "summary.budget.weekly_usd", "0"])
+            .status
+            .success()
+    );
+    let c = check(&home);
+    assert_eq!(c["status"], "ok");
+    assert!(c["message"].as_str().unwrap().contains("no cap"));
+    let v = json_of(&sb(&home, &["budget", "--json"]));
+    assert!(v["current"]["week"]["cap_usd"].is_null());
+}

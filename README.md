@@ -161,6 +161,28 @@ Google Meet entries keep Gemini's own notes by default (no LLM call). Slack
 threads are summarized by the default profile. Without a profile, entries stay
 `pending` and are still searchable.
 
+## Limiting summarization cost
+
+Summaries from a paid API (or a CLI that reports its cost) are capped so that token
+cost cannot grow unnoticed: **$2 per week and $10 per month** by default. Weeks start
+on Monday and months on the 1st, in your time zone. When a cap is used up, `sb sync`
+and `sb summarize` stop cleanly, the remaining entries stay `pending` and are still
+searchable, and they resume by themselves in the next period.
+
+```sh
+sb budget                                  # this week and month, history, total
+sb budget --by-model                       # also the spend per model
+sb config set summary.budget.weekly_usd 5  # change a cap (0 or null disables it)
+sb config set summary.budget.monthly_usd 20
+sb config set summary.min_chars 2000       # do not summarize short threads at all
+```
+
+The amounts are estimates computed by second-brain from token counts and list
+prices. They are a guard, not an invoice. Local models are free and are never
+blocked. A paid profile whose model has no known price is not run while a cap is
+enabled; set its price with `llm.prices`. As an independent backstop, also set a
+spend limit in your provider's console.
+
 ## Quick usage
 
 ```sh
@@ -171,6 +193,7 @@ sb search 契約 納期                        # two-character Japanese terms wo
 sb show 01J9ABC...                        # read one entry
 sb review --limit 3                       # summaries next to their source text
 sb resummarize --source slack.thread --where-model claude-haiku-4-5 --profile best --estimate
+sb budget                                 # summarization spend against the weekly/monthly cap
 sb doctor                                 # health and pending issues
 ```
 

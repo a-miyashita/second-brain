@@ -609,3 +609,409 @@ async fn import_bundle_is_idempotent_and_never_downgrades() {
     assert!(e3.title.starts_with("#dev"));
     assert_eq!(util::ts(e3.ingested_at), "2020-01-01T00:00:00Z");
 }
+
+// ---------------------------------------------------------------------------
+// Budget (ADR-0013)
+// ---------------------------------------------------------------------------
+
+use sb_core::clock::FixedClock;
+
+/// Wednesday of the week starting Monday 2026-10-05.
+const NOW: &str = "2026-10-07T10:00:00Z";
+
+/// A mock Anthropic API answering every request with `text` and fixed usage.
+async fn mock_anthropic(text: &str, input: u64, output: u64) -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "content": [{"type": "text", "text": text}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": input, "output_tokens": output}
+        })))
+        .mount(&server)
+        .await;
+    server
+}
+
+const GOOD: &str = r#"{"overview":"They planned the export.","decisions":[],"action_items":[]}"#;
+
+async fn api_calls(llm: &MockServer) -> usize {
+    llm.received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/v1/messages")
+        .count()
+}
+
+/// Summarize with a paid Anthropic profile (`concurrency` 1, so runs are
+/// deterministic) and set the caps. Times are UTC.
+fn use_api_profile(env: &Env, llm: &MockServer, model: &str, weekly: Value, monthly: Value) {
+    let cat = Catalog::open(&env.home).unwrap();
+    cat.set_setting(
+        "llm.profiles.claude",
+        &json!({"kind": "llm_api", "provider": "anthropic", "model": model,
+                "base_url": llm.uri(), "concurrency": 1}),
+    )
+    .unwrap();
+    cat.set_secret(
+        &sb_store::SecretScope::Global,
+        "anthropic.api_key",
+        &sb_core::Secret::new("k"),
+    )
+    .unwrap();
+    cat.set_setting("summary.profile.default", &json!("claude"))
+        .unwrap();
+    cat.set_setting("summary.budget.timezone", &json!("UTC"))
+        .unwrap();
+    cat.set_setting("summary.budget.weekly_usd", &weekly)
+        .unwrap();
+    cat.set_setting("summary.budget.monthly_usd", &monthly)
+        .unwrap();
+}
+
+fn pipeline_at(env: &Env, clock: &Arc<FixedClock>) -> Pipeline {
+    let cat = Catalog::open_with_clock(&env.home, clock.clone()).unwrap();
+    let src = Arc::new(FakeSource {
+        remote: env.remote.clone(),
+        fetches: env.fetches.clone(),
+        cancel_after: None,
+        fetched: AtomicUsize::new(0),
+    });
+    Pipeline::new(cat, Arc::new(Factory(src)))
+}
+
+fn open_issue_codes(env: &Env) -> Vec<String> {
+    Catalog::open(&env.home)
+        .unwrap()
+        .open_issues()
+        .unwrap()
+        .into_iter()
+        .map(|i| i.code)
+        .collect()
+}
+
+fn fixed_clock(t: &str) -> Arc<FixedClock> {
+    Arc::new(FixedClock::new(util::parse_ts(t).unwrap()))
+}
+
+#[tokio::test]
+async fn budget_stops_the_stage_then_resumes_when_the_cap_is_raised() {
+    // Each call costs $0.2 (100k tokens in at $1/M, 20k out at $5/M).
+    let llm = mock_anthropic(GOOD, 100_000, 20_000).await;
+    let env = env(&mock_llm().await).await;
+    use_api_profile(&env, &llm, "claude-haiku-4-5", json!(0.5), json!(100.0));
+    let clock = fixed_clock(NOW);
+
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.status, Some(RunStatus::StoppedByLimit));
+    assert_eq!(
+        r.stats.stop,
+        Some(sb_pipeline::Stop::Limit("budget.weekly".into()))
+    );
+    // $0.2 + $0.2 + $0.2 > $0.5: the fourth unit is not started.
+    assert_eq!(r.stats.summaries.summarized, 3);
+    assert_eq!(r.stats.pending_summaries, 2);
+    assert_eq!(api_calls(&llm).await, 3);
+    assert!(open_issue_codes(&env).contains(&"llm.budget_exhausted".to_string()));
+
+    // The ledger and the period snapshot.
+    let cat = Catalog::open_with_clock(&env.home, clock.clone()).unwrap();
+    let (spend, _) = cat.spend_total().unwrap();
+    assert!((spend.cost_usd - 0.6).abs() < 1e-9, "{spend:?}");
+    assert_eq!(spend.calls, 3);
+    let week = cat
+        .period_rows(sb_core::budget::PeriodKind::Week, 5)
+        .unwrap();
+    assert_eq!(week.len(), 1);
+    assert_eq!(week[0].cap_usd, Some(0.5));
+    assert!(week[0].stopped_at.is_some());
+    // Every ledger row belongs to the sync run.
+    let run_ids: Vec<Option<i64>> = cat
+        .conn()
+        .prepare("SELECT DISTINCT run_id FROM llm_usage")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(run_ids, vec![r.run_id]);
+    drop(cat);
+
+    // Still blocked: a second run in the same week starts nothing.
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.summarized, 0);
+    assert_eq!(api_calls(&llm).await, 3);
+
+    // Raising the cap is enough to resume; the issue is resolved.
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.budget.weekly_usd", &json!(5.0))
+        .unwrap();
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.status, Some(RunStatus::Ok), "{:?}", r.stats.errors);
+    assert_eq!(r.stats.summaries.summarized, 2);
+    assert_eq!(api_calls(&llm).await, 5);
+    assert!(!open_issue_codes(&env).contains(&"llm.budget_exhausted".to_string()));
+}
+
+#[tokio::test]
+async fn budget_resumes_after_the_week_rolls_over_but_the_month_still_binds() {
+    let llm = mock_anthropic(GOOD, 100_000, 20_000).await;
+    let env = env(&mock_llm().await).await;
+    // $0.5 per week, $0.9 per month: three calls fit in the month in total.
+    use_api_profile(&env, &llm, "claude-haiku-4-5", json!(0.5), json!(0.9));
+    let clock = fixed_clock(NOW);
+
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.summarized, 3, "the weekly cap stops it");
+    assert_eq!(
+        r.stats.stop,
+        Some(sb_pipeline::Stop::Limit("budget.weekly".into()))
+    );
+
+    // Monday: the weekly cap has room again, but $0.6 of $0.9 is already spent
+    // this month, so one more call is estimated to fit and then the month binds.
+    clock.set(util::parse_ts("2026-10-12T00:00:00Z").unwrap());
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.summarized, 2);
+    assert_eq!(r.status, Some(RunStatus::Ok), "{:?}", r.stats.errors);
+
+    let cat = Catalog::open_with_clock(&env.home, clock.clone()).unwrap();
+    assert_eq!(
+        cat.period_rows(sb_core::budget::PeriodKind::Week, 5)
+            .unwrap()
+            .len(),
+        2,
+        "one snapshot per week the tool evaluated"
+    );
+    let (spend, _) = cat.spend_total().unwrap();
+    assert!((spend.cost_usd - 1.0).abs() < 1e-9, "{spend:?}");
+}
+
+#[tokio::test]
+async fn an_unpriced_paid_profile_is_refused_while_a_cap_is_enabled() {
+    let llm = mock_anthropic(GOOD, 100, 10).await;
+    let env = env(&mock_llm().await).await;
+    use_api_profile(&env, &llm, "mystery-model", json!(2.0), json!(10.0));
+    let clock = fixed_clock(NOW);
+
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.summarized, 0);
+    assert_eq!(api_calls(&llm).await, 0);
+    assert!(open_issue_codes(&env).contains(&"llm.unpriced".to_string()));
+    assert_eq!(r.stats.pending_summaries, 5, "entries stay pending");
+
+    // Disabling both caps explicitly lets it run, and resolves the issue.
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.budget.weekly_usd", &json!(0))
+        .unwrap();
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.budget.monthly_usd", &Value::Null)
+        .unwrap();
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.summarized, 5);
+    assert!(!open_issue_codes(&env).contains(&"llm.unpriced".to_string()));
+    // Unknown cost: the calls are in the ledger, counted as unpriced.
+    let (spend, _) = Catalog::open(&env.home).unwrap().spend_total().unwrap();
+    assert_eq!((spend.cost_usd, spend.unpriced_calls), (0.0, 5));
+}
+
+#[tokio::test]
+async fn local_models_are_never_blocked_and_are_recorded_at_zero_cost() {
+    let llm = mock_llm().await;
+    let env = env(&llm).await;
+    {
+        let cat = Catalog::open(&env.home).unwrap();
+        // A tiny cap that would stop any paid profile at once.
+        cat.set_setting("summary.budget.weekly_usd", &json!(0.0001))
+            .unwrap();
+    }
+    let r = pipeline(&env, None)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.status, Some(RunStatus::Ok), "{:?}", r.stats.errors);
+    assert_eq!(r.stats.summaries.summarized, 5);
+    let (spend, _) = Catalog::open(&env.home).unwrap().spend_total().unwrap();
+    assert_eq!(
+        (spend.cost_usd, spend.calls, spend.unpriced_calls),
+        (0.0, 5, 0)
+    );
+}
+
+#[tokio::test]
+async fn a_billed_failed_attempt_is_recorded_in_the_ledger() {
+    // Invalid JSON every time: three generations with a repair each = 6 calls.
+    let llm = mock_anthropic("not json", 1_000, 100).await;
+    let env = env(&mock_llm().await).await;
+    use_api_profile(&env, &llm, "claude-haiku-4-5", json!(2.0), json!(10.0));
+    let clock = fixed_clock(NOW);
+
+    let r = pipeline_at(&env, &clock)
+        .sync(&SyncOptions {
+            limits: Limits {
+                max_summaries: Some(1),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.failed, 1);
+    assert_eq!(api_calls(&llm).await, 6);
+    // 6 x (1000 in x $1/M + 100 out x $5/M) = $0.009
+    let cat = Catalog::open(&env.home).unwrap();
+    let (spend, _) = cat.spend_total().unwrap();
+    assert_eq!(spend.calls, 6);
+    assert!((spend.cost_usd - 0.009).abs() < 1e-9, "{spend:?}");
+    let outcome: String = cat
+        .conn()
+        .query_row("SELECT outcome FROM llm_usage", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(outcome, "failed");
+    // It also shows in the run's own cost figure.
+    assert!((r.stats.summaries.cost_usd - 0.009).abs() < 1e-9);
+}
+
+#[tokio::test]
+async fn a_raised_min_chars_skips_pending_entries_without_an_llm_call() {
+    let llm = mock_llm().await;
+    let env = env(&llm).await;
+    let p = pipeline(&env, None);
+    p.sync(&SyncOptions {
+        no_summary: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.min_chars", &json!(100_000))
+        .unwrap();
+    let r = p
+        .summarize_pending(&SummarizeOptions {
+            filter: EntryFilter::default(),
+            target: Target::Configured,
+            limits: Limits::default(),
+            retry_failed: false,
+            force: false,
+            estimate_only: false,
+        })
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summarized, 0);
+    assert_eq!(r.stats.skipped, 5);
+    assert_eq!(summary_calls(&llm).await, 0);
+    let cat = p.catalog();
+    assert_eq!(
+        cat.count_entries(&EntryFilter {
+            summary_status: vec![SummaryStatus::Skipped],
+            ..Default::default()
+        })
+        .unwrap(),
+        5
+    );
+}
+
+#[tokio::test]
+async fn an_existing_summary_survives_a_raised_threshold() {
+    let llm = mock_llm().await;
+    let env = env(&llm).await;
+    pipeline(&env, None)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.min_chars", &json!(100_000))
+        .unwrap();
+    let r = pipeline(&env, None)
+        .sync(&SyncOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summaries.summarized, 0);
+    let cat = Catalog::open(&env.home).unwrap();
+    assert_eq!(
+        cat.count_entries(&EntryFilter {
+            summary_status: vec![SummaryStatus::Done],
+            ..Default::default()
+        })
+        .unwrap(),
+        5
+    );
+}
+
+#[tokio::test]
+async fn estimate_compares_with_the_remaining_budget() {
+    let llm = mock_anthropic(GOOD, 100, 10).await;
+    let env = env(&mock_llm().await).await;
+    let clock = fixed_clock(NOW);
+    let opts = SummarizeOptions {
+        filter: EntryFilter::default(),
+        target: Target::Configured,
+        limits: Limits::default(),
+        retry_failed: false,
+        force: false,
+        estimate_only: true,
+    };
+    // Each of the five threads is estimated at about $0.0036.
+    use_api_profile(&env, &llm, "claude-haiku-4-5", json!(0.01), json!(100.0));
+    let p = pipeline_at(&env, &clock);
+    p.sync(&SyncOptions {
+        no_summary: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+    let est = p.summarize_pending(&opts).await.unwrap().estimate.unwrap();
+    let b = est
+        .budget
+        .expect("a cap is enabled and the profile is paid");
+    assert_eq!(b.paid_entries, 5);
+    assert_eq!(b.entries_that_fit, 2, "{b:?}");
+    assert!(!b.fits);
+    assert!((b.remaining_usd - 0.01).abs() < 1e-9);
+    assert_eq!(api_calls(&llm).await, 0, "an estimate makes no call");
+
+    // A cap that is disabled gives no budget block.
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.budget.weekly_usd", &json!(0))
+        .unwrap();
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting("summary.budget.monthly_usd", &json!(0))
+        .unwrap();
+    let est = pipeline_at(&env, &clock)
+        .summarize_pending(&opts)
+        .await
+        .unwrap()
+        .estimate
+        .unwrap();
+    assert!(est.budget.is_none());
+}

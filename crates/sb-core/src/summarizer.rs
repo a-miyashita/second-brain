@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::model::{Generator, SummaryInput, SummaryOutput};
+use crate::model::{Generator, SummaryInput, SummaryOutput, Usage};
 
 /// Errors raised by summarizers.
 #[derive(Debug, thiserror::Error)]
@@ -49,5 +49,20 @@ pub trait Summarizer: Send + Sync {
     /// The generator recorded for summaries produced for `input`.
     fn generator(&self, input: &SummaryInput) -> Generator;
 
-    async fn summarize(&self, input: &SummaryInput) -> Result<SummaryOutput, LlmError>;
+    /// Summarize, adding the usage of **every** call made to `usage`, including
+    /// the calls of attempts that end in an error (billed, but unusable). The
+    /// usage ledger needs those (ADR-0013).
+    async fn summarize_tracked(
+        &self,
+        input: &SummaryInput,
+        usage: &mut Usage,
+    ) -> Result<SummaryOutput, LlmError>;
+
+    /// Summarize; the total usage is in the returned `SummaryOutput::usage`.
+    async fn summarize(&self, input: &SummaryInput) -> Result<SummaryOutput, LlmError> {
+        let mut usage = Usage::default();
+        let mut out = self.summarize_tracked(input, &mut usage).await?;
+        out.usage = usage;
+        Ok(out)
+    }
 }

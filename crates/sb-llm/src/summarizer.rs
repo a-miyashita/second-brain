@@ -122,16 +122,19 @@ impl Summarizer for LlmSummarizer {
         }
     }
 
-    async fn summarize(&self, input: &SummaryInput) -> Result<SummaryOutput, LlmError> {
+    async fn summarize_tracked(
+        &self,
+        input: &SummaryInput,
+        usage: &mut Usage,
+    ) -> Result<SummaryOutput, LlmError> {
         let system = prompts::system_prompt(input, &self.language);
-        let mut usage = Usage::default();
         let chunks = prompts::split_chunks(&input.body, self.max_input_chars);
         let mut out = if chunks.len() == 1 {
             self.structured(
                 &system,
                 prompts::user_prompt(input, &input.body),
                 input.want_details,
-                &mut usage,
+                usage,
             )
             .await?
         } else {
@@ -140,7 +143,7 @@ impl Summarizer for LlmSummarizer {
             for (i, c) in chunks.iter().enumerate() {
                 let user = prompts::chunk_prompt(input, c, i, chunks.len());
                 partials.push(
-                    self.structured(&system, user, input.want_details, &mut usage)
+                    self.structured(&system, user, input.want_details, usage)
                         .await?,
                 );
             }
@@ -148,11 +151,11 @@ impl Summarizer for LlmSummarizer {
                 &system,
                 prompts::merge_prompt(input, &partials),
                 input.want_details,
-                &mut usage,
+                usage,
             )
             .await?
         };
-        out.usage = usage;
+        out.usage = usage.clone();
         Ok(out)
     }
 }
@@ -243,6 +246,30 @@ mod tests {
             s.summarize(&input("x".into())).await,
             Err(LlmError::BadOutput(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn billed_calls_of_a_failed_attempt_are_reported() {
+        // Three fresh generations, each with one repair: six billed calls.
+        let (_b, s) = summarizer(&["oops"; 6], 40_000);
+        let mut usage = Usage::default();
+        let r = s.summarize_tracked(&input("x".into()), &mut usage).await;
+        assert!(matches!(r, Err(LlmError::BadOutput(_))));
+        assert_eq!(usage.calls, 6);
+        assert_eq!(usage.input_tokens, 60);
+        assert_eq!(usage.output_tokens, 6);
+    }
+
+    #[tokio::test]
+    async fn repair_usage_is_added_to_the_first_attempt() {
+        let (_b, s) = summarizer(&["oops", r#"{"overview":"ok"}"#], 40_000);
+        let mut usage = Usage::default();
+        let out = s
+            .summarize_tracked(&input("x".into()), &mut usage)
+            .await
+            .unwrap();
+        assert_eq!(usage.calls, 2);
+        assert_eq!(out.usage, usage, "the output carries the same total");
     }
 
     #[tokio::test]

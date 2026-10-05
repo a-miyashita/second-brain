@@ -603,6 +603,11 @@ pub struct SummaryCommit {
     pub profile: Option<String>,
     pub input_hash: String,
     pub usage: Usage,
+    /// Estimated cost of the attempt (provider-reported, or tokens times price);
+    /// `None` when unknown. Recorded in the usage ledger (ADR-0013).
+    pub cost_usd: Option<f64>,
+    /// The run that made the call, when there is one.
+    pub run_id: Option<i64>,
 }
 
 impl Catalog {
@@ -778,6 +783,20 @@ impl Catalog {
                 params![c.entry_id, now],
             )?;
             fts::index_entry(tx, c.entry_id)?;
+            // The ledger row is written with the summary it paid for (ADR-0013).
+            crate::budget::insert_usage(
+                tx,
+                &now,
+                &crate::budget::NewUsage {
+                    run_id: c.run_id,
+                    entry_id: Some(c.entry_id),
+                    profile: c.profile.clone().unwrap_or_default(),
+                    generator: c.generator.clone(),
+                    usage: c.usage.clone(),
+                    cost_usd: c.cost_usd,
+                    outcome: crate::budget::UsageOutcome::Ok,
+                },
+            )?;
             Ok(())
         })
     }
@@ -977,9 +996,20 @@ mod tests {
             },
             profile: Some("fast".into()),
             input_hash: "h".into(),
-            usage: Usage::default(),
+            usage: Usage {
+                input_tokens: 1000,
+                output_tokens: 100,
+                calls: 2,
+                ..Default::default()
+            },
+            cost_usd: Some(0.5),
+            run_id: Some(7),
         })
         .unwrap();
+        // The ledger row was written with the summary (ADR-0013).
+        let (spend, since) = cat.spend_total().unwrap();
+        assert_eq!((spend.cost_usd, spend.calls), (0.5, 2));
+        assert!(since.is_some());
         assert_eq!(
             cat.entry(r1.entry_id).unwrap().unwrap().summary_status,
             SummaryStatus::Done

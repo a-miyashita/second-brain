@@ -12,10 +12,13 @@ use crate::home::Home;
 use crate::perms;
 
 /// Embedded, ordered migrations. Never edit an applied migration; add a new one.
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../migrations/0001_initial.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../migrations/0001_initial.sql")),
+    (2, include_str!("../migrations/0002_budget.sql")),
+];
 
 /// The schema version this binary expects.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// A catalog connection.
 pub struct Catalog {

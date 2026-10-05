@@ -20,6 +20,7 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0010](adrs/0010-agent-integration-skill-and-mcp.md) | Agent integration through a global skill and an MCP server |
 | [0011](adrs/0011-notifications.md) | Notifications — pluggable sinks, `doctor` as the baseline |
 | [0012](adrs/0012-resumable-incremental-ingestion.md) | Resumable, interruptible and incremental ingestion |
+| [0013](adrs/0013-summarization-budget-caps.md) | Summarization budget caps (weekly and monthly, from a usage ledger) |
 
 ## Specs (`specs/`)
 

@@ -312,6 +312,7 @@ async fn run(ctx: &Ctx, cmd: Command) -> anyhow::Result<i32> {
         Command::Show(a) => retrieval::show(ctx, a),
         Command::List(a) => retrieval::list(ctx, a),
         Command::Stats => retrieval::stats(ctx),
+        Command::Budget(a) => budget::run(ctx, a),
         Command::Review(a) => retrieval::review(ctx, a),
         Command::Doctor(a) => doctor::run(ctx, a).await,
         Command::Index(cli::IndexCmd::Rebuild) => admin::index_rebuild(ctx),

@@ -38,6 +38,27 @@ fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
     if key == "summary.language" && !matches!(value.as_str(), Some("auto" | "ja" | "en")) {
         return Err(usage("summary.language is \"auto\", \"ja\" or \"en\""));
     }
+    if matches!(
+        key,
+        "summary.budget.weekly_usd" | "summary.budget.monthly_usd"
+    ) {
+        // An amount in USD; `0` or `null` disables the cap (ADR-0013).
+        return match value {
+            Value::Null => Ok(()),
+            Value::Number(n) if n.as_f64().is_some_and(|v| v.is_finite() && v >= 0.0) => Ok(()),
+            _ => Err(usage(format!(
+                "{key} is an amount in USD, like 2.0 (0 or null disables the cap)"
+            ))),
+        };
+    }
+    if key == "summary.budget.timezone" {
+        return match value.as_str() {
+            Some(name) if sb_core::budget::is_valid_tz(name) => Ok(()),
+            _ => Err(usage(
+                "summary.budget.timezone is an IANA time zone name, like \"Asia/Tokyo\"",
+            )),
+        };
+    }
     if let Some(d) = default_value(key)
         && std::mem::discriminant(&d) != std::mem::discriminant(value)
         && !(d.is_number() && value.is_number())
