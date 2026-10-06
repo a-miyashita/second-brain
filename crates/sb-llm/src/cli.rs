@@ -209,7 +209,10 @@ impl CliBackend {
     fn exit_error(&self, status: &str, detail: &str) -> LlmError {
         let detail: String = detail.chars().take(500).collect();
         let msg = format!("{} exited with {status}: {detail}", self.program.display());
-        if looks_like_auth_failure(&detail) {
+        // Claude and Copilot keep their previous classification; only the two new
+        // CLIs are matched on their error text.
+        let classify = matches!(self.flavor, CliFlavor::Codex | CliFlavor::Antigravity);
+        if classify && looks_like_auth_failure(&detail) {
             LlmError::Auth(msg)
         } else {
             LlmError::Provider(msg)
@@ -269,9 +272,13 @@ impl CliBackend {
                 match v.get("event").and_then(Value::as_str) {
                     Some("init") => {
                         let init = v.get("init").unwrap_or(&Value::Null);
-                        if let Some(mode) = init.get("permission_mode").and_then(Value::as_str)
-                            && mode != ANTIGRAVITY_SAFE_MODE
-                        {
+                        // Fail closed: a missing or renamed field is not proof of the
+                        // safe mode, so the prompt is not sent.
+                        let mode = init
+                            .get("permission_mode")
+                            .and_then(Value::as_str)
+                            .unwrap_or("(not reported)");
+                        if mode != ANTIGRAVITY_SAFE_MODE {
                             return Err(LlmError::Config(format!(
                                 "agy runs with permission mode `{mode}` (expected `{ANTIGRAVITY_SAFE_MODE}`); \
                                  check ~/.gemini/antigravity-cli/settings.json"
@@ -559,13 +566,15 @@ fn antigravity_completion(
 
 fn looks_like_auth_failure(msg: &str) -> bool {
     let m = msg.to_lowercase();
+    // Phrases only: a bare "401" or "login" also appears in request ids, token
+    // counts and unrelated messages, and an Auth error aborts the whole batch.
     [
-        "log in",
-        "login",
-        "logged in",
+        "please log in",
+        "not logged in",
+        "logged out",
         "unauthorized",
-        "401",
-        "authenticat",
+        "authentication",
+        "authenticate",
     ]
     .iter()
     .any(|k| m.contains(k))
@@ -608,10 +617,11 @@ pub fn antigravity_permissions_problem(dir: &Path) -> Option<String> {
 fn is_uuid(s: &str) -> bool {
     let parts: Vec<&str> = s.split('-').collect();
     parts.len() == 5
-        && [8, 4, 4, 4, 12]
-            .iter()
-            .zip(&parts)
-            .all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_hexdigit()))
+        && [8, 4, 4, 4, 12].iter().zip(&parts).all(|(n, p)| {
+            p.len() == *n
+                && p.chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+        })
 }
 
 /// Delete the conversation `agy` stored for one call (ADR-0017). Only the two
@@ -882,7 +892,11 @@ mod tests {
         // A missing directory is a no-op.
         remove_antigravity_conversation(&d.path().join("nope"), id);
         assert!(is_uuid(id));
-        assert!(!is_uuid("7C9F45A5-4D89-496C-ADF1-D31A1BFAF7F"));
+        assert!(
+            !is_uuid("7C9F45A5-4D89-496C-ADF1-D31A1BFAF7FB"),
+            "upper case"
+        );
+        assert!(!is_uuid("7c9f45a5-4d89-496c-adf1-d31a1bfaf7f"), "too short");
     }
 
     #[cfg(unix)]
@@ -1049,6 +1063,50 @@ mod tests {
         let e = b.complete(&req()).await.unwrap_err();
         assert!(matches!(&e, LlmError::Config(m) if m.contains("always-proceed")));
         assert!(started.elapsed() < Duration::from_secs(4), "aborted early");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn antigravity_refuses_an_init_without_a_permission_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = stub(
+            dir.path(),
+            "agy",
+            "#!/bin/sh\nprintf '%s\\n' '{\"event\":\"init\",\"conversation_id\":\"7c9f45a5-4d89-496c-adf1-d31a1bfaf7fb\",\"init\":{\"model\":\"m\"}}'\nsleep 5\n",
+        );
+        let started = Instant::now();
+        let e = backend(CliFlavor::Antigravity, s, dir.path())
+            .complete(&req())
+            .await
+            .unwrap_err();
+        assert!(matches!(&e, LlmError::Config(m) if m.contains("not reported")));
+        assert!(started.elapsed() < Duration::from_secs(4));
+    }
+
+    #[test]
+    fn auth_classification_needs_a_phrase() {
+        assert!(looks_like_auth_failure("401 Unauthorized: please log in"));
+        assert!(looks_like_auth_failure("Authentication required"));
+        // Request ids, token counts and unrelated words are not auth failures.
+        assert!(!looks_like_auth_failure("rate limited, request id 4017abc"));
+        assert!(!looks_like_auth_failure("login shell exited"));
+        assert!(!looks_like_auth_failure("used 4012 input tokens"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn claude_exit_errors_stay_provider_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = stub(
+            dir.path(),
+            "claude",
+            "#!/bin/sh\ncat > /dev/null\necho 'please log in' >&2\nexit 1\n",
+        );
+        let e = backend(CliFlavor::Claude, s, dir.path())
+            .complete(&req())
+            .await
+            .unwrap_err();
+        assert!(matches!(e, LlmError::Provider(_)), "{e:?}");
     }
 
     #[cfg(unix)]

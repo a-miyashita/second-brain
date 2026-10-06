@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use sb_core::RawStatus;
 use sb_core::util::body_hash;
 use serde::Serialize;
 
@@ -26,15 +27,20 @@ pub struct HashUpgradeReport {
     pub total: u64,
     /// Rewritten from the rebuilt input.
     pub upgraded: u64,
-    /// The input could not be rebuilt: the hash is now empty ("unknown baseline"),
-    /// the summary is kept, and the next evaluation adopts a baseline.
+    /// There is no input to rebuild (no raw data, or the entry has no summary
+    /// input): the hash is now empty ("unknown baseline"), the summary is kept, and
+    /// the next evaluation adopts a baseline.
     pub unknown: u64,
+    /// The input could not be rebuilt *now* (a source that cannot be built, an
+    /// error while rebuilding). These rows are left as they are and retried on the
+    /// next run: a failure that may be transient must not turn into "unknown".
+    pub deferred: u64,
 }
 
 impl Pipeline {
     /// Run the hash upgrade if it has not completed. Returns `None` when there was
     /// nothing to do. Idempotent and resumable: rows already at `b2:` or marked
-    /// unknown are skipped, and the marker is set only when every row was visited.
+    /// unknown are skipped. The marker is set only when no row was deferred.
     pub fn upgrade_input_hashes(&self) -> Result<Option<HashUpgradeReport>, PipelineError> {
         if self.catalog().setting_or(HASH_VERSION_KEY, 1i64)? >= UPGRADED {
             return Ok(None);
@@ -57,17 +63,23 @@ impl Pipeline {
             let hosts = match self.hosts(&policy, entries) {
                 Ok(h) => h,
                 Err(e) => {
-                    tracing::warn!(error = %e, "hash upgrade: cannot build the source of an account");
-                    Default::default()
+                    tracing::warn!(error = %e, "hash upgrade: cannot build the source of an account; retrying next run");
+                    report.deferred += entries.len() as u64;
+                    continue;
                 }
             };
             for e in entries {
-                let hash = match self.rebuild_input(&hosts, e) {
-                    Ok(Some(input)) => Some(body_hash(&input.body)),
-                    Ok(None) => None,
-                    Err(err) => {
-                        tracing::debug!(entry = e.id, error = %err, "hash upgrade: input not rebuilt");
-                        None
+                let hash = if e.raw_status != RawStatus::Present {
+                    None
+                } else {
+                    match self.rebuild_input(&hosts, e) {
+                        Ok(Some(input)) => Some(body_hash(&input.body)),
+                        Ok(None) => None,
+                        Err(err) => {
+                            tracing::debug!(entry = e.id, error = %err, "hash upgrade: input not rebuilt; retrying next run");
+                            report.deferred += 1;
+                            continue;
+                        }
                     }
                 };
                 match hash {
@@ -82,13 +94,15 @@ impl Pipeline {
                 }
             }
         }
-        self.catalog()
-            .set_setting(HASH_VERSION_KEY, &serde_json::json!(UPGRADED))?;
+        if report.deferred == 0 {
+            self.catalog()
+                .set_setting(HASH_VERSION_KEY, &serde_json::json!(UPGRADED))?;
+        }
         tracing::info!(?report, "summary input hashes upgraded");
         if report.total > 0 {
             self.emit(Progress::Stage(format!(
-                "summary hash upgrade: {} upgraded, {} unknown (of {})",
-                report.upgraded, report.unknown, report.total
+                "summary hash upgrade: {} upgraded, {} unknown, {} deferred (of {})",
+                report.upgraded, report.unknown, report.deferred, report.total
             )));
         }
         Ok(Some(report))

@@ -217,10 +217,12 @@ impl Built {
         if self.profile.provider != Provider::CodexCli {
             return Ok(());
         }
-        let token = format!("probe-{}", ulid::Ulid::new());
+        // The token is only in the file's content: a reply that merely echoes the
+        // command (and so the file name) must not look like proof that it ran.
+        let token = format!("token-{}", ulid::Ulid::new());
         std::fs::create_dir_all(scratch_dir)
             .map_err(|e| LlmError::Config(format!("{}: {e}", scratch_dir.display())))?;
-        let file = scratch_dir.join(format!("{token}.txt"));
+        let file = scratch_dir.join(format!("probe-{}.txt", ulid::Ulid::new()));
         std::fs::write(&file, &token)
             .map_err(|e| LlmError::Config(format!("{}: {e}", file.display())))?;
         let asked = self

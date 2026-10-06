@@ -405,7 +405,11 @@ One-time, after migrations, gated by the setting `summary.input_hash_version`
 1. For each `summaries` row with `generator_kind` `llm_*` and a hash not starting with
    `b2:`, rebuild the input from raw data (the step `resummarize` uses) and store the
    body-only hash.
-2. If the input cannot be rebuilt, store an empty hash.
+2. If there is no input to rebuild (no raw data, or the entry has no summary input),
+   store an empty hash. If rebuilding *fails* (a source that cannot be built, an
+   error), leave the row unchanged and **defer** it: the marker is not set and the
+   next run retries those rows only, so a transient failure never becomes "unknown".
 3. No LLM call, no change to summaries, sections or `summary_status`. Resumable;
    prints `upgraded / unknown / total` once; `--dry-run` and `--estimate` skip it.
-4. Set the marker to `2` only after every row was visited.
+4. Set the marker to `2` only when no row was deferred. The report line shows
+   `upgraded / unknown / deferred`.

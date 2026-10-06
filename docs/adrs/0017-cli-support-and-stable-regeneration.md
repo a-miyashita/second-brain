@@ -290,3 +290,21 @@ sync of a thousand entries would leave about 450 MB. There is no flag to avoid i
   `done` summaries `done`. Nothing was sent to an LLM.
 - Migration `0003` only inserts the marker `summary.input_hash_version = 1`; the
   data upgrade is code, as decided above.
+
+### 2026-10-07: changes after code review
+
+- Hash upgrade: only a row with **no** input to rebuild becomes "unknown". A rebuild
+  that fails (or a source that cannot be built) is *deferred*: the row is left as it
+  is, the marker stays at `1`, and the next run retries it, so a transient failure
+  cannot permanently lose the baseline.
+- Antigravity fails **closed**: an `init` event without `permission_mode` is refused
+  like an unsafe mode, and the prompt is not sent.
+- Error-text matching for authentication failures is limited to the two new CLIs and
+  to phrases (`please log in`, `unauthorized`, `authentication`, ...), not bare
+  substrings such as `401`; Claude and Copilot keep reporting provider errors.
+- The Codex doctor probe keeps its random token out of the file name, so a reply that
+  only echoes the command is not read as proof that the shell ran.
+- The conversation id used for cleanup must be a canonical **lower-case** UUID.
+- Not changed, on purpose: a `resummarize` that ignores a changed model under the
+  same profile (decided above, `--force` applies it), and a legacy hash that is
+  kept until the upgrade has run (the upgrade runs first on every path that decides).

@@ -1107,7 +1107,8 @@ async fn hash_upgrade_keeps_every_summary_and_calls_no_llm() {
     assert_eq!(summary_calls(&llm).await, 5);
 
     // Put the catalog back in its pre-ADR-0017 state: old-style hashes, marker 1.
-    // One entry also loses its raw data, so its input cannot be rebuilt.
+    // One entry has no raw data (its hash becomes "unknown"); another has lost its
+    // raw files while still marked present (a rebuild error: deferred, not unknown).
     {
         let cat = Catalog::open(&env.home).unwrap();
         cat.conn()
@@ -1119,7 +1120,17 @@ async fn hash_upgrade_keeps_every_summary_and_calls_no_llm() {
             .entry_by_key("acme", SourceKind::SlackThread, "C1:3.0")
             .unwrap()
             .unwrap();
-        for o in cat.raw_objects(victim.id).unwrap() {
+        cat.conn()
+            .execute(
+                "UPDATE entries SET raw_status = 'missing' WHERE id = ?1",
+                [victim.id],
+            )
+            .unwrap();
+        let broken = cat
+            .entry_by_key("acme", SourceKind::SlackThread, "C1:4.0")
+            .unwrap()
+            .unwrap();
+        for o in cat.raw_objects(broken.id).unwrap() {
             let _ = std::fs::remove_file(env.home.root().join(&o.path));
         }
     }
@@ -1128,10 +1139,14 @@ async fn hash_upgrade_keeps_every_summary_and_calls_no_llm() {
     let p = pipeline(&env, None);
     let report = p.upgrade_input_hashes().unwrap().unwrap();
     assert_eq!(report.total, 5);
-    assert_eq!(report.upgraded + report.unknown, 5);
-    assert!(report.upgraded >= 4, "{report:?}");
-    // Running it again is a no-op.
-    assert_eq!(p.upgrade_input_hashes().unwrap(), None);
+    assert_eq!(
+        (report.upgraded, report.unknown, report.deferred),
+        (3, 1, 1),
+        "{report:?}"
+    );
+    // A deferred row keeps the marker at 1: the next run retries only that row.
+    let again = p.upgrade_input_hashes().unwrap().unwrap();
+    assert_eq!((again.total, again.deferred), (1, 1), "{again:?}");
 
     // Rebuilt hashes equal the ones the original ingest wrote.
     let after = stored_hashes(&env);
@@ -1139,6 +1154,8 @@ async fn hash_upgrade_keeps_every_summary_and_calls_no_llm() {
     for ((id, was), (_, now)) in before.iter().zip(&after) {
         if now.is_empty() {
             unknown += 1;
+        } else if now.starts_with("old-") {
+            // Deferred: left exactly as it was.
         } else {
             assert_eq!(was, now, "{id}");
         }
