@@ -649,6 +649,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // Only the stub-executable tests (unix) build requests.
+    #[cfg(unix)]
     fn req() -> CompletionRequest {
         CompletionRequest {
             system: "sys".into(),
@@ -686,6 +688,7 @@ mod tests {
         p
     }
 
+    #[cfg(unix)]
     fn tmp_is_empty(dir: &Path) -> bool {
         std::fs::read_dir(dir.join("tmp")).unwrap().count() == 0
     }
