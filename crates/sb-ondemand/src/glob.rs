@@ -17,9 +17,13 @@ fn go(p: &[char], t: &[char]) -> bool {
         None => t.is_empty(),
         Some('*') if p.get(1) == Some(&'*') => {
             let rest = &p[2..];
-            // `**/` also matches zero segments.
-            let rest = rest.strip_prefix(&['/']).unwrap_or(rest);
-            (0..=t.len()).any(|i| go(rest, &t[i..]))
+            match rest.strip_prefix(&['/']) {
+                // `**/` matches whole segments only, and also zero segments.
+                Some(rest) => (0..=t.len())
+                    .filter(|&i| i == 0 || t[i - 1] == '/')
+                    .any(|i| go(rest, &t[i..])),
+                None => (0..=t.len()).any(|i| go(rest, &t[i..])),
+            }
         }
         Some('*') => {
             let rest = &p[1..];
@@ -52,5 +56,9 @@ mod tests {
         assert!(matches("**/id_?sa", "/home/u/.ssh/id_rsa"));
         assert!(!matches("**/*.pem", "/x/y/key.pem.txt"));
         assert!(matches("/a/b.txt", "/a/b.txt"));
+        // `**/` starts at a segment boundary only.
+        assert!(matches("**/.env.*", "/a/.env.production"));
+        assert!(!matches("**/.env.*", "/a/notes.env.md"));
+        assert!(!matches("**/*.key", "/a/monkey"));
     }
 }

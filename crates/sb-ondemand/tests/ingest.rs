@@ -169,6 +169,15 @@ async fn local_file_duplicates_moves_and_keep_original() {
         .find(|x| x.status == IngestStatus::Duplicate)
         .unwrap();
     assert!(dup.duplicate_of.is_some());
+    // Which of the two is stored first depends on the order of the fetches.
+    let kept = r
+        .iter()
+        .find(|x| x.status == IngestStatus::Created)
+        .unwrap()
+        .locator
+        .clone();
+    // From here on, `a` is the stored file and `b` the duplicate.
+    let (a, b) = if kept == a { (a, b) } else { (b, a) };
     // --force adds the copy as its own entry.
     let o = IngestOptions {
         force: true,
@@ -865,4 +874,160 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
         "import",
         "the origin of an existing entry is kept"
     );
+}
+
+#[tokio::test]
+async fn secret_files_are_denied_everywhere_and_dry_run_agrees() {
+    let env = Env::new(IngestSettings::default());
+    let text = b"API_TOKEN=abcdef0123456789 and some more text to be long enough";
+    let envfile = env.file(".env", text);
+    let envprod = env.file(".env.production", text);
+    let key = env.file("server.key", text);
+    let netrc = env.file(".netrc", text);
+    let ok = env.file("notes.env.md", LONG.as_bytes());
+    for o in [
+        opts(),
+        IngestOptions {
+            dry_run: true,
+            ..opts()
+        },
+    ] {
+        let r = env
+            .ingest(&[&envfile, &envprod, &key, &netrc, &ok], &o)
+            .await;
+        for x in &r[..4] {
+            assert_eq!(x.status, IngestStatus::Failed, "{x:?}");
+            assert!(
+                x.message.as_deref().unwrap().contains("not allowed"),
+                "{x:?}"
+            );
+        }
+        assert!(
+            matches!(
+                r[4].status,
+                IngestStatus::Created
+                    | IngestStatus::WouldCreate
+                    | IngestStatus::WouldUpdate
+                    | IngestStatus::Unchanged
+            ),
+            "{:?}",
+            r[4]
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_symlinked_credential_directory_is_still_denied() {
+    let env = Env::new(IngestSettings::default());
+    // ~/.ssh is a symlink into a dotfiles directory.
+    let dotfiles = env.dir.path().join("dotfiles-ssh");
+    std::fs::create_dir_all(&dotfiles).unwrap();
+    std::fs::write(
+        dotfiles.join("config"),
+        "Host example\n  User someone\n  IdentityFile none",
+    )
+    .unwrap();
+    let ssh = env.dir.path().join("user/.ssh");
+    std::fs::remove_dir_all(&ssh).unwrap();
+    std::os::unix::fs::symlink(&dotfiles, &ssh).unwrap();
+    // Through the link, and straight at the target.
+    let via = ssh.join("config");
+    let direct = dotfiles.join("config");
+    let r = env
+        .ingest(&[via.to_str().unwrap(), direct.to_str().unwrap()], &opts())
+        .await;
+    assert_eq!(r[0].status, IngestStatus::Failed, "{:?}", r[0]);
+    assert!(r[0].message.as_deref().unwrap().contains("not allowed"));
+    // The target is the same place seen from the other side.
+    assert_eq!(r[1].status, IngestStatus::Failed, "{:?}", r[1]);
+    assert_eq!(
+        env.p.catalog().count_entries(&Default::default()).unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn a_configured_proxy_blocks_web_fetches_unless_private_addresses_are_allowed() {
+    let source = |allow| {
+        WebSource::new(
+            sb_core::AccountCtx {
+                id: sb_core::AccountId::new("web").unwrap(),
+                kind: AccountKind::Web,
+                label: "Web".into(),
+                identity: None,
+                config: json!({}),
+            },
+            IngestSettings {
+                web_allow_private: allow,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .with_proxy_env(true)
+    };
+    struct NoHost;
+    impl sb_core::source::SyncHost for NoHost {
+        fn cursor(
+            &self,
+            _: SourceKind,
+            _: &str,
+        ) -> Result<Option<serde_json::Value>, sb_core::source::SourceError> {
+            Ok(None)
+        }
+        fn cursors(
+            &self,
+            _: SourceKind,
+            _: &str,
+        ) -> Result<Vec<(String, serde_json::Value)>, sb_core::source::SourceError> {
+            Ok(vec![])
+        }
+        fn fetch_state(
+            &self,
+            _: SourceKind,
+            _: &str,
+        ) -> Result<Option<serde_json::Value>, sb_core::source::SourceError> {
+            Ok(None)
+        }
+        fn entry_exists(
+            &self,
+            _: SourceKind,
+            _: &str,
+        ) -> Result<bool, sb_core::source::SourceError> {
+            Ok(false)
+        }
+        fn commit(&self, _: sb_core::DiscoveryBatch) -> Result<(), sb_core::source::SourceError> {
+            Ok(())
+        }
+        fn cache_get(
+            &self,
+            _: &str,
+        ) -> Result<Option<serde_json::Value>, sb_core::source::SourceError> {
+            Ok(None)
+        }
+        fn cache_put(
+            &self,
+            _: &str,
+            _: &serde_json::Value,
+            _: Duration,
+        ) -> Result<(), sb_core::source::SourceError> {
+            Ok(())
+        }
+        fn is_cancelled(&self) -> bool {
+            false
+        }
+        fn now(&self) -> chrono::DateTime<chrono::Utc> {
+            chrono::Utc::now()
+        }
+    }
+    let req = sb_core::FetchRequest {
+        source_kind: SourceKind::WebPage,
+        source_id: "https://example.com/".into(),
+        fetch_state: None,
+        metadata: json!(null),
+        hint: json!(null),
+        full: true,
+    };
+    let err = source(false).fetch(&NoHost, &req).await.unwrap_err();
+    assert!(err.to_string().contains("proxy"), "{err}");
 }

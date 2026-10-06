@@ -103,6 +103,12 @@ pub trait Source: Send + Sync {
         None
     }
 
+    /// A reason this source refuses an item, decided without side effects, so that
+    /// a dry run can say so too.
+    fn refusal(&self, _source_id: &str) -> Option<String> {
+        None
+    }
+
     /// Whether `sync` is implemented.
     fn supports_sync(&self) -> bool {
         true

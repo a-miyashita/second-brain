@@ -152,3 +152,18 @@ Decisions are needed on:
 - The duplicate check of `local.file` runs when the entry is committed, one locator at a time.
 - PDF extraction uses `pdf-extract`. It was checked against a synthetic Japanese PDF and an
   English specification, not against real-world Japanese PDFs; see extract.md.
+
+### 2026-10-06: fixes after code review
+
+- **Proxies.** The address guard sits in the DNS resolver, which a proxy bypasses. While
+  the guard is on, no proxy is used, and a fetch is refused when the environment configures
+  one. `ingest.web.allow_private = true` turns both off. (Decision 7 above.)
+- **Denied paths** also cover credential files outside the folders listed there
+  (`~/.netrc`, `~/.config/gh`, `.env` files, private keys, ...), are matched in canonical form
+  even when the denied directory is a symlink, and are applied by `--dry-run`.
+- **Source refusals** are decided without side effects (`Source::refusal`), which is what the
+  dry run uses.
+- The result status of a commit is taken from what the commit did, so an entry that
+  produced no text is `not_applicable`, and a Drive shortcut whose target already exists is
+  `updated`.
+- A document shorter than `summary.min_chars` says so in the result.

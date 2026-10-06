@@ -128,13 +128,17 @@ No new account feature is needed: `docs` and `meet` both grant `drive.readonly`
   is true:
   - refused: loopback, unspecified, private (RFC 1918), link-local
     (`169.254.0.0/16`, `fe80::/10`, which includes cloud metadata endpoints), carrier-grade NAT
-    (`100.64.0.0/10`), unique-local (`fc00::/7`), multicast and IPv4-mapped forms of
-    those;
+    (`100.64.0.0/10`), unique-local (`fc00::/7`), multicast, and the IPv6 forms that
+    embed an IPv4 address: IPv4-mapped, IPv4-compatible, NAT64 (`64:ff9b::/96`,
+    `64:ff9b:1::/48`), Teredo (`2001::/32`) and 6to4 (`2002::/16`, by the embedded address);
   - it is enforced in the **DNS resolver** used by the client, so the check applies to
     the address actually connected to, on every redirect hop, and DNS rebinding cannot
     switch it. An IP literal in the URL is checked before connecting;
-  - behind an HTTP proxy configured in the environment, the proxy resolves names, so
-    only literal addresses can be checked. This is documented, not hidden.
+  - **proxies:** a proxy resolves names itself, so the resolver guard would never run.
+    While the guard is on (`allow_private = false`) the client therefore uses **no proxy**,
+    and when the environment configures one (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`)
+    the fetch is refused with a message that says why. Setting
+    `ingest.web.allow_private = true` turns the guard off and lets the proxy be used.
 - Size: the body is streamed and the fetch is aborted above `ingest.max_file_bytes`.
 - Status handling:
 
@@ -195,13 +199,20 @@ Bodies are logged only at `trace`.
 - The file is read once into memory (limit `ingest.max_file_bytes`) and hashed.
 - **Refused paths** (`failed` with the reason `path is not allowed`; no override):
   - `$SECOND_BRAIN_HOME` and everything below it (it holds the credentials DB);
-  - `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.azure`, `~/.config/gcloud`, `~/.kube`,
-    `~/.docker/config.json`, and on Windows the equivalent profile locations
-    (`%APPDATA%\gcloud`);
-  - any pattern in `ingest.local.deny` (globs, matched on the canonical path).
+  - credential locations under the user's home: `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.azure`,
+    `~/.kube`, `~/.config/gcloud`, `~/.config/gh`, `~/.config/git/credentials`,
+    `~/.docker/config.json`, `~/.netrc`, `~/.npmrc`, `~/.pypirc`, `~/.git-credentials`,
+    `~/.password-store`, `~/.local/share/keyrings`, `~/Library/Keychains`,
+    `~/.terraform.d/credentials.tfrc.json`, and on Windows `%APPDATA%\gcloud` and `\gh`;
+  - secret files anywhere, by name: `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+    `id_rsa*`, `id_dsa*`, `id_ecdsa*`, `id_ed25519*`, `.netrc`, `_netrc`, `.npmrc`, `.pypirc`,
+    `.git-credentials`;
+  - any pattern in `ingest.local.deny` (globs, matched on the canonical path). `**/` in a
+    pattern starts at a path segment, so `**/.env.*` does not match `notes.env.md`.
 
-  The check runs on the **canonical** path, so a symlink into a denied place is refused
-  too.
+  The check runs on the **canonical** path, and the denied locations are checked in their
+  canonical form too, so a symlink into a denied place is refused, and so is a denied
+  directory that is itself a symlink. A dry run reports a denied path as `failed`.
 - Supported formats: by extension, confirmed by content: `txt`, `md`, `markdown`, `csv`,
   `tsv`, `html`, `htm`, `docx`, `pptx`, `xlsx`, `xls`, `ods`, `pdf`. A file with an
   unknown extension is accepted as text if it decodes as text (no NUL bytes); otherwise

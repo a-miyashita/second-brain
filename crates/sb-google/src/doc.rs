@@ -81,11 +81,12 @@ fn file_id(locator: &str) -> Option<String> {
 }
 
 fn forbidden(e: &SourceError) -> bool {
-    matches!(e, SourceError::Api(m) if m.contains("403"))
+    matches!(e, SourceError::Api(m) if m.starts_with("Google API 403"))
 }
 
 fn too_large_to_export(e: &SourceError) -> bool {
-    matches!(e, SourceError::Api(m) if m.to_ascii_lowercase().contains("too large"))
+    matches!(e, SourceError::Api(m)
+        if m.starts_with("Google API 403") && m.to_ascii_lowercase().contains("too large"))
 }
 
 /// Ingest of Drive files for one account.
@@ -261,7 +262,7 @@ impl Source for DocSource {
                         self.settings.max_file_bytes
                     )));
                 }
-                let Some(bytes) = api.download(&id).await? else {
+                let Some(bytes) = api.download(&id, self.settings.max_file_bytes).await? else {
                     return Ok(FetchOutcome::NotFound("download failed: not found".into()));
                 };
                 (bytes, mime.to_string(), name.clone(), "original")

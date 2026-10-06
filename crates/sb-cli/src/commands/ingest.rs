@@ -429,10 +429,15 @@ pub async fn ingest(ctx: &Ctx, a: IngestArgs) -> anyhow::Result<i32> {
                     "{label:<14} {name}{place}  {}",
                     x.message.as_deref().unwrap_or("")
                 ),
-                _ => println!(
-                    "{label:<14} {name}{place}  {}",
-                    x.entry_uid.as_deref().unwrap_or("")
-                ),
+                _ => {
+                    println!(
+                        "{label:<14} {name}{place}  {}",
+                        x.entry_uid.as_deref().unwrap_or("")
+                    );
+                    if let Some(m) = &x.message {
+                        eprintln!("  note: {m}");
+                    }
+                }
             }
         }
         if r.pending > 0 {

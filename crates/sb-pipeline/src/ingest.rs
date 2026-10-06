@@ -403,6 +403,15 @@ impl Pipeline {
                 {
                     r.summary_status = Some(e.summary_status.to_string());
                     r.title = Some(e.title.clone());
+                    if e.summary_status == sb_core::SummaryStatus::Skipped
+                        && matches!(r.status, IngestStatus::Created | IngestStatus::Updated)
+                        && r.message.is_none()
+                    {
+                        r.message = Some(format!(
+                            "shorter than summary.min_chars ({}): kept as searchable text, not summarized",
+                            policy.min_chars
+                        ));
+                    }
                 }
             }
         }
@@ -699,6 +708,14 @@ impl Pipeline {
             fe.source_ref.source_id.clone(),
         );
         let errors_before = host.errors.lock().map(|e| e.len()).unwrap_or(0);
+        let counts = |h: &Host<'_>| {
+            h.stats
+                .lock()
+                .ok()
+                .and_then(|m| m.get(&kind).cloned())
+                .unwrap_or_default()
+        };
+        let before = counts(host);
         host.commit_items(
             vec![Item {
                 fetched: fe,
@@ -714,18 +731,25 @@ impl Pipeline {
             .lock()
             .ok()
             .and_then(|e| e.get(errors_before).cloned());
+        let after = counts(host);
+        // What the commit really did, not what was expected: a document that no
+        // longer yields text is skipped, and a shortcut's target may already exist.
+        let skipped = after.not_applicable > before.not_applicable;
+        let status = if after.new > before.new {
+            IngestStatus::Created
+        } else if after.updated > before.updated || existed {
+            IngestStatus::Updated
+        } else {
+            IngestStatus::Created
+        };
         Ok(match (entry, new_error) {
             (_, Some(e)) => IngestResult::failed(raw, e),
-            (Some(e), None) => IngestResult::new(
+            (_, None) if skipped => IngestResult::new(
                 raw,
-                if existed {
-                    IngestStatus::Updated
-                } else {
-                    IngestStatus::Created
-                },
-                None,
-            )
-            .with_entry(&e),
+                IngestStatus::NotApplicable,
+                Some("no extractable text".into()),
+            ),
+            (Some(e), None) => IngestResult::new(raw, status, None).with_entry(&e),
             (None, None) => IngestResult::new(
                 raw,
                 IngestStatus::NotApplicable,
@@ -811,7 +835,8 @@ impl Pipeline {
                         Some(a) => self.source_for(a)?,
                         None => None,
                     };
-                    match source.and_then(|s| s.resolve(&w.raw)) {
+                    let resolved = source.as_ref().and_then(|s| s.resolve(&w.raw));
+                    match resolved {
                         None => IngestResult::failed(
                             &w.raw,
                             if matches!(other, Locator::Local(_)) {
@@ -820,6 +845,13 @@ impl Pipeline {
                                 "cannot resolve the URL (run `sb setup home` if the web account is missing)"
                             },
                         ),
+                        Some(sref)
+                            if source
+                                .as_ref()
+                                .is_some_and(|s| s.refusal(&sref.source_id).is_some()) =>
+                        {
+                            IngestResult::failed(&w.raw, "path is not allowed")
+                        }
                         Some(sref) => {
                             let existing = self.catalog().entry_by_key(
                                 sref.account_id.as_str(),

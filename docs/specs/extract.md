@@ -96,7 +96,7 @@ caller reports (source-documents.md).
 | `max_decompressed_bytes` | 200 MiB | the sum of all zip members and compressed PDF streams (zip bombs) |
 | `max_entries` | 10 000 | zip members and PDF objects visited |
 | `max_pages` | 2 000 | PDF pages and pptx slides |
-| `max_cells` | 1 000 000 | xlsx / csv cells |
+| `max_cells` | 1 000 000 | xlsx / csv cells. For xlsx, the declared `<dimension>` of every sheet is checked before the workbook is read, because the reader allocates the whole declared range |
 | time | `ingest.extract_timeout_secs` (60) | the caller runs `extract` on a blocking thread with this deadline |
 
 - `extract` is wrapped in `catch_unwind`; a panic inside a parser becomes

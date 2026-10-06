@@ -257,3 +257,28 @@ fn bounded_extraction_times_out_by_deadline() {
     );
     assert!(matches!(r, Err(ExtractError::Timeout(_))), "{r:?}");
 }
+
+#[test]
+fn docx_title_with_entities_is_kept_whole() {
+    let doc = format!(
+        r#"<w:document {W}><w:body><w:p><w:r><w:t>Body text of the document</w:t></w:r></w:p></w:body></w:document>"#
+    );
+    let core = r#"<cp:coreProperties xmlns:cp="x" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>R&amp;D Plan &lt;draft&gt;</dc:title></cp:coreProperties>"#;
+    let bytes = zip_of(&[("word/document.xml", &doc), ("docProps/core.xml", core)]);
+    let r = run(&bytes, "a.docx").unwrap();
+    assert_eq!(r.title.as_deref(), Some("R&D Plan <draft>"));
+}
+
+#[test]
+fn xlsx_with_a_huge_declared_range_is_refused_before_it_is_read() {
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>"#;
+    let wb = r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+    let sheet = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:XFD1048576"/><sheetData/></worksheet>"#;
+    let bytes = zip_of(&[
+        ("[Content_Types].xml", ct),
+        ("xl/workbook.xml", wb),
+        ("xl/worksheets/sheet1.xml", sheet),
+    ]);
+    let r = run(&bytes, "big.xlsx");
+    assert!(matches!(r, Err(ExtractError::TooLarge(_))), "{r:?}");
+}

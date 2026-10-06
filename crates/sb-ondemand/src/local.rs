@@ -46,23 +46,44 @@ impl LocalSource {
         }
     }
 
-    /// Built-in denied directories and files (credential locations).
+    /// Built-in denied directories and files (credential locations). Each is also
+    /// added in its canonical form, so a symlinked `~/.ssh` is covered.
     fn denied_roots(&self) -> Vec<PathBuf> {
         let mut v = vec![self.sb_home.clone()];
         if let Some(h) = &self.user_home {
-            for rel in [
+            let mut rels: Vec<PathBuf> = [
                 ".ssh",
                 ".aws",
                 ".gnupg",
                 ".azure",
-                ".config/gcloud",
                 ".kube",
+                ".config/gcloud",
+                ".config/gh",
+                ".config/git/credentials",
                 ".docker/config.json",
-            ] {
-                v.push(h.join(rel));
-            }
+                ".netrc",
+                ".npmrc",
+                ".pypirc",
+                ".git-credentials",
+                ".password-store",
+                ".local/share/keyrings",
+                ".terraform.d/credentials.tfrc.json",
+                "Library/Keychains",
+            ]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
             if cfg!(windows) {
-                v.push(h.join("AppData").join("Roaming").join("gcloud"));
+                rels.push(PathBuf::from("AppData").join("Roaming").join("gcloud"));
+                rels.push(PathBuf::from("AppData").join("Roaming").join("gh"));
+            }
+            for rel in rels {
+                let p = h.join(rel);
+                let c = canonical(&p);
+                if c != p {
+                    v.push(c);
+                }
+                v.push(p);
             }
         }
         v
@@ -86,12 +107,36 @@ impl LocalSource {
             return true;
         }
         let text = path.to_string_lossy();
-        self.settings
-            .local_deny
+        BUILTIN_DENY_GLOBS
             .iter()
             .any(|pat| glob::matches(pat, &text))
+            || self
+                .settings
+                .local_deny
+                .iter()
+                .any(|pat| glob::matches(pat, &text))
     }
 }
+
+/// Files that hold secrets wherever they are: environment files, private keys and
+/// certificates, and credential files. There is no override (ADR-0014).
+const BUILTIN_DENY_GLOBS: &[&str] = &[
+    "**/.env",
+    "**/.env.*",
+    "**/*.pem",
+    "**/*.key",
+    "**/*.p12",
+    "**/*.pfx",
+    "**/id_rsa*",
+    "**/id_dsa*",
+    "**/id_ecdsa*",
+    "**/id_ed25519*",
+    "**/.netrc",
+    "**/_netrc",
+    "**/.npmrc",
+    "**/.pypirc",
+    "**/.git-credentials",
+];
 
 /// Canonicalize without the Windows `\\?\` prefix. A path that does not exist
 /// is returned as given.
@@ -167,6 +212,12 @@ impl Source for LocalSource {
 
     fn supports_sync(&self) -> bool {
         false
+    }
+
+    fn refusal(&self, source_id: &str) -> Option<String> {
+        let path = url::Url::parse(source_id).ok()?.to_file_path().ok()?;
+        self.is_denied(&canonical(&path))
+            .then(|| "path is not allowed".to_string())
     }
 
     /// The natural key: the canonical absolute path as a `file://` URL.

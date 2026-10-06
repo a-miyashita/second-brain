@@ -73,8 +73,34 @@ fn is_public_v6(v: Ipv6Addr) -> bool {
         // fe80::/10 link-local and fec0::/10 site-local
         || (seg[0] & 0xffc0) == 0xfe80
         || (seg[0] & 0xffc0) == 0xfec0
-        // 64:ff9b::/96 NAT64 (may reach private IPv4 hosts)
-        || (seg[0] == 0x64 && seg[1] == 0xff9b && seg[2..6].iter().all(|s| *s == 0)))
+        // 64:ff9b::/96 and 64:ff9b:1::/48 NAT64 (may reach private IPv4 hosts)
+        || (seg[0] == 0x64 && seg[1] == 0xff9b && (seg[2..6].iter().all(|s| *s == 0) || seg[2] == 1))
+        // ::a.b.c.d IPv4-compatible (deprecated)
+        || seg[..6].iter().all(|s| *s == 0)
+        // 2001::/32 Teredo
+        || (seg[0] == 0x2001 && seg[1] == 0)
+        // 2002::/16 6to4: the embedded IPv4 address decides
+        || (seg[0] == 0x2002
+            && !is_public_v4(Ipv4Addr::new(
+                (seg[1] >> 8) as u8,
+                seg[1] as u8,
+                (seg[2] >> 8) as u8,
+                seg[2] as u8,
+            ))))
+}
+
+/// Whether the environment configures an HTTP proxy.
+fn proxy_in_env() -> bool {
+    [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ]
+    .iter()
+    .any(|k| std::env::var(k).is_ok_and(|v| !v.trim().is_empty()))
 }
 
 /// A DNS resolver that drops non-public addresses.
@@ -168,6 +194,8 @@ pub struct WebSource {
     settings: IngestSettings,
     client: reqwest::Client,
     retry_delay: Duration,
+    /// An HTTP proxy is configured in the environment.
+    proxy_env: bool,
 }
 
 impl WebSource {
@@ -192,7 +220,9 @@ impl WebSource {
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(settings.web_timeout_secs.max(1)));
         if !allow_private {
-            b = b.dns_resolver(Arc::new(GuardedResolver));
+            // Behind a proxy the proxy resolves names, so the guard would never run:
+            // no proxy is used at all while the guard is on.
+            b = b.dns_resolver(Arc::new(GuardedResolver)).no_proxy();
         }
         let client = b
             .build()
@@ -202,7 +232,14 @@ impl WebSource {
             settings,
             client,
             retry_delay: Duration::from_secs(1),
+            proxy_env: proxy_in_env(),
         })
+    }
+
+    /// Pretend that a proxy is (not) configured (tests).
+    pub fn with_proxy_env(mut self, on: bool) -> Self {
+        self.proxy_env = on;
+        self
     }
 
     /// Shorten the wait between retries (tests).
@@ -352,6 +389,14 @@ impl Source for WebSource {
                 "refusing to fetch: {e}; set ingest.web.allow_private to allow intranet pages"
             ))
         })?;
+        if self.proxy_env && !self.settings.web_allow_private {
+            return Err(SourceError::Rejected(
+                "an HTTP proxy is configured, and the guard against non-public addresses cannot \
+                 check names that a proxy resolves; set ingest.web.allow_private to fetch through \
+                 the proxy, or save the page as a file and ingest that"
+                    .into(),
+            ));
+        }
         let state = if req.full {
             None
         } else {
@@ -508,6 +553,11 @@ mod tests {
             "::ffff:127.0.0.1",
             "::ffff:10.0.0.1",
             "64:ff9b::a00:1",
+            "64:ff9b:1::1",
+            "::7f00:1",
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+            "2002:7f00:1::1",
+            "2002:0a00:1::1",
         ] {
             assert!(!ip(private), "{private} must be refused");
         }
@@ -517,6 +567,7 @@ mod tests {
             "93.184.216.34",
             "2606:4700:4700::1111",
             "::ffff:8.8.8.8",
+            "2002:0808:0808::1",
         ] {
             assert!(ip(public), "{public} must be allowed");
         }

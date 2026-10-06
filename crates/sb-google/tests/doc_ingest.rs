@@ -329,6 +329,13 @@ async fn drive_text_files_unsupported_types_and_failures() {
     assert_eq!(t.title, "budget.txt");
     // Shorter than summary.min_chars: kept as extracted text, not summarized.
     assert_eq!(t.summary_status, SummaryStatus::Skipped);
+    assert!(
+        r.results[0]
+            .message
+            .as_deref()
+            .unwrap()
+            .contains("summary.min_chars")
+    );
     assert!(r.has_problems());
 }
 
@@ -342,6 +349,14 @@ async fn shortcut_is_followed_to_its_target() {
         IngestStatus::Created,
         "{:?}",
         r.results
+    );
+    // The target is now known: the same shortcut updates it instead of creating.
+    let r2 = p.ingest(&[url("SHORT1")], &opts()).await.unwrap();
+    assert_eq!(
+        r2.results[0].status,
+        IngestStatus::Updated,
+        "{:?}",
+        r2.results
     );
     let cat = p.catalog();
     assert!(

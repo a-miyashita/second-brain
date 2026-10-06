@@ -108,6 +108,10 @@ then, unless --no-summary:
 | `local.file` with the same content hash as another `local.file` entry | `duplicate`, unless `--force` |
 | The source says "not something we make entries from" (a Drive folder or form, an unsupported file type, no extractable text) | `not_applicable`, with the reason |
 
+A document shorter than `summary.min_chars` is stored with `summary_status = skipped`; the
+result then carries a `message` ("shorter than summary.min_chars (400): kept as searchable
+text, not summarized") and the CLI prints it as a note.
+
 A changed `--context` does **not** change `input_hash` (the hash covers the prompt
 version, the model and the body, see summarization.md), so it does not trigger a new
 summary. Run `sb resummarize --entry <uid>` to apply it.

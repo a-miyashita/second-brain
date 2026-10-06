@@ -167,17 +167,33 @@ pub(crate) fn core_props(
         return (None, None, None);
     };
     let (mut title, mut created, mut modified) = (None, None, None);
+    // Entity references arrive as separate text events, so the text of an
+    // element is collected until it ends.
     let mut cur: Option<String> = None;
+    let mut buf = String::new();
     for ev in evs {
         match ev {
-            Ev::Start(n, _) => cur = Some(n),
-            Ev::End(_) => cur = None,
-            Ev::Text(t) => match cur.as_deref() {
-                Some("title") if !t.trim().is_empty() => title = Some(t),
-                Some("created") => created = crate::parse_time(&t),
-                Some("modified") => modified = crate::parse_time(&t),
-                _ => {}
-            },
+            Ev::Start(n, _) => {
+                cur = Some(n);
+                buf.clear();
+            }
+            Ev::End(_) => {
+                if let Some(name) = cur.take() {
+                    let t = buf.trim().to_string();
+                    match name.as_str() {
+                        "title" if !t.is_empty() => title = Some(t),
+                        "created" => created = crate::parse_time(&t),
+                        "modified" => modified = crate::parse_time(&t),
+                        _ => {}
+                    }
+                }
+                buf.clear();
+            }
+            Ev::Text(t) => {
+                if cur.is_some() {
+                    buf.push_str(&t);
+                }
+            }
             Ev::Empty(..) => {}
         }
     }
