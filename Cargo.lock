@@ -2135,6 +2135,7 @@ name = "sb-llm"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "directories",
  "reqwest",
  "sb-core",
  "serde",

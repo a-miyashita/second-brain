@@ -3,9 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use sb_core::util::summary_input_hash;
-use sb_core::{Normalized, PromptKind, SourceKind, SummaryInput, SummaryStatus};
-use sb_llm::{NATIVE, Profile, prompts::prompt_version};
+use sb_core::util::{BODY_HASH_PREFIX, body_hash, summary_input_hash};
+use sb_core::{GeneratorKind, Normalized, PromptKind, SourceKind, SummaryInput, SummaryStatus};
+use sb_llm::{NATIVE, Profile};
 use sb_store::{Catalog, Entry, SummaryDecision, SummaryRecord};
 
 use crate::error::PipelineError;
@@ -118,13 +118,11 @@ impl SummaryPolicy {
         }
     }
 
-    /// Input hash for a profile.
-    pub fn input_hash(&self, input: &SummaryInput, profile: &Profile) -> String {
-        summary_input_hash(
-            prompt_version(input.prompt),
-            &profile.model_name(),
-            &input.body,
-        )
+    /// The input hash of a summary input: the body alone (ADR-0017). A summary
+    /// is regenerated automatically only when this changes, never because the
+    /// model, the profile or the prompt version did.
+    pub fn input_hash(&self, input: &SummaryInput) -> String {
+        body_hash(&input.body)
     }
 
     /// Decide the summary state of an entry after normalization.
@@ -161,11 +159,23 @@ impl SummaryPolicy {
             return SummaryDecision::Skipped;
         }
         let done = existing.is_some_and(|(e, _)| e.summary_status == SummaryStatus::Done);
-        let current_hash = existing.and_then(|(_, s)| s).map(|s| s.input_hash.as_str());
+        let record = existing.and_then(|(_, s)| s);
+        let hash = self.input_hash(input);
         match profile_name.and_then(|p| self.profile(p)) {
-            Some(p) if done && current_hash == Some(self.input_hash(input, p).as_str()) => {
-                SummaryDecision::Keep
-            }
+            Some(_) if done => match record {
+                // A native summary is replaced by the first LLM one, as before.
+                Some(s) if s.generator_kind == GeneratorKind::SourceNative => {
+                    SummaryDecision::Pending
+                }
+                // Unknown baseline: keep the summary and adopt this body's hash.
+                Some(s) if s.input_hash.is_empty() => {
+                    SummaryDecision::KeepAdopt { input_hash: hash }
+                }
+                Some(s) if s.input_hash == hash => SummaryDecision::Keep,
+                // A hash from before ADR-0017 that the upgrade has not reached yet.
+                Some(s) if !s.input_hash.starts_with(BODY_HASH_PREFIX) => SummaryDecision::Keep,
+                _ => SummaryDecision::Pending,
+            },
             Some(_) => SummaryDecision::Pending,
             // No usable profile: the input hash cannot be computed, so a
             // finished summary is kept and anything else waits for a profile.
@@ -291,5 +301,97 @@ mod tests {
             ),
             SummaryDecision::Native { .. }
         ));
+    }
+
+    fn entry(done: bool) -> Entry {
+        let now = chrono::Utc::now();
+        Entry {
+            id: 1,
+            entry_uid: "u".into(),
+            account_id: "a".into(),
+            source_kind: SourceKind::SlackThread,
+            source_id: "s".into(),
+            source_url: None,
+            title: "t".into(),
+            source_created_at: None,
+            source_updated_at: None,
+            ingested_at: now,
+            updated_at: now,
+            raw_status: sb_core::RawStatus::Present,
+            raw_hash: None,
+            summary_status: if done {
+                SummaryStatus::Done
+            } else {
+                SummaryStatus::Pending
+            },
+            summary_attempts: 0,
+            summary_error: None,
+            fetch_state: None,
+            metadata: json!({}),
+            origin: sb_core::EntryOrigin::Sync,
+        }
+    }
+
+    fn record(kind: GeneratorKind, hash: &str) -> SummaryRecord {
+        SummaryRecord {
+            entry_id: 1,
+            generator_kind: kind,
+            provider: "p".into(),
+            model: "haiku".into(),
+            profile: Some("fast".into()),
+            prompt_version: Some("conversation-summary/v1".into()),
+            input_hash: hash.into(),
+            generated_at: chrono::Utc::now(),
+            usage: None,
+        }
+    }
+
+    /// ADR-0017: only the body decides; the model, the profile and the prompt
+    /// version are not part of the hash.
+    #[test]
+    fn regeneration_depends_on_the_body_alone() {
+        let p = policy();
+        let n = normalized("long enough body", Some(3), false);
+        let hash = body_hash("long enough body");
+        let decide = |e: &Entry, r: &SummaryRecord| {
+            p.decide(SourceKind::SlackThread, &n, Some((e, Some(r))))
+        };
+        let done = entry(true);
+        // Same body: kept, whatever model produced it.
+        assert_eq!(
+            decide(&done, &record(GeneratorKind::LlmCli, &hash)),
+            SummaryDecision::Keep
+        );
+        // A different body: summarize again.
+        assert_eq!(
+            decide(
+                &done,
+                &record(GeneratorKind::LlmCli, &body_hash("older body"))
+            ),
+            SummaryDecision::Pending
+        );
+        // Unknown baseline: keep, and adopt this body's hash.
+        assert_eq!(
+            decide(&done, &record(GeneratorKind::LlmCli, "")),
+            SummaryDecision::KeepAdopt { input_hash: hash }
+        );
+        // A pre-ADR-0017 hash that the upgrade has not reached: keep.
+        assert_eq!(
+            decide(&done, &record(GeneratorKind::LlmApi, "9f2c-legacy")),
+            SummaryDecision::Keep
+        );
+        // A source-native summary is replaced by the first LLM summary.
+        assert_eq!(
+            decide(&done, &record(GeneratorKind::SourceNative, "native")),
+            SummaryDecision::Pending
+        );
+        // Not done yet: pending, whatever the hash says.
+        assert_eq!(
+            decide(
+                &entry(false),
+                &record(GeneratorKind::LlmCli, &body_hash("long enough body"))
+            ),
+            SummaryDecision::Pending
+        );
     }
 }

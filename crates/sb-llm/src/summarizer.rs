@@ -272,6 +272,38 @@ mod tests {
         assert_eq!(out.usage, usage, "the output carries the same total");
     }
 
+    /// Reports a different resolved model on each call.
+    struct Resolving(Mutex<u32>);
+
+    #[async_trait]
+    impl Backend for Resolving {
+        async fn complete(&self, _req: &CompletionRequest) -> Result<Completion, LlmError> {
+            let mut n = self.0.lock().unwrap();
+            *n += 1;
+            Ok(Completion {
+                text: r#"{"overview":"part","decisions":[],"action_items":[]}"#.into(),
+                usage: Usage {
+                    calls: 1,
+                    model: Some(format!("resolved-{n}")),
+                    ..Default::default()
+                },
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn the_last_resolved_model_is_reported() {
+        let body: String = (0..300)
+            .map(|i| format!("line {i} with some words\n"))
+            .collect();
+        let mut s = summarizer(&[], 2_000).1;
+        s.backend = Arc::new(Resolving(Mutex::new(0)));
+        let mut usage = Usage::default();
+        s.summarize_tracked(&input(body), &mut usage).await.unwrap();
+        assert!(usage.calls >= 4);
+        assert_eq!(usage.model, Some(format!("resolved-{}", usage.calls)));
+    }
+
     #[tokio::test]
     async fn map_reduce_for_long_input() {
         let body: String = (0..300)

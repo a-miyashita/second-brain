@@ -76,7 +76,7 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 | `sb refetch [filters] [--raw-missing]` | M | Fetch raw data again by natural key; enables re-summarization of imported entries |
 | `sb reextract [filters]` | M | Re-run `normalize` on stored raw data (no network) |
 | `sb summarize [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--retry-failed] [--profile ..]` | M | Process entries with `summary_status = pending/failed` (below the attempt limit) |
-| `sb resummarize [filters] [--profile P \| --native] [--where-model M] [--dry-run] [--estimate] [--limit N] [--max-cost USD] [--time-limit DUR] [--force]` | M | Overwrite generated sections for matching entries. Entries already at the target generator are skipped, so re-running resumes (see [summarization.md](summarization.md)) |
+| `sb resummarize [filters] [--profile P \| --native] [--where-model M] [--dry-run] [--estimate] [--limit N] [--max-cost USD] [--time-limit DUR] [--force]` | M | Overwrite generated sections for matching entries. Entries already produced by the same profile with the target prompt version and the same body are skipped, so re-running resumes; the recorded model is not compared, so a changed model setting needs `--force` (ADR-0017, see [summarization.md](summarization.md)) |
 | `sb import <bundle-dir> [--map kind=account]... [--dry-run]` | M | Import a bundle (see [import-format.md](import-format.md)) |
 | `sb scan-links [--since ..] [--account ..]` | 2 | List Google Docs links in Slack entries that have decisions or action items and are not yet ingested |
 
@@ -111,7 +111,7 @@ Options added during implementation (all additive):
   definition cannot set `SB_TRIGGER` (Windows Task Scheduler).
 - `sb search --all-sections`: every matching section instead of the best one per
   entry (search.md).
-- `sb setup llm [--preset anthropic|openai|claude_cli|copilot_cli|local] [--name N]
+- `sb setup llm [--preset anthropic|openai|claude_cli|copilot_cli|codex_cli|antigravity_cli|local] [--name N]
   [--model M] [--base-url URL] [--no-default] [--no-test]` for non-interactive use.
 - `sb setup schedule --dry-run` prints the task XML, plists, crontab block or
   systemd units without installing them.

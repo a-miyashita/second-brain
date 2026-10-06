@@ -20,6 +20,8 @@ pub enum Provider {
     OpenaiCompatible,
     ClaudeCli,
     CopilotCli,
+    CodexCli,
+    AntigravityCli,
 }
 
 impl Provider {
@@ -32,6 +34,8 @@ impl Provider {
             Provider::OpenaiCompatible => "openai-compatible",
             Provider::ClaudeCli => "claude-cli",
             Provider::CopilotCli => "copilot-cli",
+            Provider::CodexCli => "codex-cli",
+            Provider::AntigravityCli => "antigravity-cli",
         }
     }
 
@@ -50,6 +54,8 @@ impl Provider {
         match self {
             Provider::ClaudeCli => Some("claude"),
             Provider::CopilotCli => Some("copilot"),
+            Provider::CodexCli => Some("codex"),
+            Provider::AntigravityCli => Some("agy"),
             _ => None,
         }
     }
@@ -139,7 +145,10 @@ impl Profile {
                 &[GeneratorKind::LlmApi][..]
             }
             Provider::OpenaiCompatible => &[GeneratorKind::LocalLlm, GeneratorKind::LlmApi][..],
-            Provider::ClaudeCli | Provider::CopilotCli => &[GeneratorKind::LlmCli][..],
+            Provider::ClaudeCli
+            | Provider::CopilotCli
+            | Provider::CodexCli
+            | Provider::AntigravityCli => &[GeneratorKind::LlmCli][..],
         };
         if !expected.contains(&self.kind) {
             return Err(err(&format!(
@@ -148,7 +157,11 @@ impl Profile {
                 self.provider.recorded_name()
             )));
         }
-        if self.cli_binary().is_none() && self.model.as_deref().unwrap_or("").is_empty() {
+        // Codex and Antigravity have no alias that follows new versions and are run
+        // with an explicit model (ADR-0017).
+        let needs_model = self.cli_binary().is_none()
+            || matches!(self.provider, Provider::CodexCli | Provider::AntigravityCli);
+        if needs_model && self.model.as_deref().unwrap_or("").is_empty() {
             return Err(err("model is required"));
         }
         if self.provider == Provider::OpenaiCompatible && self.base_url.is_none() {
@@ -195,6 +208,35 @@ mod tests {
         assert_eq!(p.concurrency, 4);
         assert_eq!(p.max_input_chars, DEFAULT_MAX_INPUT_CHARS);
         assert_eq!(p.secret_ref().as_deref(), Some("global:anthropic.api_key"));
+    }
+
+    #[test]
+    fn codex_and_antigravity_profiles() {
+        for (provider, bin, recorded) in [
+            ("codex_cli", "codex", "codex-cli"),
+            ("antigravity_cli", "agy", "antigravity-cli"),
+        ] {
+            let p = Profile::from_value(
+                "x",
+                &json!({"kind": "llm_cli", "provider": provider, "model": "some-model"}),
+            )
+            .unwrap();
+            assert_eq!(p.cli_binary(), Some(bin));
+            assert_eq!(p.provider.recorded_name(), recorded);
+            // No alias follows new versions, so a model is required.
+            assert!(
+                Profile::from_value("x", &json!({"kind": "llm_cli", "provider": provider}))
+                    .is_err()
+            );
+            // They are CLI providers only.
+            assert!(
+                Profile::from_value(
+                    "x",
+                    &json!({"kind": "llm_api", "provider": provider, "model": "m"})
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

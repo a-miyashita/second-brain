@@ -92,7 +92,7 @@ Scheduled runs also write their log to `logs/<date>.log`.
 
 ### PATH for LLM CLIs
 
-At registration, the absolute paths of the configured LLM CLIs (`claude`, `copilot`)
+At registration, the absolute paths of the configured LLM CLIs (`claude`, `copilot`, `codex`, `agy`)
 are resolved, along with the executable of any local LLM profile's `start_command`.
 Their directories are added to the job's `PATH`, so they are found in the minimal
 cron and launchd environment.

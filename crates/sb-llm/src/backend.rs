@@ -1,7 +1,5 @@
 //! Completion backends: HTTP APIs and CLI subprocesses.
 
-use std::path::PathBuf;
-use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -9,9 +7,6 @@ use reqwest::StatusCode;
 use sb_core::summarizer::LlmError;
 use sb_core::{Secret, Usage};
 use serde_json::{Value, json};
-use tokio::io::AsyncWriteExt;
-
-use crate::prices::estimate_tokens;
 
 /// A message role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,6 +211,7 @@ impl Backend for AnthropicBackend {
                 duration_ms: started.elapsed().as_millis() as u64,
                 cost_usd: None,
                 calls: 1,
+                model: None,
             },
         })
     }
@@ -319,177 +315,9 @@ impl Backend for OpenAiBackend {
                 duration_ms: started.elapsed().as_millis() as u64,
                 cost_usd: None,
                 calls: 1,
+                model: None,
             },
         })
-    }
-}
-
-/// Which CLI a `CliBackend` drives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CliFlavor {
-    Claude,
-    Copilot,
-}
-
-/// An LLM CLI run as a subprocess in a fresh empty directory, with the prompt
-/// on stdin (summarization.md).
-pub struct CliBackend {
-    pub flavor: CliFlavor,
-    pub program: PathBuf,
-    pub model: Option<String>,
-    pub extra_args: Vec<String>,
-    /// Parent of the per-call empty working directories.
-    pub scratch_dir: PathBuf,
-}
-
-impl CliBackend {
-    fn args(&self) -> Vec<String> {
-        let mut a: Vec<String> = match self.flavor {
-            CliFlavor::Claude => vec![
-                "-p".into(),
-                "--output-format".into(),
-                "json".into(),
-                "--tools".into(),
-                String::new(),
-                "--no-session-persistence".into(),
-            ],
-            CliFlavor::Copilot => vec![
-                "-s".into(),
-                "--no-color".into(),
-                "--stream".into(),
-                "off".into(),
-            ],
-        };
-        if let Some(m) = &self.model {
-            a.push("--model".into());
-            a.push(m.clone());
-        }
-        a.extend(self.extra_args.iter().cloned());
-        a
-    }
-
-    fn render_prompt(req: &CompletionRequest) -> String {
-        let mut s = format!("{}\n\n", req.system);
-        for (role, text) in &req.messages {
-            match role {
-                Role::User => s.push_str(text),
-                Role::Assistant => {
-                    s.push_str("\n\n<previous_answer>\n");
-                    s.push_str(text);
-                    s.push_str("\n</previous_answer>\n\n");
-                }
-            }
-        }
-        s
-    }
-}
-
-#[async_trait]
-impl Backend for CliBackend {
-    async fn complete(&self, req: &CompletionRequest) -> Result<Completion, LlmError> {
-        let started = Instant::now();
-        let work = self.scratch_dir.join(format!("llm-{}", ulid::Ulid::new()));
-        std::fs::create_dir_all(&work)
-            .map_err(|e| LlmError::Config(format!("{}: {e}", work.display())))?;
-        let prompt = Self::render_prompt(req);
-        let result = async {
-            let mut child = tokio::process::Command::new(&self.program)
-                .args(self.args())
-                .current_dir(&work)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()
-                .map_err(|e| LlmError::Unreachable(format!("{}: {e}", self.program.display())))?;
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin
-                    .write_all(prompt.as_bytes())
-                    .await
-                    .map_err(|e| LlmError::Provider(format!("writing prompt: {e}")))?;
-            }
-            let out = tokio::time::timeout(req.timeout, child.wait_with_output())
-                .await
-                .map_err(|_| {
-                    LlmError::Timeout(format!(
-                        "{} did not finish in {:?}",
-                        self.program.display(),
-                        req.timeout
-                    ))
-                })?
-                .map_err(|e| LlmError::Provider(e.to_string()))?;
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            if !out.status.success() {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                let detail = if stderr.trim().is_empty() {
-                    stdout.trim().to_string()
-                } else {
-                    stderr.trim().to_string()
-                };
-                let detail: String = detail.chars().take(500).collect();
-                return Err(LlmError::Provider(format!(
-                    "{} exited with {}: {detail}",
-                    self.program.display(),
-                    out.status
-                )));
-            }
-            Ok(stdout)
-        }
-        .await;
-        let _ = std::fs::remove_dir_all(&work);
-        let stdout = result?;
-        let duration_ms = started.elapsed().as_millis() as u64;
-        match self.flavor {
-            CliFlavor::Claude => {
-                let v: Value = serde_json::from_str(stdout.trim())
-                    .map_err(|e| LlmError::Provider(format!("claude output is not JSON: {e}")))?;
-                if v.get("is_error").and_then(Value::as_bool) == Some(true) {
-                    let msg = v
-                        .get("result")
-                        .and_then(Value::as_str)
-                        .unwrap_or("unknown error");
-                    return Err(LlmError::Provider(format!("claude: {msg}")));
-                }
-                let text = v
-                    .get("result")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                let input = v
-                    .pointer("/usage/input_tokens")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0)
-                    + v.pointer("/usage/cache_read_input_tokens")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0)
-                    + v.pointer("/usage/cache_creation_input_tokens")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0);
-                Ok(Completion {
-                    text,
-                    usage: Usage {
-                        input_tokens: input,
-                        output_tokens: v
-                            .pointer("/usage/output_tokens")
-                            .and_then(Value::as_u64)
-                            .unwrap_or(0),
-                        duration_ms,
-                        cost_usd: v.get("total_cost_usd").and_then(Value::as_f64),
-                        calls: 1,
-                    },
-                })
-            }
-            CliFlavor::Copilot => Ok(Completion {
-                usage: Usage {
-                    input_tokens: estimate_tokens(&prompt),
-                    output_tokens: estimate_tokens(&stdout),
-                    duration_ms,
-                    cost_usd: None,
-                    calls: 1,
-                },
-                text: stdout,
-            }),
-        }
     }
 }
 
@@ -598,35 +426,5 @@ mod tests {
             b.probe(Duration::from_secs(2)).await,
             Err(LlmError::Unreachable(_))
         ));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn claude_cli_stub() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let stub = dir.path().join("claude");
-        // The stub checks that it runs in an empty directory and echoes JSON.
-        std::fs::write(
-            &stub,
-            "#!/bin/sh\ncat > /dev/null\n[ -z \"$(ls -A .)\" ] || exit 3\nprintf '{\"type\":\"result\",\"is_error\":false,\"result\":\"{\\\\\"overview\\\\\":\\\\\"ok\\\\\"}\",\"usage\":{\"input_tokens\":5,\"output_tokens\":2},\"total_cost_usd\":0.001}'\n",
-        )
-        .unwrap();
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let b = CliBackend {
-            flavor: CliFlavor::Claude,
-            program: stub,
-            model: Some("haiku".into()),
-            extra_args: vec![],
-            scratch_dir: dir.path().join("tmp"),
-        };
-        let c = b.complete(&req()).await.unwrap();
-        assert_eq!(c.text, "{\"overview\":\"ok\"}");
-        assert_eq!(c.usage.cost_usd, Some(0.001));
-        // The working directory was removed.
-        assert_eq!(
-            std::fs::read_dir(dir.path().join("tmp")).unwrap().count(),
-            0
-        );
     }
 }

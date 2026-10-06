@@ -1,6 +1,6 @@
 # Data model (catalog schema)
 
-Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014.
+Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014, 0017.
 
 SQLite, WAL mode, `foreign_keys = ON`. Timestamps are stored as RFC 3339 text in UTC.
 IDs named `id INTEGER` are internal rowids. Entry IDs exposed to users are
@@ -117,13 +117,13 @@ At most one row per entry, overwritten on regeneration (ADR-0005).
 |---|---|---|
 | `entry_id` | PK, FK | |
 | `generator_kind` | TEXT | `llm_api`, `llm_cli`, `local_llm`, `source_native` |
-| `provider` | TEXT | `anthropic`, `openai`, `google`, `claude-cli`, `copilot-cli`, `openai-compatible`, ... |
-| `model` | TEXT | e.g. `claude-haiku-4-5`, `gemini-meet-notes` |
+| `provider` | TEXT | `anthropic`, `openai`, `google`, `claude-cli`, `copilot-cli`, `codex-cli`, `antigravity-cli`, `openai-compatible`, ... |
+| `model` | TEXT | The model that produced the summary: for `llm_cli` the model the CLI reported (e.g. `claude-haiku-4-5-20251001`, ADR-0017), else the configured model; `gemini-meet-notes` for native. Older rows may hold an alias such as `haiku` |
 | `profile` | TEXT NULL | summarizer profile name used |
 | `prompt_version` | TEXT NULL | e.g. `entry-summary/v1`; NULL for `source_native` |
-| `input_hash` | TEXT | hash of the exact summarizer input |
+| `input_hash` | TEXT | `b2:<sha256 of the body>` for `llm_*` (ADR-0017); empty = unknown baseline (adopted without regenerating); the native hash for `source_native`. Pre-`b2` values are rewritten by the hash upgrade |
 | `generated_at` | TEXT | for imported entries, the original time if known |
-| `usage` | TEXT (JSON) NULL | tokens in/out, duration |
+| `usage` | TEXT (JSON) NULL | tokens in/out, duration, and the reported `model` when there is one |
 
 ### `llm_usage`
 
@@ -138,7 +138,7 @@ Append-only ledger of paid summarization attempts (ADR-0013). Migration `0002`.
 | `profile` | TEXT | summarizer profile name |
 | `generator_kind` | TEXT | `llm_api`, `llm_cli`, `local_llm` |
 | `provider` | TEXT | |
-| `model` | TEXT | |
+| `model` | TEXT | Same as `summaries.model`: the resolved model for `llm_cli` (ADR-0017) |
 | `input_tokens`, `output_tokens` | INTEGER | |
 | `calls` | INTEGER | LLM calls the attempt made (more than one for a repair, a retry or map-reduce) |
 | `cost_usd` | REAL NULL | provider-reported or tokens times price; `0` for `local_llm`; NULL when no price is known |
@@ -276,3 +276,10 @@ keeps backends swappable.
 6. `llm_usage` and `budget_periods` are never rewritten or pruned by the tool, so
    the history of spend and caps can be looked up at any time. The only copy of
    a period's spend is the ledger.
+
+### Hash upgrade marker (ADR-0017)
+
+Migration `0003` inserts the setting `summary.input_hash_version = 1` with
+`INSERT OR IGNORE` and changes no table. The upgrade step (summarization.md) sets it
+to `2`. A migration cannot read raw files, so the data upgrade is code gated by this
+marker.

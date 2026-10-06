@@ -101,3 +101,17 @@ See [ADR-0015](0015-local-llm-not-recommended.md). The `local_llm` kind and the
 - the interactive Foundry Local wizard in Consequences is **not** built;
 - summaries from models smaller than Haiku class are discouraged; the Foundry Local
   runtime is only "an OpenAI-compatible server" like Ollama or llama.cpp.
+
+### 2026-10-06: resolved model and body-only hash
+
+See [ADR-0017](0017-cli-support-and-stable-regeneration.md). It changes two points
+above; the rest of this ADR stands.
+
+- For `llm_cli` providers the recorded `model` is the model the CLI reports it used,
+  not the configured alias.
+- `input_hash` is the hash of the body alone, not "the exact text given to the
+  summarizer" with model and prompt version. Automatic re-summarization during sync
+  therefore happens only when the body changes; a different model or prompt version
+  never triggers it.
+- The provider table gains `codex_cli` and `antigravity_cli` (`llm_cli`), with the same
+  empty-directory isolation. Their rules are in ADR-0017, Part 2.

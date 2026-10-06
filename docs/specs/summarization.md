@@ -1,6 +1,6 @@
 # Summarization
 
-Related ADRs: 0005, 0013, 0014, 0015.
+Related ADRs: 0005, 0013, 0014, 0015, 0017.
 
 ## Output structure
 
@@ -66,8 +66,14 @@ The source adapter produces a `SummaryInput`:
 | google.meet | The transcript if present (embedded in the notes or a separate document; see source-google-meet.md), after mechanical cleanup. Otherwise the Gemini notes document text (the second case re-summarizes Gemini's own summary; allowed, but `doctor` shows how many meet entries lack transcripts) |
 | documents | The extracted text (from `sb-extract`, see [extract.md](extract.md)); the user context (`sb ingest --context`) is passed separately as a hint. The `details` section of the entry holds the same text, `extracted` |
 
-- `input_hash` is SHA-256 over the prompt version, the profile's model and the body.
-  A sync skips summarization when the stored `input_hash` matches.
+- `input_hash` is `b2:` followed by the SHA-256 of the **body alone** (ADR-0017).
+  The model, the provider, the profile and the prompt version are not part of it. A
+  sync skips summarization when the stored `input_hash` matches, so a summary is
+  regenerated automatically **only when its body changes**; switching model, tool or
+  prompt applies to new and changed entries only. `source_native` hashes are
+  unchanged.
+  - An empty stored hash means "unknown baseline" (see *Hash upgrade*): the summary is
+    kept and the first rebuildable body's hash is adopted without regenerating.
 - **Long inputs:** if the body exceeds the profile's `max_input_chars` (default
   40 000, tunable per profile), it is summarized map-reduce style:
   1. split into chunks on message or paragraph boundaries;
@@ -265,7 +271,7 @@ Setting `llm.profiles.<name>`:
 ```toml
 [llm.profiles.fast]
 kind = "llm_api"            # llm_api | llm_cli | local_llm
-provider = "anthropic"      # anthropic | openai | google | openai_compatible | claude_cli | copilot_cli
+provider = "anthropic"      # anthropic | openai | google | openai_compatible | claude_cli | copilot_cli | codex_cli | antigravity_cli
 model = "claude-haiku-4-5"
 concurrency = 8
 max_input_chars = 40000
@@ -284,6 +290,13 @@ keep_alive = "30m"                    # optional; forwarded where the runtime su
 ```
 
 The profile model strings above are examples only.
+
+For `llm_cli` profiles, `model` is a request passed to the CLI and may be an alias
+(`haiku`) that follows the newest model of its class. What is **recorded** in
+`summaries.model` and `llm_usage.model` is the model the CLI reports it used
+(ADR-0017), unchanged (for example `claude-haiku-4-5-20251001`); the configured name
+is recorded only when the CLI reports nothing usable. The profile name is recorded in
+`profile`.
 
 Selecting a profile:
 
@@ -336,10 +349,24 @@ command's directory (see setup-and-scheduling.md).
   project `AGENTS.md` / `CLAUDE.md` is picked up.
 - The prompt goes on stdin, so there are no argv length limits. A timeout applies
   (default 300 s).
-- `claude_cli`: `claude -p --output-format json [--model M]`.
+- `claude_cli`: `claude -p --output-format json [--model M]`. The resolved model is
+  the key of `modelUsage` in the JSON result (the one with the most output tokens if
+  there are several). The exact shape is checked against a real run at implementation
+  time.
 - `copilot_cli`: `copilot -p <prompt>` with the equivalent non-interactive flags.
   The exact flags are verified at implementation time.
-- The CLI's login state is checked by `sb doctor --online` with a trivial prompt.
+- `codex_cli` and `antigravity_cli` (ADR-0017, Part 2): the exact arguments,
+  parsing, safety rules and the Antigravity conversation cleanup are in the ADR. In
+  short:
+  - both run with reasoning effort fixed to `low` and with tools disabled (Codex) or
+    default-denied (Antigravity); the model is configured with the full versioned id
+    (`gpt-6-luna`, `gemini-3.8-flash`);
+  - neither reports a cost: calls are *unpriced* and do not use the budget caps;
+  - Antigravity refuses to run when `~/.gemini/antigravity-cli/settings.json` has a
+    non-empty `permissions.allow`, treats an empty response as an error, and deletes
+    its own stored conversation after each call.
+- The CLI's login state is checked by `sb doctor --online` with a trivial prompt. For
+  Codex the probe also checks that a shell command is not executed.
 
 ## `sb resummarize`
 
@@ -351,10 +378,13 @@ sb resummarize [--account A] [--source K] [--since D] [--until D] [--entry UID].
 ```
 
 1. Select entries by the filters. `--where-model` matches the current
-   `summaries.model`. Entries whose current summary already has the target
-   generator (provider, model, prompt version) and the same `input_hash` are
-   **skipped** unless `--force` is given. That is what makes an interrupted
-   re-summarization resumable: run the same command again.
+   `summaries.model` **exactly** (the resolved model, ADR-0017). Entries whose
+   current summary was produced by the **same profile name**, has the target prompt
+   version and the same `input_hash` are **skipped** unless `--force` is given.
+   That is what makes an interrupted re-summarization resumable: run the same command
+   again. The recorded model is deliberately not compared: if the `model` setting of
+   a profile changed, use `--force` or a new profile name. A new prompt version
+   makes older entries eligible without `--force`.
 2. Skip entries with `raw_status != present`, and report how many. The suggested
    remedy is `sb refetch` on the same filters.
 3. `--estimate`: count tokens (character-based heuristic) and show the estimated
@@ -366,3 +396,20 @@ sb resummarize [--account A] [--source K] [--since D] [--until D] [--entry UID].
    re-index. The limits and graceful-stop rules above apply.
 6. `--native` (google.meet only) re-extracts Gemini notes from raw data and records
    `source_native` again.
+
+## Hash upgrade (ADR-0017)
+
+One-time, after migrations, gated by the setting `summary.input_hash_version`
+(`1` from migration `0003`, `2` when complete):
+
+1. For each `summaries` row with `generator_kind` `llm_*` and a hash not starting with
+   `b2:`, rebuild the input from raw data (the step `resummarize` uses) and store the
+   body-only hash.
+2. If there is no input to rebuild (no raw data, or the entry has no summary input),
+   store an empty hash. If rebuilding *fails* (a source that cannot be built, an
+   error), leave the row unchanged and **defer** it: the marker is not set and the
+   next run retries those rows only, so a transient failure never becomes "unknown".
+3. No LLM call, no change to summaries, sections or `summary_status`. Resumable;
+   prints `upgraded / unknown / total` once; `--dry-run` and `--estimate` skip it.
+4. Set the marker to `2` only when no row was deferred. The report line shows
+   `upgraded / unknown / deferred`.

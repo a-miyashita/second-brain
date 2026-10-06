@@ -1015,3 +1015,217 @@ async fn estimate_compares_with_the_remaining_budget() {
         .unwrap();
     assert!(est.budget.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// ADR-0017: resolved model, body-only regeneration, hash upgrade
+// ---------------------------------------------------------------------------
+
+fn set_fake_model(env: &Env, llm: &MockServer, model: &str) {
+    Catalog::open(&env.home)
+        .unwrap()
+        .set_setting(
+            "llm.profiles.fake",
+            &json!({"kind": "local_llm", "provider": "openai_compatible", "model": model,
+                    "base_url": format!("{}/v1", llm.uri()), "concurrency": 2}),
+        )
+        .unwrap();
+}
+
+fn stored_hashes(env: &Env) -> Vec<(String, String)> {
+    let cat = Catalog::open(&env.home).unwrap();
+    let mut v: Vec<(String, String)> = cat
+        .list_entries(&EntryFilter::default())
+        .unwrap()
+        .into_iter()
+        .map(|e| {
+            (
+                e.source_id.clone(),
+                cat.summary(e.id).unwrap().unwrap().input_hash,
+            )
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+#[tokio::test]
+async fn a_model_change_is_not_a_reason_to_resummarize_but_a_body_change_is() {
+    let llm = mock_llm().await;
+    let env = env(&llm).await;
+    let p = pipeline(&env, None);
+    p.sync(&SyncOptions::default()).await.unwrap();
+    assert_eq!(summary_calls(&llm).await, 5);
+    assert!(
+        stored_hashes(&env)
+            .iter()
+            .all(|(_, h)| h.starts_with("b2:")),
+        "body-only hashes"
+    );
+
+    // Switch the model of the profile and change one thread's body.
+    set_fake_model(&env, &llm, "another-model");
+    env.remote
+        .lock()
+        .unwrap()
+        .get_mut("C1:0.0")
+        .unwrap()
+        .push(long_msg(9));
+    let p = pipeline(&env, None);
+    let r = p.sync(&SyncOptions::default()).await.unwrap();
+    assert_eq!(r.stats.summaries.summarized, 1, "only the changed body");
+    assert_eq!(summary_calls(&llm).await, 6);
+
+    // `resummarize` does not compare the model either: the profile name matches.
+    let opts = SummarizeOptions {
+        filter: EntryFilter::default(),
+        target: Target::Profile("fake".into()),
+        limits: Limits::default(),
+        retry_failed: false,
+        force: false,
+        estimate_only: false,
+    };
+    let r = p.resummarize(&opts).await.unwrap();
+    assert_eq!((r.stats.summarized, r.stats.already_current), (0, 5));
+    // A changed model under the same profile is applied explicitly, with --force.
+    let r = p
+        .resummarize(&SummarizeOptions {
+            force: true,
+            ..opts
+        })
+        .await
+        .unwrap();
+    assert_eq!(r.stats.summarized, 5);
+}
+
+#[tokio::test]
+async fn hash_upgrade_keeps_every_summary_and_calls_no_llm() {
+    let llm = mock_llm().await;
+    let env = env(&llm).await;
+    let p = pipeline(&env, None);
+    p.sync(&SyncOptions::default()).await.unwrap();
+    let before = stored_hashes(&env);
+    assert_eq!(summary_calls(&llm).await, 5);
+
+    // Put the catalog back in its pre-ADR-0017 state: old-style hashes, marker 1.
+    // One entry has no raw data (its hash becomes "unknown"); another has lost its
+    // raw files while still marked present (a rebuild error: deferred, not unknown).
+    {
+        let cat = Catalog::open(&env.home).unwrap();
+        cat.conn()
+            .execute("UPDATE summaries SET input_hash = 'old-' || entry_id", [])
+            .unwrap();
+        cat.set_setting("summary.input_hash_version", &json!(1))
+            .unwrap();
+        let victim = cat
+            .entry_by_key("acme", SourceKind::SlackThread, "C1:3.0")
+            .unwrap()
+            .unwrap();
+        cat.conn()
+            .execute(
+                "UPDATE entries SET raw_status = 'missing' WHERE id = ?1",
+                [victim.id],
+            )
+            .unwrap();
+        let broken = cat
+            .entry_by_key("acme", SourceKind::SlackThread, "C1:4.0")
+            .unwrap()
+            .unwrap();
+        for o in cat.raw_objects(broken.id).unwrap() {
+            let _ = std::fs::remove_file(env.home.root().join(&o.path));
+        }
+    }
+    let snapshot_before = snapshot(&env.home);
+
+    let p = pipeline(&env, None);
+    let report = p.upgrade_input_hashes().unwrap().unwrap();
+    assert_eq!(report.total, 5);
+    assert_eq!(
+        (report.upgraded, report.unknown, report.deferred),
+        (3, 1, 1),
+        "{report:?}"
+    );
+    // A deferred row keeps the marker at 1: the next run retries only that row.
+    let again = p.upgrade_input_hashes().unwrap().unwrap();
+    assert_eq!((again.total, again.deferred), (1, 1), "{again:?}");
+
+    // Rebuilt hashes equal the ones the original ingest wrote.
+    let after = stored_hashes(&env);
+    let mut unknown = 0;
+    for ((id, was), (_, now)) in before.iter().zip(&after) {
+        if now.is_empty() {
+            unknown += 1;
+        } else if now.starts_with("old-") {
+            // Deferred: left exactly as it was.
+        } else {
+            assert_eq!(was, now, "{id}");
+        }
+    }
+    assert_eq!(unknown as u64, report.unknown);
+
+    // Nothing is regenerated by the next sync; summaries and sections are intact.
+    let r = p.sync(&SyncOptions::default()).await.unwrap();
+    assert_eq!(r.stats.summaries.summarized, 0);
+    assert_eq!(summary_calls(&llm).await, 5);
+    let snapshot_after = snapshot(&env.home);
+    for (b, a) in snapshot_before.iter().zip(&snapshot_after) {
+        assert_eq!(
+            (&b.0, &b.1, &b.3),
+            (&a.0, &a.1, &a.3),
+            "status and sections"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_cli_summary_records_the_model_the_cli_reported() {
+    use std::os::unix::fs::PermissionsExt;
+    let llm = mock_llm().await;
+    let env = env(&llm).await;
+    let stub = env._dir.path().join("claude-stub");
+    std::fs::write(
+        &stub,
+        r#"#!/bin/sh
+cat > /dev/null
+printf '%s' '{"is_error":false,"result":"{\"overview\":\"o\",\"decisions\":[],\"action_items\":[]}","usage":{"input_tokens":10,"output_tokens":2},"total_cost_usd":0.001,"modelUsage":{"claude-haiku-4-5-20251001":{"outputTokens":2}}}'
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    {
+        let cat = Catalog::open(&env.home).unwrap();
+        cat.set_setting(
+            "llm.profiles.cli",
+            &json!({"kind": "llm_cli", "provider": "claude_cli", "model": "haiku",
+                    "command": stub.to_string_lossy(), "concurrency": 1}),
+        )
+        .unwrap();
+        cat.set_setting("summary.profile.default", &json!("cli"))
+            .unwrap();
+        // The CLI reports its own cost, so the caps do not need a price.
+        cat.set_setting("summary.budget.weekly_usd", &json!(0))
+            .unwrap();
+        cat.set_setting("summary.budget.monthly_usd", &json!(0))
+            .unwrap();
+    }
+    let p = pipeline(&env, None);
+    let r = p.sync(&SyncOptions::default()).await.unwrap();
+    assert_eq!(r.stats.summaries.summarized, 5, "{:?}", r.stats.errors);
+
+    let cat = Catalog::open(&env.home).unwrap();
+    for e in cat.list_entries(&EntryFilter::default()).unwrap() {
+        let s = cat.summary(e.id).unwrap().unwrap();
+        assert_eq!(s.model, "claude-haiku-4-5-20251001");
+        assert_eq!(s.profile.as_deref(), Some("cli"));
+        assert_eq!(s.provider, "claude-cli");
+    }
+    let models: Vec<String> = cat
+        .conn()
+        .prepare("SELECT DISTINCT model FROM llm_usage")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(models, ["claude-haiku-4-5-20251001"]);
+}

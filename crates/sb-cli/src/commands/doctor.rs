@@ -487,6 +487,7 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
         }
     }
     let mut problems = Vec::new();
+    let mut agy_problems = Vec::new();
     let mut ok_profiles = Vec::new();
     let mut seen = HashSet::new();
     for (key, name) in &used {
@@ -523,7 +524,25 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
                 continue;
             }
         }
+        if profile.provider == sb_llm::Provider::AntigravityCli {
+            let problem = match sb_llm::antigravity_state_dir() {
+                Some(dir) => sb_llm::antigravity_permissions_problem(&dir),
+                None => Some("cannot locate the home directory".into()),
+            };
+            if let Some(p) = problem {
+                agy_problems.push(format!("profile {name}: {p}"));
+                continue;
+            }
+        }
         ok_profiles.push((name.clone(), profile));
+    }
+    if !agy_problems.is_empty() {
+        r.add(
+            "llm.antigravity_permissions",
+            Status::Error,
+            Some(agy_problems.join("; ")),
+            Some("remove the permissions.allow rules from ~/.gemini/antigravity-cli/settings.json, or use another provider"),
+        );
     }
     if problems.is_empty() {
         r.ok(
@@ -574,6 +593,10 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
                 }
             }
             if let Err(e) = built.test_call().await {
+                failed.push(format!("{name}: {e}"));
+                continue;
+            }
+            if let Err(e) = built.tool_probe(&cat.home().tmp_dir()).await {
                 failed.push(format!("{name}: {e}"));
             }
         }

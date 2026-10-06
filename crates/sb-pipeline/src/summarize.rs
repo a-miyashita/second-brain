@@ -150,7 +150,7 @@ impl Pipeline {
     }
 
     /// Hosts per account, for normalization.
-    fn hosts<'a>(
+    pub(crate) fn hosts<'a>(
         &'a self,
         policy: &'a SummaryPolicy,
         entries: &[Entry],
@@ -172,7 +172,7 @@ impl Pipeline {
     }
 
     /// Rebuild the summary input of an entry from raw data.
-    fn rebuild_input(
+    pub(crate) fn rebuild_input(
         &self,
         hosts: &HashMap<String, Host<'_>>,
         e: &Entry,
@@ -191,6 +191,9 @@ impl Pipeline {
         &self,
         opts: &SummarizeOptions,
     ) -> Result<SummarizeReport, PipelineError> {
+        if !opts.estimate_only {
+            self.upgrade_input_hashes()?;
+        }
         let policy = SummaryPolicy::load(&self.catalog())?;
         if opts.retry_failed && !opts.estimate_only {
             self.catalog().reset_summary_attempts(&opts.filter)?;
@@ -230,6 +233,9 @@ impl Pipeline {
         &self,
         opts: &SummarizeOptions,
     ) -> Result<SummarizeReport, PipelineError> {
+        if !opts.estimate_only {
+            self.upgrade_input_hashes()?;
+        }
         let policy = SummaryPolicy::load(&self.catalog())?;
         let entries = self.catalog().list_entries(&EntryFilter {
             limit: None,
@@ -253,12 +259,9 @@ impl Pipeline {
                 "resummarize needs --profile or --native".into(),
             ));
         };
-        let profile = policy
-            .profile(profile_name)
-            .ok_or_else(|| {
-                PipelineError::Invalid(format!("profile {profile_name:?} is not defined"))
-            })?
-            .clone();
+        policy.profile(profile_name).ok_or_else(|| {
+            PipelineError::Invalid(format!("profile {profile_name:?} is not defined"))
+        })?;
         let hosts = self.hosts(&policy, &entries)?;
         let target_version =
             |input: &SummaryInput| sb_llm::prompts::prompt_version(input.prompt).to_string();
@@ -268,11 +271,12 @@ impl Pipeline {
                 // Skip entries already at the target generator with the same input.
                 let current = self.catalog().summary(e.id)?;
                 if let Some(s) = current
-                    && s.provider == profile.provider.recorded_name()
-                    && s.model == profile.model_name()
+                    // The recorded model is not compared (ADR-0017): a model change
+                    // is applied explicitly, with `--force` or a new profile.
+                    && s.profile.as_deref() == Some(profile_name.as_str())
                     && let Some(input) = self.rebuild_input(&hosts, e)?
                     && s.prompt_version.as_deref() == Some(target_version(&input).as_str())
-                    && s.input_hash == policy.input_hash(&input, &profile)
+                    && s.input_hash == policy.input_hash(&input)
                 {
                     report.stats.already_current += 1;
                     continue;
@@ -714,8 +718,8 @@ impl Pipeline {
                 .set_summary_status(e.id, SummaryStatus::Skipped)?;
             return Ok(Outcome::Skipped);
         }
-        let hash = policy.input_hash(&input, &built.profile);
-        let generator = built.summarizer.generator(&input);
+        let hash = policy.input_hash(&input);
+        let mut generator = built.summarizer.generator(&input);
 
         // The budget gate (ADR-0013): local models are free and never gated.
         let paid = built.profile.kind != GeneratorKind::LocalLlm;
@@ -744,6 +748,11 @@ impl Pipeline {
 
         let mut usage = Usage::default();
         let result = built.summarizer.summarize_tracked(&input, &mut usage).await;
+        // A CLI that resolved an alias (`haiku`) reports the model it really used;
+        // that is what gets recorded, also for billed calls that failed (ADR-0017).
+        if let Some(m) = usage.model.clone() {
+            generator.model = m;
+        }
         // Local models cost nothing; otherwise the provider's cost, else tokens
         // times price, else unknown.
         let cost = if paid {
