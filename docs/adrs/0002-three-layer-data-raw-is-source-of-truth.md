@@ -66,3 +66,17 @@ Rules:
   generator metadata cleanly, and duplicates what the catalog holds.
 - **Store raw blobs inside SQLite**: simpler backup, but bloats the DB and makes
   large transcripts awkward. Files plus a SHA-256 in the catalog are enough.
+
+## Amendments
+
+### 2026-10-06: raw data of ingested documents is the extracted text
+
+For the sources `google.doc`, `web.page` and `local.file`
+([ADR-0014](0014-single-item-ingest.md)), the raw layer holds the **extracted Markdown
+text** (role `extracted_text`), not the original file. The original bytes are kept only
+on request (`--keep-original`). The reasons: these sources can be fetched again by
+their natural key, link rot is accepted, and nothing reads the original binary. The
+rest of this ADR is unchanged: raw files are never modified after they are written, and
+`raw_status` and `refetch` work as described. For these sources, "raw data" means "the
+source content in the smallest form that search and summarization can use", and
+re-extraction with a better extractor needs `sb refetch`, not `sb reextract`.

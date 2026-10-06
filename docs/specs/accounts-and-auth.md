@@ -31,6 +31,10 @@ JSON with the whole organization.
    | `gmail` | `gmail.readonly` |
 
    The base scopes are always `openid` and `email`.
+
+   `sb ingest` of Google Docs (ADR-0014) needs only `drive.readonly`, so an account
+   added with either `meet` or `docs` can ingest. Which account reads a given file is
+   described in [ingest.md](ingest.md#choosing-the-google-account).
 3. Run the flow:
    - PKCE;
    - a loopback listener on `127.0.0.1:0`;

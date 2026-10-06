@@ -1,6 +1,6 @@
 # Summarization
 
-Related ADRs: 0005, 0013.
+Related ADRs: 0005, 0013, 0014, 0015.
 
 ## Output structure
 
@@ -54,7 +54,7 @@ Prompts are embedded per purpose, each with a version:
 |---|---|
 | `conversation-summary/v1` | slack.* |
 | `meeting-summary/v1` | google.meet from transcript. Also produces `details` |
-| `document-summary/v1` | google.doc, web.page, local.file, mail.* |
+| `document-summary/v2` | google.doc, web.page, local.file, mail.*. The body is wrapped in delimiters and the system prompt states that it is untrusted data, not instructions (ADR-0014). The user context is a separate hint |
 
 ## Input construction
 
@@ -64,7 +64,7 @@ The source adapter produces a `SummaryInput`:
 |---|---|
 | slack.* | The formatted conversation (the same text as the `extracted` details section) |
 | google.meet | The transcript if present (embedded in the notes or a separate document; see source-google-meet.md), after mechanical cleanup. Otherwise the Gemini notes document text (the second case re-summarizes Gemini's own summary; allowed, but `doctor` shows how many meet entries lack transcripts) |
-| documents | Extracted text; the user context is passed separately as a hint |
+| documents | The extracted text (from `sb-extract`, see [extract.md](extract.md)); the user context (`sb ingest --context`) is passed separately as a hint. The `details` section of the entry holds the same text, `extracted` |
 
 - `input_hash` is SHA-256 over the prompt version, the profile's model and the body.
   A sync skips summarization when the stored `input_hash` matches.
@@ -271,15 +271,15 @@ concurrency = 8
 max_input_chars = 40000
 secret = "global:anthropic.api_key"   # optional; env fallback per ADR-0003
 
-[llm.profiles.npu]
+[llm.profiles.local]
 kind = "local_llm"
 provider = "openai_compatible"
-base_url = "http://127.0.0.1:5273/v1" # discovered by `sb setup llm` for Foundry Local
-model = "phi-4-mini-instruct-openvino-npu"
+base_url = "http://127.0.0.1:11434/v1" # the server's OpenAI-compatible endpoint
+model = "<a model of at least Haiku-class quality>"
 concurrency = 1
 request_timeout_secs = 300
 warmup_timeout_secs = 600             # first call may include model load
-start_command = ["foundry", "service", "start"]   # optional; run if the server is unreachable
+start_command = ["ollama", "serve"]   # optional; run if the server is unreachable
 keep_alive = "30m"                    # optional; forwarded where the runtime supports it
 ```
 
@@ -295,8 +295,15 @@ Selecting a profile:
 
 ### Local LLM servers (`kind = "local_llm"`)
 
-The model is loaded and kept by the server process (Foundry Local, OpenVINO Model
-Server, Ollama, llama.cpp server), not by second-brain. Each summary is one HTTP
+**Not recommended for summaries unless the model is large** (ADR-0015). Models of
+about 5 to 10B parameters summarize and translate with low accuracy, and a wrong
+summary is worse than none because search and agents trust it. The practical floor is
+Haiku class. NPU-hosted models cannot produce long outputs. Use a local model only if
+it is big enough to reach that quality. `sb setup llm` and the docs say so, but do not
+block it.
+
+The model is loaded and kept by the server process (Ollama, llama.cpp server, vLLM,
+any OpenAI-compatible gateway), not by second-brain. Each summary is one HTTP
 request. Loading happens at most once per server lifetime, or again after the
 runtime's idle unload. It never happens per entry.
 
@@ -333,19 +340,6 @@ command's directory (see setup-and-scheduling.md).
 - `copilot_cli`: `copilot -p <prompt>` with the equivalent non-interactive flags.
   The exact flags are verified at implementation time.
 - The CLI's login state is checked by `sb doctor --online` with a trivial prompt.
-
-### Foundry Local wizard (`sb setup llm`, phase 2)
-
-1. Detect the `foundry` CLI and the service status (`foundry service status`), and
-   discover the endpoint URL.
-2. List catalog models, highlighting NPU/OpenVINO variants for the detected
-   hardware.
-3. Download and load the selected model if needed. The user confirms first, because
-   models are large.
-4. Run a test summarization with a fixed sample and show the output and latency.
-5. Save the profile. Optionally set it as the default for a source kind.
-
-The wizard is a library function in `sb-setup`, so a future GUI can reuse it.
 
 ## `sb resummarize`
 

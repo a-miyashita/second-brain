@@ -1,6 +1,6 @@
 # Data model (catalog schema)
 
-Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013.
+Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014.
 
 SQLite, WAL mode, `foreign_keys = ON`. Timestamps are stored as RFC 3339 text in UTC.
 IDs named `id INTEGER` are internal rowids. Entry IDs exposed to users are
@@ -82,7 +82,7 @@ Indexes: `(source_kind, source_created_at)`, `(account_id)`, `(summary_status)`,
 |---|---|---|
 | `id` | INTEGER PK | |
 | `entry_id` | FK → entries ON DELETE CASCADE | |
-| `role` | TEXT | `primary`, `notes`, `transcript`, `attachment`, `extracted_text` |
+| `role` | TEXT | `primary`, `notes`, `transcript`, `attachment`, `extracted_text`. For `google.doc`, `web.page` and `local.file` the raw data is the `extracted_text` object; `primary` (the original bytes) exists only with `--keep-original` (ADR-0014) |
 | `seq` | INTEGER | segment number, 0-based. Appending sources add segments; a replace writes only 0 |
 | `path` | TEXT | relative to `$SECOND_BRAIN_HOME` |
 | `media_type` | TEXT | |
@@ -117,7 +117,7 @@ At most one row per entry, overwritten on regeneration (ADR-0005).
 |---|---|---|
 | `entry_id` | PK, FK | |
 | `generator_kind` | TEXT | `llm_api`, `llm_cli`, `local_llm`, `source_native` |
-| `provider` | TEXT | `anthropic`, `openai`, `google`, `claude-cli`, `copilot-cli`, `foundry-local`, ... |
+| `provider` | TEXT | `anthropic`, `openai`, `google`, `claude-cli`, `copilot-cli`, `openai-compatible`, ... |
 | `model` | TEXT | e.g. `claude-haiku-4-5`, `gemini-meet-notes` |
 | `profile` | TEXT NULL | summarizer profile name used |
 | `prompt_version` | TEXT NULL | e.g. `entry-summary/v1`; NULL for `source_native` |
@@ -243,7 +243,11 @@ keeps backends swappable.
 | `participants`: `[{name, email?}]`, `absentees` | google.meet |
 | `transcript_url`, `calendar_url`, `recurring` | google.meet |
 | `channel_id`, `channel_name`, `channel_kind` (`channel`, `private`, `dm`, `group_dm`), `thread_ts`, `message_count` | slack.* |
-| `mime_type`, `drive_file_id` | google.doc |
+| `drive_file_id`, `mime_type`, `owners`, `drive_modified_time`, `export_format` | google.doc |
+| `fetched_url`, `final_url`, `canonical_url`, `site_name`, `content_type`, `http_last_modified`, `http_etag` | web.page |
+| `path`, `file_name`, `size`, `media_type`, `file_mtime` | local.file |
+| `context`, `title_override`, `date_override` | google.doc, web.page, local.file: values given to `sb ingest`, stored with the fetch metadata |
+| `extractor`, `doc_title`, `doc_created`, `doc_modified`, `text_truncated`, `page_count`, `sheet_names`, `slide_count`, `extract_warnings`, `original_sha256`, `original_size` | google.doc, web.page, local.file: written at fetch time with the extraction (extract.md) |
 | `import_ref` | imported entries: the entry's identifier in the exporting tool |
 
 ## Invariants

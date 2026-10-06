@@ -9,6 +9,7 @@
 | S3 | Can cargo-dist install to `%LOCALAPPDATA%\Programs\second-brain\bin` and `~/.local/bin` and update `PATH`? | Custom installer, or not |
 | S4 | Copilot CLI non-interactive flags, JSON output, skill directory, MCP config path | summarization.md and agent-integration.md |
 | S5 | Windows Task Scheduler without a console window flash | setup-and-scheduling.md |
+| S6 | Which pure-Rust libraries extract text well enough from PDF (Japanese and English), docx, pptx, xlsx and HTML, and survive malformed files? (phase 2, for `sb ingest`) | Library choice and PDF scope in extract.md |
 
 The results are recorded as amendments to the relevant specs, or as new ADRs if a
 decision changes.
@@ -47,7 +48,7 @@ early, so real imported data is available for testing search.
   expected entries in the top results.
 - `sb doctor` is clean.
 
-### Status (2026-09-29)
+### Status (2026-10-06)
 
 | # | State |
 |---|---|
@@ -56,6 +57,7 @@ early, so real imported data is available for testing search.
 | 10–13 | Done (`sb refetch`/`reextract`, `sb auth`/`account`/`config`, `sb doctor`, `sb setup` and the wizard) |
 | 14 | Done (`assets/skills/second-brain/`) |
 | 15 | Done (README guides) |
+| Phase 2: `sb ingest` | Done: `google.doc`, `web.page`, `local.file`, `sb-extract` (ADR-0014, [ingest.md](ingest.md)). Spike S6 resolved for everything except real-world PDFs, see [extract.md](extract.md) |
 
 Not done yet:
 
@@ -71,9 +73,9 @@ Not done yet:
 
 - MCP server + `setup mcp`.
 - `sb ingest` with `google.doc` (Drive export and `sb-extract`), `local.file` and
-  `web.page`.
+  `web.page`: **done**, see [ingest.md](ingest.md).
 - `scan-links`.
-- Gemini API summarizer, and the Foundry Local wizard.
+- Gemini API summarizer. (The Foundry Local wizard was dropped, ADR-0015.)
 - Notification sinks `slack_dm` and `desktop` (needs `chat:write` in the manifest).
 - `meet_api` strategy (if S1 is positive).
 

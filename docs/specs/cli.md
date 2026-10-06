@@ -1,6 +1,6 @@
 # CLI specification
 
-Related ADRs: 0001, 0009, 0010.
+Related ADRs: 0001, 0009, 0010, 0014, 0015.
 
 The binary is `second-brain`, with alias `sb`. Examples use `sb`.
 
@@ -23,7 +23,7 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 |---|---|---|
 | `sb setup [--yes]` | M | Interactive wizard running the steps below in order |
 | `sb setup home` | M | Create home directory, DB, permissions, pseudo-accounts |
-| `sb setup llm` | M (basic) / 2 (Foundry Local wizard) | Create or edit summarizer profiles, test them |
+| `sb setup llm` | M | Create or edit summarizer profiles, test them |
 | `sb setup schedule [--time HH:MM] [--deep-day DAY --deep-time HH:MM] [--systemd] [--remove]` | M | Register or remove scheduled jobs |
 | `sb setup skills --target copilot\|claude\|codex\|all [--remove]` | M | Install agent skill files |
 | `sb setup mcp --client <name> [--apply]` | 2 | Print or apply MCP client config |
@@ -48,7 +48,7 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 | Command | Phase | Description |
 |---|---|---|
 | `sb sync [--account ..] [--source ..] [--deep] [--since DATE] [--no-summary] [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--dry-run] [--estimate]` | M | Incremental, resumable sync of all enabled accounts and sources, then pending summaries, then indexing. Interrupt any time; re-run to continue (ADR-0012) |
-| `sb ingest <url-or-path>... [--account ..] [--title ..] [--context ..] [--date ..] [--force]` | 2 | Single-item ingest (Google Docs/Drive, URL, local file). `--context` becomes the `background` section |
+| `sb ingest <url-or-path>... [--account ..] [--title ..] [--context ..] [--date ..] [--force] [--keep-original] [--no-summary] [--dry-run]` | M ([ingest.md](ingest.md)) | Single-item ingest (Google Docs/Drive, web page, local file). `--context` becomes the `background` section. `--json` schema `sb.ingest/v1` |
 | `sb refetch [filters] [--raw-missing]` | M | Fetch raw data again by natural key; enables re-summarization of imported entries |
 | `sb reextract [filters]` | M | Re-run `normalize` on stored raw data (no network) |
 | `sb summarize [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--retry-failed] [--profile ..]` | M | Process entries with `summary_status = pending/failed` (below the attempt limit) |
