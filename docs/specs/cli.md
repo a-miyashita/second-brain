@@ -47,7 +47,31 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 
 | Command | Phase | Description |
 |---|---|---|
-| `sb sync [--account ..] [--source ..] [--deep] [--since DATE] [--no-summary] [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--dry-run] [--estimate]` | M | Incremental, resumable sync of all enabled accounts and sources, then pending summaries, then indexing. Interrupt any time; re-run to continue (ADR-0012) |
+| `sb sync [--account ..] [--source ..] [--deep] [--since DATE\|AGE] [--until DATE\|AGE] [--no-summary] [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--dry-run] [--estimate]` | M | Incremental, resumable sync of all enabled accounts and sources, then pending summaries, then indexing. Interrupt any time; re-run to continue (ADR-0012). The first window is `sync.initial_days` (default 30); `--since`/`--until` extend coverage backwards (below, ADR-0016) |
+
+`sb sync --since` / `--until` (ADR-0016):
+
+- `--since X` extends the data **backwards** to X. After the normal forward step, each
+  selected scope fetches only `[X, covered_since)` and then records `covered_since = X`.
+  Scopes already covered back to X are skipped. Example: after a 30-day first sync,
+  `sb sync --since 90d` fetches days 31–90 only.
+- `--since X --until Y` fetches the explicit window `[X, Y)` regardless of coverage
+  (repair, re-fetch). Coverage is recorded only if the window reaches the covered
+  interval (`Y >= covered_since`); otherwise the window is fetched but untracked, and
+  the command says so.
+- `--until` without `--since` is a usage error. `Y` later than the run start is
+  clamped to it.
+- `X` and `Y` accept `YYYY-MM-DD`, RFC 3339, or an age such as `90d` or `12w`
+  (before the run start). For Slack they are rounded down to local midnight.
+- `--estimate` (pending summaries) and `--dry-run` (queued items) do not fetch, so
+  `--since` / `--until` do not change them; they are still validated. Budget caps
+  apply as usual.
+- `--json` (`sb.sync/v1` and `sb.stats/v1`) adds `coverage`, a list of
+  `{"account", "source", "covered_since", "covered_until"}` (additive; `source` is
+  `slack` or `google.meet`; `null` means unknown). `covered_since` is the start that
+  holds for every scope of the source (the latest one), `covered_until` the earliest
+  forward cursor.
+- `sb stats` shows the same coverage per account and source.
 | `sb ingest <url-or-path>... [--account ..] [--title ..] [--context ..] [--date ..] [--force] [--keep-original] [--no-summary] [--dry-run]` | M ([ingest.md](ingest.md)) | Single-item ingest (Google Docs/Drive, web page, local file). `--context` becomes the `background` section. `--json` schema `sb.ingest/v1` |
 | `sb refetch [filters] [--raw-missing]` | M | Fetch raw data again by natural key; enables re-summarization of imported entries |
 | `sb reextract [filters]` | M | Re-run `normalize` on stored raw data (no network) |

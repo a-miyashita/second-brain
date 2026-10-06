@@ -36,7 +36,12 @@ second-brain setup
 4. **schedule**: confirm the daily and weekly times, and register the jobs.
 5. **skills**: detect which agent CLIs are installed and offer to install the skill
    for each.
-6. **first sync**: offer `sb sync --estimate`, then `sb sync`.
+6. **first sync**:
+   - Show the initial window and let the user change it (`sync.initial_days`, default
+     30; ADR-0016). It applies to every source.
+   - Offer `sb sync --estimate`, then `sb sync`.
+   - Print the way to go further back later: `sb sync --since 90d` fetches only
+     what is older than what is already covered.
 
 Every step is idempotent. `--yes` accepts the defaults for non-interactive use.
 

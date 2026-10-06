@@ -13,7 +13,7 @@ of workspace users per account, with a daily run of a few minutes.
 | `exclude_channels` | `[]` | Names, or DM partner names/handles, to skip |
 | `mention_scan` | `all` | For other joined channels: `all` (history scan + search), `search_only`, `off` |
 | `search_terms` | `[]` | Extra names for mention search; empty uses profile display name and handle |
-| `backfill_days` | `365` | Initial look-back for new conversations |
+| `initial_days` | global `sync.initial_days` (`30`) | Look-back for conversations without a cursor, on the first sync and for conversations that appear later (ADR-0016). Replaces `backfill_days` (365), which is now ignored |
 | `thread_watch_days` | `45` | Watch threads for new replies up to this age (last activity) |
 | `thread_hot_days` | `7` | Threads always checked. Older watched threads are checked only in `--deep` |
 | `dormant_days` | `30` | Conversations idle this long are only scanned in `--deep` (except `full_channels`) |
@@ -138,8 +138,33 @@ snapshot it needs is passed in through its context.
      incremental.
 - **Deep run** (`--deep`, weekly): also dormant conversations and all watched threads
   up to `thread_watch_days`.
-- **New `full_channels`** are backfilled `backfill_days` automatically. Other
+- **New conversations** (no cursor: first sync, a new DM, a newly joined channel, a
+  new `full_channels` entry) start at `run_started_at - initial_days`. Other
   conversations continue from their cursors.
+- **Cursor and coverage** (ADR-0016). Each conversation's `sync_state` value
+  `conv:<id>` holds the forward cursor `oldest` (= `covered_until`) and
+  `covered_since`, the start of the contiguous interval fetched so far. A run
+  captures `run_started_at` once and never fetches past it; the cursor advances to
+  at most `run_started_at - sync.overlap_secs`.
+- **Extending backwards** (`sb sync --since X [--until Y]`):
+  1. Run the normal forward step first.
+  2. For each conversation, including dormant ones, fetch `[X, covered_since)`
+     (or the explicit `[X, Y)`) in 7-day windows, **newest first**, so that every
+     committed window extends the contiguous coverage. Each
+     window commits its entries, the enqueued threads and the new `covered_since`
+     in one transaction, so an interruption repeats at most one window.
+  3. Conversations that have no cursor first get the initial window, then the
+     extension.
+  4. The involvement search uses `after:`/`before:` for the range. Watched-thread
+     handling is unchanged.
+  5. A missing `covered_since` (cursor written before ADR-0016) is treated as equal
+     to `oldest`.
+- **Day alignment.** A `slack.day` entry only appends messages newer than its
+  `fetch_state.last_ts`, so a day must never be fetched in two pieces from the
+  backward side. The start of an initial window, `X` and `Y` are therefore rounded
+  **down to local midnight** in `slack.day_timezone`, and `covered_since` is always
+  such a midnight. The boundary day is thus fetched whole by whichever run reaches it
+  first, and a later extension starts at the previous midnight.
 - **Rate limits:** honour `Retry-After` on HTTP 429. Parallelism across methods is
   bounded by `fetch_jobs`, because limits are per method.
 - **Edits and deletions** of earlier messages are not tracked by incremental

@@ -24,6 +24,10 @@ references/
 4. **Always cite** `cite_url` next to each claim, with the date and the meeting or
    channel name.
 5. Raw data (`sb show --raw`) is read only when the user asks for verbatim content.
+   When a question concerns a period and a search finds nothing, check `sb stats`
+   coverage before concluding that nothing happened: the data may not reach that
+   far back. Suggest `sb sync --since <age>` to the user; the agent does not run it
+   itself, because it can spend money (ADR-0016).
 6. **Adding documents** (`sb ingest`, [ingest.md](ingest.md)):
    - `sb ingest <url|path> --context "<why>"`;
    - ask at most one question (which project or case the document relates to);
