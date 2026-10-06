@@ -165,6 +165,9 @@ pub struct StoredRaw {
 pub enum SummaryDecision {
     /// Leave summary status and generated sections alone.
     Keep,
+    /// Leave the summary alone and record this hash as its baseline: the stored
+    /// hash was unknown (empty), so there is nothing to compare with (ADR-0017).
+    KeepAdopt { input_hash: String },
     /// The summary input changed: summarize again. Old generated sections stay
     /// searchable until they are replaced.
     Pending,
@@ -539,6 +542,12 @@ pub(crate) fn upsert_entry_tx(
         write_sections(conn, entry_id, SectionOrigin::User, &n.sections, false)?;
         match &n.summary {
             SummaryDecision::Keep => {}
+            SummaryDecision::KeepAdopt { input_hash } => {
+                conn.execute(
+                    "UPDATE summaries SET input_hash = ?2 WHERE entry_id = ?1 AND input_hash = ''",
+                    params![entry_id, input_hash],
+                )?;
+            }
             SummaryDecision::Pending => {
                 set_summary_status(conn, entry_id, SummaryStatus::Pending, true)?
             }
@@ -758,6 +767,28 @@ impl Catalog {
                 },
             )
             .opt()
+    }
+
+    /// Entries whose LLM summary still has a pre-ADR-0017 input hash: neither a
+    /// body-only hash (`b2:`) nor the empty "unknown baseline" marker.
+    pub fn summaries_with_legacy_hash(&self) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT entry_id FROM summaries
+             WHERE generator_kind != 'source_native' AND input_hash != ''
+               AND input_hash NOT LIKE 'b2:%' ORDER BY entry_id",
+        )?;
+        let ids = stmt.query_map([], |r| r.get(0))?;
+        Ok(ids.collect::<std::result::Result<Vec<i64>, _>>()?)
+    }
+
+    /// Replace the stored input hash of a summary (the hash upgrade; the empty
+    /// string means "unknown baseline").
+    pub fn set_summary_input_hash(&self, entry_id: i64, hash: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE summaries SET input_hash = ?2 WHERE entry_id = ?1",
+            params![entry_id, hash],
+        )?;
+        Ok(())
     }
 
     pub fn raw_objects(&self, entry_id: i64) -> Result<Vec<RawObjectRow>> {

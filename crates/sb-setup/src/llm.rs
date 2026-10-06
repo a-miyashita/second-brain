@@ -47,6 +47,20 @@ pub fn presets() -> Vec<Preset> {
             binary: Some("copilot"),
         },
         Preset {
+            key: "codex_cli",
+            label: "OpenAI Codex CLI (`codex exec`)",
+            profile: json!({"kind": "llm_cli", "provider": "codex_cli", "model": "gpt-6-luna", "concurrency": 1}),
+            secret: None,
+            binary: Some("codex"),
+        },
+        Preset {
+            key: "antigravity_cli",
+            label: "Google Antigravity CLI (`agy`)",
+            profile: json!({"kind": "llm_cli", "provider": "antigravity_cli", "model": "gemini-3.8-flash", "concurrency": 1}),
+            secret: None,
+            binary: Some("agy"),
+        },
+        Preset {
             key: "local",
             label: "OpenAI-compatible server (Ollama, llama.cpp, vLLM, ...); not recommended below Haiku-class quality",
             profile: json!({"kind": "local_llm", "provider": "openai_compatible", "base_url": "http://127.0.0.1:11434/v1",

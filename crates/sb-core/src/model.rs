@@ -202,6 +202,11 @@ pub struct Usage {
     pub cost_usd: Option<f64>,
     /// Number of LLM calls (more than one for map-reduce).
     pub calls: u32,
+    /// The model the provider reports it used, when it reports one (an `llm_cli`
+    /// resolving an alias such as `haiku`, ADR-0017). The pipeline records it
+    /// instead of the configured name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Usage {
@@ -214,6 +219,10 @@ impl Usage {
             (Some(a), Some(b)) => Some(a + b),
             (a, b) => a.or(b),
         };
+        // The last reported model wins (a map-reduce run makes several calls).
+        if other.model.is_some() {
+            self.model.clone_from(&other.model);
+        }
     }
 }
 

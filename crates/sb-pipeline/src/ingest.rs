@@ -257,6 +257,9 @@ impl Pipeline {
                 "--title and --date can only be used with one locator".into(),
             ));
         }
+        if !opts.dry_run {
+            self.upgrade_input_hashes()?;
+        }
         let mut report = IngestReport::default();
         let mut slots: Vec<Option<IngestResult>> = vec![None; locators.len()];
         let mut work = Vec::new();

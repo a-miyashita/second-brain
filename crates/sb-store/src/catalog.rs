@@ -15,10 +15,11 @@ use crate::perms;
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/0001_initial.sql")),
     (2, include_str!("../migrations/0002_budget.sql")),
+    (3, include_str!("../migrations/0003_input_hash_version.sql")),
 ];
 
 /// The schema version this binary expects.
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// A catalog connection.
 pub struct Catalog {

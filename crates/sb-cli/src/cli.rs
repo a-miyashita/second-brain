@@ -109,7 +109,7 @@ pub enum SetupStep {
 
 #[derive(Debug, Args)]
 pub struct SetupLlmArgs {
-    /// Preset: anthropic, openai, claude_cli, copilot_cli, local.
+    /// Preset: anthropic, openai, claude_cli, copilot_cli, codex_cli, antigravity_cli, local.
     #[arg(long)]
     pub preset: Option<String>,
     /// Profile name (default: the preset key).

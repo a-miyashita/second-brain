@@ -118,7 +118,7 @@ async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32>
             .clone(),
         None if yes || !util::interactive() => {
             return Err(usage(
-                "give --preset (anthropic, openai, claude_cli, copilot_cli, local)",
+                "give --preset (anthropic, openai, claude_cli, copilot_cli, codex_cli, antigravity_cli, local)",
             ));
         }
         None => {

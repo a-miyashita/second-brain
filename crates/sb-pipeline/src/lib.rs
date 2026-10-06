@@ -3,6 +3,7 @@
 
 pub mod budget;
 pub mod error;
+pub mod hash_upgrade;
 mod host;
 pub mod import;
 pub mod ingest;

@@ -117,6 +117,8 @@ impl Pipeline {
             Err(StoreError::Locked(_)) => return Err(PipelineError::Locked),
             Err(e) => return Err(e.into()),
         };
+        // Before anything is normalized: the decisions compare input hashes (ADR-0017).
+        self.upgrade_input_hashes()?;
         let command = if opts.mode == SyncMode::Deep {
             "sync --deep"
         } else {

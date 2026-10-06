@@ -20,8 +20,18 @@ pub fn sha256_parts<'a>(parts: impl IntoIterator<Item = &'a [u8]>) -> String {
     hex::encode(h.finalize())
 }
 
-/// Hash of the exact summarizer input (summarization.md): prompt version,
-/// model and body.
+/// Prefix of a body-only input hash (ADR-0017).
+pub const BODY_HASH_PREFIX: &str = "b2:";
+
+/// Hash of a summary input for `llm_*` summaries: the body alone (ADR-0017). The
+/// model, provider, profile and prompt version are not part of it, so switching
+/// any of them never makes a summary stale.
+pub fn body_hash(body: &str) -> String {
+    format!("{BODY_HASH_PREFIX}{}", sha256_parts([body.as_bytes()]))
+}
+
+/// The hash recorded for source-native summaries (prompt version, model and
+/// body; unchanged since ADR-0005). `llm_*` summaries use [`body_hash`].
 pub fn summary_input_hash(prompt_version: &str, model: &str, body: &str) -> String {
     sha256_parts([prompt_version.as_bytes(), model.as_bytes(), body.as_bytes()])
 }

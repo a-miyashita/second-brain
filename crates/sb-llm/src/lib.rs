@@ -2,6 +2,7 @@
 //! OpenAI-compatible servers, with embedded versioned prompts.
 
 pub mod backend;
+pub mod cli;
 pub mod prices;
 pub mod profile;
 pub mod prompts;
@@ -14,9 +15,9 @@ use std::time::{Duration, Instant};
 use sb_core::summarizer::LlmError;
 use sb_core::{GeneratorKind, Secret};
 
-use backend::{
-    AnthropicBackend, Backend, CliBackend, CliFlavor, CompletionRequest, OpenAiBackend, Role,
-};
+use backend::{AnthropicBackend, Backend, CompletionRequest, OpenAiBackend, Role};
+use cli::{CliBackend, CliFlavor};
+pub use cli::{antigravity_permissions_problem, antigravity_state_dir};
 pub use profile::{NATIVE, Profile, ProfileError, Provider};
 pub use summarizer::LlmSummarizer;
 
@@ -102,21 +103,26 @@ pub fn build(name: &str, profile: &Profile, opts: &BuildOptions) -> Result<Built
                 "profile {name}: the Gemini API provider is not available yet (planned for phase 2)"
             )));
         }
-        Provider::ClaudeCli | Provider::CopilotCli => {
+        Provider::ClaudeCli
+        | Provider::CopilotCli
+        | Provider::CodexCli
+        | Provider::AntigravityCli => {
             let bin = profile.cli_binary().unwrap_or_default();
             let program = resolve_program(bin).ok_or_else(|| {
                 LlmError::Config(format!("profile {name}: `{bin}` was not found on PATH"))
             })?;
             Arc::new(CliBackend {
-                flavor: if profile.provider == Provider::ClaudeCli {
-                    CliFlavor::Claude
-                } else {
-                    CliFlavor::Copilot
+                flavor: match profile.provider {
+                    Provider::ClaudeCli => CliFlavor::Claude,
+                    Provider::CodexCli => CliFlavor::Codex,
+                    Provider::AntigravityCli => CliFlavor::Antigravity,
+                    _ => CliFlavor::Copilot,
                 },
                 program,
                 model: profile.model.clone(),
                 extra_args: profile.args.clone(),
                 scratch_dir: opts.scratch_dir.clone(),
+                antigravity_dir: None,
             })
         }
     };
@@ -200,6 +206,50 @@ impl Built {
         let took = started.elapsed();
         tracing::info!(profile = %self.name, warmup_ms = took.as_millis() as u64, "local LLM warmed up");
         Ok(Some(took))
+    }
+
+    /// `sb doctor --online` probe for `codex_cli` (ADR-0017): the feature names that
+    /// turn Codex's tools off drift between versions, so check that the model really
+    /// cannot run a command. A random token is put in a file under `scratch_dir` and
+    /// the model is asked to print it with a shell command; seeing the token means
+    /// the shell ran. Other providers have nothing to probe.
+    pub async fn tool_probe(&self, scratch_dir: &Path) -> Result<(), LlmError> {
+        if self.profile.provider != Provider::CodexCli {
+            return Ok(());
+        }
+        let token = format!("probe-{}", ulid::Ulid::new());
+        std::fs::create_dir_all(scratch_dir)
+            .map_err(|e| LlmError::Config(format!("{}: {e}", scratch_dir.display())))?;
+        let file = scratch_dir.join(format!("{token}.txt"));
+        std::fs::write(&file, &token)
+            .map_err(|e| LlmError::Config(format!("{}: {e}", file.display())))?;
+        let asked = self
+            .summarizer
+            .backend
+            .complete(&CompletionRequest {
+                system: "Follow the user's instruction.".into(),
+                messages: vec![(
+                    Role::User,
+                    format!(
+                        "Run the shell command `cat {}` and print its output. \
+                         If you cannot run commands, reply exactly: NO-TOOLS",
+                        file.display()
+                    ),
+                )],
+                max_tokens: 64,
+                timeout: Duration::from_secs(self.profile.warmup_timeout_secs.max(60)),
+            })
+            .await;
+        let _ = std::fs::remove_file(&file);
+        let c = asked?;
+        if c.text.contains(&token) {
+            return Err(LlmError::Config(
+                "codex ran a shell command: its tools are not disabled (a feature name in \
+                 CODEX_DISABLED_FEATURES may have changed)"
+                    .into(),
+            ));
+        }
+        Ok(())
     }
 
     /// A one-call test used by `sb setup llm` and `sb doctor --online`.
