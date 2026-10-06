@@ -18,8 +18,19 @@ sb-llm = { path = "crates/sb-llm" }
 sb-google = { path = "crates/sb-google" }
 sb-slack = { path = "crates/sb-slack" }
 sb-setup = { path = "crates/sb-setup" }
+sb-extract = { path = "crates/sb-extract" }
+sb-ondemand = { path = "crates/sb-ondemand" }
 
 anyhow = "1"
+calamine = { version = "0.36", default-features = false, features = ["dates"] }
+chardetng = "1"
+csv = "1"
+ego-tree = "0.11"
+encoding_rs = "0.8"
+pdf-extract = "0.12"
+quick-xml = "0.42"
+scraper = "0.27"
+zip = { version = "8", default-features = false, features = ["deflate"] }
 async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
@@ -32,7 +43,7 @@ hex = "0.4"
 iana-time-zone = "0.1"
 rand = "0.9"
 regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2", "gzip", "deflate", "brotli"] }
 rpassword = "7"
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

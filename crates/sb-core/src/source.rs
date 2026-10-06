@@ -39,6 +39,10 @@ pub enum SourceError {
     /// The operation is not supported by this source.
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// The source refuses this item for a reason the user should read as it is
+    /// (a denied path, a page behind a login, a file that is too large).
+    #[error("{0}")]
+    Rejected(String),
 }
 
 impl SourceError {
@@ -53,6 +57,7 @@ impl SourceError {
             SourceError::Cancelled => "sync.cancelled",
             SourceError::Host(_) => "sync.host_error",
             SourceError::Unsupported(_) => "sync.unsupported",
+            SourceError::Rejected(_) => "sync.rejected",
         }
     }
 }

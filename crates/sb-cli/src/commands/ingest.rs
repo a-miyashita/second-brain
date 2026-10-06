@@ -10,7 +10,8 @@ use serde_json::json;
 
 use crate::Ctx;
 use crate::cli::{
-    ImportArgs, LimitArgs, ReextractArgs, RefetchArgs, ResummarizeArgs, SummarizeArgs, SyncArgs,
+    ImportArgs, IngestArgs, LimitArgs, ReextractArgs, RefetchArgs, ResummarizeArgs, SummarizeArgs,
+    SyncArgs,
 };
 use crate::util::{self, exit, filter_from, parse_date, parse_duration, parse_source_kinds, usage};
 
@@ -353,6 +354,100 @@ pub async fn resummarize(ctx: &Ctx, a: ResummarizeArgs) -> anyhow::Result<i32> {
         stop_hint(&r.stop, "the same sb resummarize command");
     }
     Ok(stop_exit(&r.stop, r.stats.failed > 0))
+}
+
+/// `sb ingest` (docs/specs/ingest.md).
+pub async fn ingest(ctx: &Ctx, a: IngestArgs) -> anyhow::Result<i32> {
+    use sb_pipeline::ingest::{IngestOptions, IngestStatus};
+    let locators: Vec<String> = a
+        .locators
+        .iter()
+        .flat_map(|l| sb_ondemand::local::expand_wildcards(l))
+        .collect();
+    let opts = IngestOptions {
+        account: a.account.clone(),
+        title: a.title.clone(),
+        context: a.context.clone(),
+        date: a
+            .date
+            .as_deref()
+            .map(|d| parse_date(d, false))
+            .transpose()?,
+        force: a.force,
+        keep_original: a.keep_original,
+        no_summary: a.no_summary,
+        dry_run: a.dry_run,
+    };
+    let p = ctx.pipeline()?;
+    let r = p.ingest(&locators, &opts).await?;
+    if r.valid == 0 {
+        let why = r
+            .results
+            .first()
+            .and_then(|x| x.message.clone())
+            .unwrap_or_else(|| "no valid locator".into());
+        return Err(usage(why));
+    }
+    let summarized = r
+        .summarize
+        .as_ref()
+        .map(|s| s.stats.summarized)
+        .unwrap_or(0);
+    let stopped = match &r.stop {
+        Some(Stop::Cancelled) => Some("interrupted".to_string()),
+        Some(Stop::Limit(l)) => Some(l.clone()),
+        None => None,
+    };
+    if ctx.json {
+        let status = if r.has_problems() { "partial" } else { "ok" };
+        ctx.out_json(
+            "sb.ingest/v1",
+            json!({
+                "run": {"status": status, "summarized": summarized, "pending": r.pending, "stopped": stopped},
+                "results": r.results,
+            }),
+        );
+    } else {
+        for x in &r.results {
+            let label = serde_json::to_value(x.status)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_default();
+            let name = x.title.clone().unwrap_or_else(|| x.locator.clone());
+            let place = match (&x.source_kind, &x.account) {
+                (Some(k), Some(a)) => format!("  [{k} {a}]"),
+                (Some(k), None) => format!("  [{k}]"),
+                _ => String::new(),
+            };
+            match x.status {
+                IngestStatus::Failed | IngestStatus::NotApplicable => println!(
+                    "{label:<14} {}: {}",
+                    x.locator,
+                    x.message.as_deref().unwrap_or("")
+                ),
+                IngestStatus::Duplicate => println!(
+                    "{label:<14} {name}{place}  {}",
+                    x.message.as_deref().unwrap_or("")
+                ),
+                _ => println!(
+                    "{label:<14} {name}{place}  {}",
+                    x.entry_uid.as_deref().unwrap_or("")
+                ),
+            }
+        }
+        if r.pending > 0 {
+            eprintln!(
+                "{} entries still wait for a summary; `sb summarize` or the next `sb sync` will do it.",
+                r.pending
+            );
+        }
+        stop_hint(&r.stop, "sb summarize");
+    }
+    Ok(match &r.stop {
+        Some(Stop::Cancelled) => exit::INTERRUPTED,
+        _ if r.has_problems() => exit::PROBLEMS,
+        _ => exit::OK,
+    })
 }
 
 pub fn import(ctx: &Ctx, a: ImportArgs) -> anyhow::Result<i32> {

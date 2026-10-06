@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use sb_core::util::summary_input_hash;
-use sb_core::{Normalized, SourceKind, SummaryInput, SummaryStatus};
+use sb_core::{Normalized, PromptKind, SourceKind, SummaryInput, SummaryStatus};
 use sb_llm::{NATIVE, Profile, prompts::prompt_version};
 use sb_store::{Catalog, Entry, SummaryDecision, SummaryRecord};
 
@@ -106,10 +106,14 @@ impl SummaryPolicy {
         self.profiles.get(name)
     }
 
-    /// Whether a summary input is below the thresholds (conversations only).
+    /// Whether a summary input is below the thresholds: conversations by message
+    /// count and length, documents by length. Other inputs only when empty.
     pub fn below_thresholds(&self, input: &SummaryInput) -> bool {
         match input.message_count {
             Some(n) => n < self.min_messages || input.body.chars().count() < self.min_chars,
+            None if input.prompt == PromptKind::Document => {
+                input.body.chars().count() < self.min_chars
+            }
             None => input.body.trim().is_empty(),
         }
     }
@@ -225,6 +229,31 @@ mod tests {
             }),
             native_summary: native.then(Generator::gemini_meet_notes),
         }
+    }
+
+    #[test]
+    fn documents_are_judged_by_length_only() {
+        let p = policy(); // min_chars = 10, min_messages = 2
+        let doc = |body: &str| {
+            let mut n = normalized(body, None, false);
+            if let Some(i) = n.summary_input.as_mut() {
+                i.prompt = PromptKind::Document;
+                i.source_kind = SourceKind::LocalFile;
+            }
+            n
+        };
+        assert_eq!(
+            p.decide(SourceKind::LocalFile, &doc("tiny"), None),
+            SummaryDecision::Skipped
+        );
+        assert_eq!(
+            p.decide(
+                SourceKind::LocalFile,
+                &doc("a document that is long enough"),
+                None
+            ),
+            SummaryDecision::Pending
+        );
     }
 
     #[test]
