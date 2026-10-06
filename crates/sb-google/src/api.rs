@@ -140,6 +140,63 @@ impl GoogleApi {
         .await
     }
 
+    /// Drive file metadata for ingest: owners, size, trash state and shortcut target
+    /// in addition to what `file` returns. `None` if not found.
+    pub async fn file_details(&self, id: &str) -> Result<Option<Value>, SourceError> {
+        self.get_json(
+            &format!("{}/files/{id}", self.drive_base),
+            &[
+                (
+                    "fields",
+                    "id,name,mimeType,createdTime,modifiedTime,webViewLink,size,trashed,\
+                     owners(displayName,emailAddress),shortcutDetails(targetId,targetMimeType)"
+                        .into(),
+                ),
+                ("supportsAllDrives", "true".into()),
+            ],
+        )
+        .await
+    }
+
+    /// The content of a non-native Drive file (`alt=media`); `None` if not found.
+    pub async fn download(&self, id: &str, max_bytes: u64) -> Result<Option<Vec<u8>>, SourceError> {
+        let too_large = || {
+            SourceError::Rejected(format!(
+                "the file is larger than ingest.max_file_bytes ({max_bytes} bytes)"
+            ))
+        };
+        match self
+            .get(
+                &format!("{}/files/{id}", self.drive_base),
+                &[
+                    ("alt", "media".to_string()),
+                    ("supportsAllDrives", "true".to_string()),
+                ],
+            )
+            .await?
+        {
+            Some(mut r) => {
+                if r.content_length().is_some_and(|l| l > max_bytes) {
+                    return Err(too_large());
+                }
+                // Read in chunks: Drive may omit the size, and it can change.
+                let mut buf = Vec::new();
+                while let Some(c) = r
+                    .chunk()
+                    .await
+                    .map_err(|e| SourceError::Network(e.to_string()))?
+                {
+                    buf.extend_from_slice(&c);
+                    if buf.len() as u64 > max_bytes {
+                        return Err(too_large());
+                    }
+                }
+                Ok(Some(buf))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Export a Google Doc; `None` if not found.
     pub async fn export(&self, id: &str, mime: &str) -> Result<Option<Vec<u8>>, SourceError> {
         match self

@@ -88,3 +88,16 @@ considered and **rejected as unnecessary**.
 - **Keep all summary versions**: rejected by the user as unnecessary complexity.
 - **Embed OpenVINO / ONNX Runtime**: large native dependencies, per-platform
   builds, and NPU driver coupling inside our binary.
+
+## Amendments
+
+### 2026-10-06: Foundry Local wizard dropped, local LLMs not recommended
+
+See [ADR-0015](0015-local-llm-not-recommended.md). The `local_llm` kind and the
+`openai_compatible` provider stay, but:
+
+- the "ideally on an Intel NPU" aim in Context is withdrawn: NPU models hit an output
+  context limit and are not usable;
+- the interactive Foundry Local wizard in Consequences is **not** built;
+- summaries from models smaller than Haiku class are discouraged; the Foundry Local
+  runtime is only "an OpenAI-compatible server" like Ollama or llama.cpp.

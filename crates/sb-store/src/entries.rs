@@ -654,6 +654,38 @@ impl Catalog {
             .opt()
     }
 
+    /// Entries of a source kind with this `source_id`, in any account (the same
+    /// Drive file can be known to several accounts).
+    pub fn entries_by_source_id(&self, kind: SourceKind, source_id: &str) -> Result<Vec<Entry>> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries e WHERE e.source_kind = ?1 AND e.source_id = ?2 ORDER BY e.id"
+        ))?;
+        let rows = stmt
+            .query_map(params![kind.as_str(), source_id], Entry::from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Entries of a source kind whose metadata has a top-level text key with this
+    /// value (for example `original_sha256`). `key` must be a plain identifier.
+    pub fn entries_by_metadata_text(
+        &self,
+        kind: SourceKind,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<Entry>> {
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {ENTRY_COLS} FROM entries e WHERE e.source_kind = ?1 AND json_extract(e.metadata, '$.{key}') = ?2 ORDER BY e.id"
+        ))?;
+        let rows = stmt
+            .query_map(params![kind.as_str(), value], Entry::from_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// List entries matching a filter, newest first (or by id when
     /// `ascending_id` is set).
     pub fn list_entries(&self, f: &EntryFilter) -> Result<Vec<Entry>> {

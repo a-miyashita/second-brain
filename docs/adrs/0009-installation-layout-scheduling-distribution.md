@@ -118,3 +118,9 @@ The sync lock is an OS advisory lock on `locks/sync.lock` (`flock` on Unix,
 it when the holding process exits or crashes, so a stale lock cannot exist and no
 timeout-based takeover is needed. A run left `running` in the `runs` table by a
 killed process is marked `interrupted` by the next run.
+
+### 2026-10-06: no Foundry Local wizard
+
+The `setup llm` row of the command table no longer includes a "Foundry Local wizard"
+(ADR-0015). `setup llm` chooses and tests summarizer profiles, with the `local`
+preset for any OpenAI-compatible server.

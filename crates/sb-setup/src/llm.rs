@@ -48,7 +48,7 @@ pub fn presets() -> Vec<Preset> {
         },
         Preset {
             key: "local",
-            label: "Local OpenAI-compatible server (Foundry Local, Ollama, llama.cpp, ...)",
+            label: "OpenAI-compatible server (Ollama, llama.cpp, vLLM, ...); not recommended below Haiku-class quality",
             profile: json!({"kind": "local_llm", "provider": "openai_compatible", "base_url": "http://127.0.0.1:11434/v1",
                             "model": "", "concurrency": 1, "request_timeout_secs": 300, "warmup_timeout_secs": 600}),
             secret: None,

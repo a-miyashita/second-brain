@@ -59,6 +59,34 @@ fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
             )),
         };
     }
+    if matches!(
+        key,
+        "ingest.max_file_bytes"
+            | "ingest.max_text_chars"
+            | "ingest.min_text_chars"
+            | "ingest.extract_timeout_secs"
+            | "ingest.web.timeout_secs"
+    ) && value.as_u64().is_none_or(|n| n == 0)
+    {
+        return Err(usage(format!("{key} is a positive whole number")));
+    }
+    if key == "ingest.web.max_redirects" && value.as_u64().is_none() {
+        return Err(usage(
+            "ingest.web.max_redirects is a whole number (0 or more)",
+        ));
+    }
+    if matches!(key, "ingest.keep_original" | "ingest.web.allow_private") && !value.is_boolean() {
+        return Err(usage(format!("{key} is true or false")));
+    }
+    if key == "ingest.local.deny"
+        && !value
+            .as_array()
+            .is_some_and(|a| a.iter().all(Value::is_string))
+    {
+        return Err(usage(
+            "ingest.local.deny is a list of path patterns, like [\"**/*.pem\"]",
+        ));
+    }
     if let Some(d) = default_value(key)
         && std::mem::discriminant(&d) != std::mem::discriminant(value)
         && !(d.is_number() && value.is_number())

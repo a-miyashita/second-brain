@@ -31,7 +31,7 @@ second-brain setup
    the manifest path and the app-creation steps.
 3. **llm**
    - Choose the default profile: Anthropic API, OpenAI API, Gemini API, Claude Code
-     CLI, Copilot CLI, local (OpenAI-compatible / Foundry Local), or none.
+     CLI, Copilot CLI, local (any OpenAI-compatible server; not recommended below Haiku-class quality, ADR-0015), or none.
    - Test it.
 4. **schedule**: confirm the daily and weekly times, and register the jobs.
 5. **skills**: detect which agent CLIs are installed and offer to install the skill

@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use sb_core::document::IngestSettings;
 use sb_core::source::Source;
 use sb_core::{AccountKind, Secret};
-use sb_google::{GoogleApi, MeetSource, OAuthClient, TokenProvider};
+use sb_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
+use sb_ondemand::{LocalSource, WebSource};
 use sb_pipeline::{PipelineError, SourceFactory};
 use sb_slack::SlackSource;
 use sb_store::{Account, Catalog, SecretScope};
@@ -45,6 +47,23 @@ pub fn google_tokens(
     Ok(refresh.map(|r| Arc::new(TokenProvider::new(client, r))))
 }
 
+/// The `ingest.*` settings.
+pub fn ingest_settings(cat: &Catalog) -> Result<IngestSettings, PipelineError> {
+    let d = IngestSettings::default();
+    Ok(IngestSettings {
+        max_file_bytes: cat.setting_or("ingest.max_file_bytes", d.max_file_bytes)?,
+        max_text_chars: cat.setting_or("ingest.max_text_chars", d.max_text_chars)?,
+        min_text_chars: cat.setting_or("ingest.min_text_chars", d.min_text_chars)?,
+        extract_timeout_secs: cat
+            .setting_or("ingest.extract_timeout_secs", d.extract_timeout_secs)?,
+        keep_original: cat.setting_or("ingest.keep_original", d.keep_original)?,
+        web_timeout_secs: cat.setting_or("ingest.web.timeout_secs", d.web_timeout_secs)?,
+        web_max_redirects: cat.setting_or("ingest.web.max_redirects", d.web_max_redirects)?,
+        web_allow_private: cat.setting_or("ingest.web.allow_private", d.web_allow_private)?,
+        local_deny: cat.setting_or("ingest.local.deny", d.local_deny)?,
+    })
+}
+
 impl SourceFactory for Factory {
     fn source(
         &self,
@@ -68,8 +87,21 @@ impl SourceFactory for Factory {
                     Some(t) => Some(GoogleApi::new(t)?),
                     None => None,
                 };
-                Ok(Some(Arc::new(MeetSource::new(account.ctx(), api)?)))
+                Ok(Some(Arc::new(GoogleSource::new(
+                    account.ctx(),
+                    api,
+                    ingest_settings(cat)?,
+                )?)))
             }
+            AccountKind::Local => Ok(Some(Arc::new(LocalSource::new(
+                account.ctx(),
+                ingest_settings(cat)?,
+                cat.home().root().to_path_buf(),
+            )))),
+            AccountKind::Web => Ok(Some(Arc::new(WebSource::new(
+                account.ctx(),
+                ingest_settings(cat)?,
+            )?))),
             _ => Ok(None),
         }
     }

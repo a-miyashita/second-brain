@@ -6,8 +6,9 @@ second-brain collects your Slack conversations, Google Meet notes (Gemini), docu
 and more. It stores them locally with summaries and makes them searchable from the
 command line, from agent skills (GitHub Copilot CLI, Claude Code, ...) and over MCP.
 
-> **Status: MVP in development.** Slack and Google Meet sync, summaries, search,
-> import, `doctor`, setup and the agent skill are implemented. Releases are not
+> **Status: MVP in development.** Slack and Google Meet sync, `sb ingest` for Google
+> Docs, web pages and local files, summaries, search, import, `doctor`, setup and the
+> agent skill are implemented. Releases are not
 > published yet; build from source (below). See [docs/](docs/README.md) for the
 > architecture decisions and specifications.
 
@@ -19,17 +20,18 @@ command line, from agent skills (GitHub Copilot CLI, Claude Code, ...) and over 
   |---|---|
   | Slack threads and conversations | MVP |
   | Google Meet notes and transcripts | MVP |
-  | Google Docs / Drive files | Later |
-  | Local files | Later |
-  | Arbitrary URLs | Later |
+  | Google Docs, Sheets, Slides and Drive files | `sb ingest` |
+  | Local files (text, Markdown, CSV, HTML, docx, pptx, xlsx, PDF) | `sb ingest` |
+  | Web pages | `sb ingest` |
   | Email (Gmail, IMAP) | Later |
 
 - **Summarize** each entry into an overview, decisions and action items. You can
   use:
   - an LLM API (Anthropic, OpenAI; Google Gemini later);
   - an LLM CLI (Claude Code, GitHub Copilot CLI);
-  - a local LLM behind an OpenAI-compatible endpoint, such as Foundry Local on an
-    Intel NPU.
+  - a model behind an OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM, ...).
+    Small local models (about 5 to 10B parameters) summarize poorly and are not
+    recommended; use a model of at least Haiku-class quality.
 - **Re-summarize at any time.** Raw data is kept, and every summary records the
   model and prompt version that produced it. You can later redo the summaries of
   a cheap model with a stronger one, or replace Gemini's meeting notes with another
@@ -148,13 +150,40 @@ whole channels, list them in `full_channels`:
 sb config edit --account acme-slack
 ```
 
+## Adding documents
+
+`sb ingest` adds single items: a Google Doc, a web page or a file on your disk. It
+is meant for context that sync does not bring in, such as a design document linked
+from a thread.
+
+```sh
+sb ingest https://docs.google.com/document/d/<id>/edit --context "Q3 launch case"
+sb ingest https://example.com/blog/release-notes
+sb ingest ./minutes.docx ./budget.xlsx --context "FY27 planning"
+sb ingest ./notes.md --dry-run          # show what would happen
+```
+
+- `--context` says why the item matters. It is stored as the entry's *background*
+  section and given to the summarizer as a hint.
+- Google URLs are read with the first of your Google accounts that can open the file
+  (`--account` picks one). The account needs the `docs` or `meet` feature.
+- Only the **extracted text** is stored, not the original file or page. `--keep-original`
+  also keeps the original. Ingesting the same item again updates it.
+- Not supported: pages behind a login or built with JavaScript (save the page as a file
+  and ingest that), scanned documents without a text layer, password-protected files and
+  legacy `.doc` / `.ppt`. PDF text extraction is new and may fail on unusual files; please
+  report them.
+- For safety, web pages on private or loopback addresses are refused (see
+  `ingest.web.allow_private`), and files in the second-brain home and in credential folders
+  such as `~/.ssh` are never read. See [docs/specs/ingest.md](docs/specs/ingest.md).
+
 ## Choosing a summarizer
 
 ```sh
 sb setup llm                       # interactive
 sb setup llm --preset anthropic    # Claude Haiku via the Anthropic API
 sb setup llm --preset claude_cli   # your Claude Code login (`claude -p`)
-sb setup llm --preset local --base-url http://127.0.0.1:5273/v1 --model <model>
+sb setup llm --preset local --base-url http://127.0.0.1:11434/v1 --model <model>
 ```
 
 Google Meet entries keep Gemini's own notes by default (no LLM call). Slack
@@ -194,6 +223,7 @@ sb show 01J9ABC...                        # read one entry
 sb review --limit 3                       # summaries next to their source text
 sb resummarize --source slack.thread --where-model claude-haiku-4-5 --profile best --estimate
 sb budget                                 # summarization spend against the weekly/monthly cap
+sb ingest ./minutes.docx --context "why"  # add a document, page or Google Doc
 sb doctor                                 # health and pending issues
 ```
 

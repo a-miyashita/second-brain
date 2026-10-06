@@ -4,7 +4,10 @@ use std::collections::BTreeMap;
 
 use sb_core::search::SearchBackend;
 use sb_core::source::SourceError;
-use sb_core::{EntryOrigin, FetchOutcome, FetchRequest, RawMode, RawStatus, RunStatus, Severity};
+use sb_core::{
+    EntryOrigin, FetchOutcome, FetchRequest, RawMode, RawRole, RawStatus, RunStatus, Severity,
+    SourceKind,
+};
 use sb_store::fts::SqliteFts;
 use sb_store::{Entry, EntryFilter, StoreError, SyncLock};
 use serde::Serialize;
@@ -95,12 +98,26 @@ impl Pipeline {
                         host.commit_items(std::mem::take(&mut items), vec![], vec![], vec![])?;
                         break 'accounts;
                     }
+                    // An ingested document that kept its original keeps it.
+                    let hint = if matches!(
+                        e.source_kind,
+                        SourceKind::GoogleDoc | SourceKind::WebPage | SourceKind::LocalFile
+                    ) {
+                        let keep = self
+                            .catalog()
+                            .raw_objects(e.id)?
+                            .iter()
+                            .any(|r| r.role == RawRole::Primary);
+                        serde_json::json!({"keep_original": keep})
+                    } else {
+                        serde_json::Value::Null
+                    };
                     let req = FetchRequest {
                         source_kind: e.source_kind,
                         source_id: e.source_id.clone(),
                         fetch_state: None,
                         metadata: e.metadata.clone(),
-                        hint: serde_json::Value::Null,
+                        hint,
                         full: true,
                     };
                     match source.fetch(&host, &req).await {

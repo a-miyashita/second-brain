@@ -39,6 +39,10 @@ pub enum SourceError {
     /// The operation is not supported by this source.
     #[error("unsupported: {0}")]
     Unsupported(String),
+    /// The source refuses this item for a reason the user should read as it is
+    /// (a denied path, a page behind a login, a file that is too large).
+    #[error("{0}")]
+    Rejected(String),
 }
 
 impl SourceError {
@@ -53,6 +57,7 @@ impl SourceError {
             SourceError::Cancelled => "sync.cancelled",
             SourceError::Host(_) => "sync.host_error",
             SourceError::Unsupported(_) => "sync.unsupported",
+            SourceError::Rejected(_) => "sync.rejected",
         }
     }
 }
@@ -95,6 +100,12 @@ pub trait Source: Send + Sync {
 
     /// Map a URL or path to a natural key, for single-item ingest.
     fn resolve(&self, _locator: &str) -> Option<SourceRef> {
+        None
+    }
+
+    /// A reason this source refuses an item, decided without side effects, so that
+    /// a dry run can say so too.
+    fn refusal(&self, _source_id: &str) -> Option<String> {
         None
     }
 

@@ -21,6 +21,8 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0011](adrs/0011-notifications.md) | Notifications — pluggable sinks, `doctor` as the baseline |
 | [0012](adrs/0012-resumable-incremental-ingestion.md) | Resumable, interruptible and incremental ingestion |
 | [0013](adrs/0013-summarization-budget-caps.md) | Summarization budget caps (weekly and monthly, from a usage ledger) |
+| [0014](adrs/0014-single-item-ingest.md) | Single-item ingest for Google Docs, web pages and local files |
+| [0015](adrs/0015-local-llm-not-recommended.md) | Local LLMs are not recommended for summaries; the Foundry Local wizard is dropped |
 
 ## Specs (`specs/`)
 
@@ -32,7 +34,7 @@ Specs describe how things work and may be edited as the design evolves.
 | [data-model.md](specs/data-model.md) | Catalog schema and invariants |
 | [cli.md](specs/cli.md) | Commands, exit codes, JSON contract |
 | [search.md](specs/search.md) | Query model, FTS5 trigram + LIKE, future vector/hybrid |
-| [summarization.md](specs/summarization.md) | Prompts, profiles, providers, `resummarize`, Foundry Local wizard |
+| [summarization.md](specs/summarization.md) | Prompts, profiles, providers, budget, `resummarize` |
 | [accounts-and-auth.md](specs/accounts-and-auth.md) | Google OAuth, Slack tokens, re-authentication |
 | [source-slack.md](specs/source-slack.md) | Slack sync and entries |
 | [source-google-meet.md](specs/source-google-meet.md) | Meet discovery strategies and Gemini notes parsing |
@@ -40,4 +42,7 @@ Specs describe how things work and may be edited as the design evolves.
 | [doctor.md](specs/doctor.md) | Health checks and issues |
 | [setup-and-scheduling.md](specs/setup-and-scheduling.md) | Installer, setup wizard, scheduler registration |
 | [agent-integration.md](specs/agent-integration.md) | Skill and MCP server |
+| [ingest.md](specs/ingest.md) | `sb ingest`: locators, flow, statuses, settings, JSON, security |
+| [source-documents.md](specs/source-documents.md) | `google.doc`, `web.page` and `local.file` sources |
+| [extract.md](specs/extract.md) | `sb-extract`: formats, encodings, limits, library choice |
 | [mvp-plan.md](specs/mvp-plan.md) | Spikes, phases, work items, testing strategy |

@@ -1,0 +1,40 @@
+[package]
+name = "sb-extract"
+description = "Pure text extraction (text, CSV, HTML, docx, pptx, xlsx, PDF) to Markdown"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["html", "docx", "pptx", "xlsx", "pdf"]
+html = ["dep:scraper", "dep:ego-tree"]
+docx = ["dep:zip", "dep:quick-xml"]
+pptx = ["dep:zip", "dep:quick-xml"]
+xlsx = ["dep:calamine"]
+pdf = ["dep:pdf-extract"]
+
+[dependencies]
+sb-core.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+calamine = { workspace = true, optional = true }
+chardetng.workspace = true
+chrono.workspace = true
+csv.workspace = true
+encoding_rs.workspace = true
+pdf-extract = { workspace = true, optional = true }
+quick-xml = { workspace = true, optional = true }
+regex.workspace = true
+scraper = { workspace = true, optional = true }
+ego-tree = { workspace = true, optional = true }
+thiserror.workspace = true
+zip = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+zip = { workspace = true }

@@ -24,6 +24,7 @@ sb-llm.workspace = true
 sb-google.workspace = true
 sb-slack.workspace = true
 sb-setup.workspace = true
+sb-ondemand.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true

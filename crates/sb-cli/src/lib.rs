@@ -307,6 +307,7 @@ async fn run(ctx: &Ctx, cmd: Command) -> anyhow::Result<i32> {
         Command::Reextract(a) => ingest::reextract(ctx, a).await,
         Command::Summarize(a) => ingest::summarize(ctx, a).await,
         Command::Resummarize(a) => ingest::resummarize(ctx, a).await,
+        Command::Ingest(a) => ingest::ingest(ctx, a).await,
         Command::Import(a) => ingest::import(ctx, a),
         Command::Search(a) => retrieval::search(ctx, a),
         Command::Show(a) => retrieval::show(ctx, a),

@@ -57,6 +57,8 @@ pub enum Command {
     Summarize(SummarizeArgs),
     /// Overwrite generated sections of matching entries.
     Resummarize(ResummarizeArgs),
+    /// Add Google Docs, web pages or local files (single-item ingest).
+    Ingest(IngestArgs),
     /// Import a second-brain-import/v1 bundle.
     Import(ImportArgs),
     /// Search entries.
@@ -379,6 +381,37 @@ pub struct ResummarizeArgs {
     /// Do not ask for confirmation.
     #[arg(long)]
     pub yes: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct IngestArgs {
+    /// URLs or file paths (Google Docs/Drive links, web pages, local files).
+    #[arg(required = true, value_name = "URL_OR_PATH")]
+    pub locators: Vec<String>,
+    /// The Google account that reads Google URLs (default: the first one that can).
+    #[arg(long, value_name = "ID")]
+    pub account: Option<String>,
+    /// Replace the extracted title (one locator only).
+    #[arg(long)]
+    pub title: Option<String>,
+    /// Why this matters; stored as the entry's background section.
+    #[arg(long)]
+    pub context: Option<String>,
+    /// Replace the document date (one locator only).
+    #[arg(long, value_name = "DATE")]
+    pub date: Option<String>,
+    /// Fetch again even if nothing changed; also adds duplicate local files.
+    #[arg(long)]
+    pub force: bool,
+    /// Also store the original file or page (default: only the extracted text).
+    #[arg(long)]
+    pub keep_original: bool,
+    /// Store the entry without summarizing it now.
+    #[arg(long)]
+    pub no_summary: bool,
+    /// Show what would happen; no network access and no writes.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Args)]

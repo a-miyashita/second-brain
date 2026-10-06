@@ -5,6 +5,7 @@ pub mod budget;
 pub mod error;
 mod host;
 pub mod import;
+pub mod ingest;
 pub mod ops;
 pub mod policy;
 pub mod run;

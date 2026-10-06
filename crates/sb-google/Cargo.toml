@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 sb-core.workspace = true
+sb-extract.workspace = true
 async-trait.workspace = true
 base64.workspace = true
 chrono.workspace = true

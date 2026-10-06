@@ -3,10 +3,12 @@
 //! docs/specs/source-google-meet.md).
 
 pub mod api;
+pub mod doc;
 pub mod gemini;
 pub mod meet;
 pub mod oauth;
 
 pub use api::GoogleApi;
+pub use doc::{DocSource, GoogleSource};
 pub use meet::{MeetSource, default_config_json};
 pub use oauth::{OAuthClient, OAuthError, TokenProvider};

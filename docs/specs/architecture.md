@@ -1,6 +1,6 @@
 # Architecture
 
-Related ADRs: 0001, 0002, 0004, 0005, 0008.
+Related ADRs: 0001, 0002, 0004, 0005, 0008, 0014.
 
 ## Overview
 
@@ -38,7 +38,9 @@ second-brain/
 │   ├── sb-google/            # OAuth (PKCE loopback), Drive/Calendar/Meet clients,
 │   │                         # google.meet and google.doc sources
 │   ├── sb-slack/             # Slack client and slack.thread / slack.day sources
-│   ├── sb-extract/           # docx/pptx/pdf/html → text (feature-gated)
+│   ├── sb-extract/           # bytes → Markdown for text/csv/html/docx/pptx/xlsx/pdf
+│   │                         # (pure, Rust-only, feature-gated; see extract.md)
+│   ├── sb-ondemand/          # on-demand sources without sync: web.page, local.file
 │   ├── sb-mcp/               # MCP server (rmcp), phase 2
 │   ├── sb-setup/             # home init, scheduler registration, skill install,
 │   │                         # MCP client config, env setup
@@ -53,7 +55,12 @@ second-brain/
 Crate dependency rules:
 
 - `sb-core` depends on no other workspace crate. Source, LLM and store crates depend
-  only on `sb-core`, plus `sb-extract` where needed.
+  only on `sb-core`, plus `sb-extract` where needed (`sb-google` for `google.doc`,
+  `sb-ondemand`).
+- An account may serve several source kinds (a Google account has `google.meet` and
+  `google.doc`). Its adapter (`GoogleSource`) dispatches by source kind and delegates
+  `sync` to the Meet source; `sb ingest` calls `fetch` and `normalize` with the kind.
+  The `Source` trait and `SourceFactory` stay one adapter per account.
 - `sb-pipeline` wires everything together. `sb-cli` and `sb-mcp` depend on
   `sb-pipeline` and `sb-store`.
 - Only `sb-cli` (and `sb-mcp` for its server loop) may print to stdout.
