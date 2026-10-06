@@ -89,22 +89,51 @@ mod imp {
             return Ok(None);
         }
         let text = String::from_utf8_lossy(&out.stdout).to_string();
-        let path_str = path.display().to_string();
         let user = current_user().to_lowercase();
         let mut principals = Vec::new();
         for line in text.lines() {
-            let line = line.strip_prefix(&path_str).unwrap_or(line).trim();
+            let line = line.trim();
             if line.is_empty() || line.starts_with("Successfully") {
                 continue;
             }
-            if let Some((who, _)) = line.split_once(':') {
-                principals.push(who.trim().to_lowercase());
+            // Each ACE ends with `:(<rights>)`. Split on the last such marker so
+            // that the drive colon in the echoed path (`C:\...`) is not mistaken
+            // for the principal separator, whatever form the path is printed in.
+            if let Some(i) = line.rfind(":(") {
+                let who = line[..i].trim().to_lowercase();
+                // The first line is `<path> <principal>`; drop the path part,
+                // which may be printed differently from how we spelled it.
+                principals.push(principal_of(&who));
             }
         }
         if principals.is_empty() {
             return Ok(None);
         }
-        Ok(Some(principals.iter().all(|p| *p == user)))
+        let name = principal_of(&user);
+        Ok(Some(principals.iter().all(|p| *p == name)))
+    }
+
+    /// `DOMAIN\user` reduced to `user`; the domain is not stable across the
+    /// environment variables and `icacls` (machine name vs. resolved account).
+    /// Anything before the last space that precedes the account is the path.
+    fn principal_of(s: &str) -> String {
+        let account = match s.find('\\') {
+            // `c:\dir\file DOMAIN\user`: the account starts after the last space
+            // before the final backslash segment only when a path was echoed.
+            Some(_) => s.rsplit_once(' ').map_or(s, |(head, tail)| {
+                if tail.contains('\\') && head.contains('\\') {
+                    tail
+                } else {
+                    s
+                }
+            }),
+            None => s,
+        };
+        account
+            .rsplit_once('\\')
+            .map_or(account, |(_, u)| u)
+            .trim()
+            .to_string()
     }
 }
 
