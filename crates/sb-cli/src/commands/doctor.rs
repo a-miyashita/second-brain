@@ -177,7 +177,7 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
                 "readable by others: {}",
                 loose
                     .iter()
-                    .map(|p| p.display().to_string())
+                    .map(|p| format!("{} [{}]", p.display(), perms::describe(p)))
                     .collect::<Vec<_>>()
                     .join(", ")
             )),

@@ -21,6 +21,11 @@ pub fn is_private(path: &Path, dir: bool) -> Result<Option<bool>> {
     imp::is_private(path, dir)
 }
 
+/// Human-readable access description of a path, for diagnostics.
+pub fn describe(path: &Path) -> String {
+    imp::describe(path)
+}
+
 #[cfg(unix)]
 mod imp {
     use std::fs;
@@ -33,6 +38,13 @@ mod imp {
         let mode = if dir { 0o700 } else { 0o600 };
         fs::set_permissions(path, fs::Permissions::from_mode(mode))
             .map_err(|e| StoreError::io(path, e))
+    }
+
+    pub fn describe(path: &Path) -> String {
+        match fs::metadata(path) {
+            Ok(m) => format!("mode {:o}", m.permissions().mode() & 0o777),
+            Err(e) => e.to_string(),
+        }
     }
 
     pub fn is_private(path: &Path, _dir: bool) -> Result<Option<bool>> {
@@ -77,6 +89,20 @@ mod imp {
                 path.display(),
                 String::from_utf8_lossy(&out.stderr).trim()
             )))
+        }
+    }
+
+    pub fn describe(path: &Path) -> String {
+        match Command::new("icacls").arg(path).output() {
+            Ok(o) => format!(
+                "icacls (current user {}): {}",
+                current_user(),
+                String::from_utf8_lossy(&o.stdout)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+            Err(e) => e.to_string(),
         }
     }
 
@@ -145,6 +171,10 @@ mod imp {
 
     pub fn make_private(_path: &Path, _dir: bool) -> Result<()> {
         Ok(())
+    }
+
+    pub fn describe(_path: &Path) -> String {
+        "unavailable".into()
     }
 
     pub fn is_private(_path: &Path, _dir: bool) -> Result<Option<bool>> {
