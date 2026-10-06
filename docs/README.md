@@ -24,6 +24,7 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0014](adrs/0014-single-item-ingest.md) | Single-item ingest for Google Docs, web pages and local files |
 | [0015](adrs/0015-local-llm-not-recommended.md) | Local LLMs are not recommended for summaries; the Foundry Local wizard is dropped |
 | [0016](adrs/0016-sync-window-and-coverage.md) | Sync window — a short first window, forward cursors, tracked backward coverage |
+| [0017](adrs/0017-cli-support-and-stable-regeneration.md) | Richer CLI support — resolved model provenance, body-only regeneration, Codex and Antigravity providers |
 
 ## Specs (`specs/`)
 

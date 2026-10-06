@@ -1,6 +1,6 @@
 # `sb doctor`
 
-Related ADRs: 0003, 0009, 0011.
+Related ADRs: 0003, 0009, 0011, 0017.
 
 `sb doctor [--online] [--fix] [--json]` runs health checks and lists open issues.
 
@@ -23,6 +23,7 @@ Related ADRs: 0003, 0009, 0011.
 | `accounts.status` | No account in `needs_reauth` | error | — (use `sb auth login`) |
 | `accounts.online` (`--online`) | Google token refresh works; Slack `auth.test` succeeds; required scopes present | error | — |
 | `llm.profiles` | Every profile referenced by `summary.profile.*` exists; the secret or env var is present; the CLI binary is found on `PATH` | error | — |
+| `llm.antigravity_permissions` | A profile uses `antigravity_cli` and `~/.gemini/antigravity-cli/settings.json` is unparsable or has a non-empty `permissions.allow` (the provider refuses to run, ADR-0017) | error | — (remove the allow rules, or use another provider) |
 | `llm.budget` | Reports the spend of this week and month against `summary.budget.*`; warns when either cap is reached; is an error while the issue `llm.unpriced` is open (a paid profile has no known price while a cap is enabled) | warning (cap reached) / error (`llm.unpriced`) | — (raise the cap with `sb config set`, or set `llm.prices`) |
 | `llm.online` (`--online`) | A 1-token test call per used profile. For `local_llm`: server reachability, `start_command` availability, and warm-up latency (includes model load if not loaded) | warning | — |
 | `schedule.registered` | Scheduled jobs exist and point to this binary and home | warning | re-register |
