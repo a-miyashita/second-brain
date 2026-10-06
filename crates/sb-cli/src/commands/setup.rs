@@ -536,6 +536,32 @@ async fn wizard(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
     }
 
     eprintln!("\n== 6/6 First sync");
+    {
+        // The first window applies to every source (ADR-0016).
+        let cat = ctx.catalog()?;
+        let current: u64 = cat.setting_or("sync.initial_days", 30u64)?;
+        if interactive {
+            let answer = util::ask(
+                "How many days back should the first sync reach (Slack, Meet)?",
+                Some(&current.to_string()),
+            )?;
+            let days: u64 = answer
+                .trim()
+                .parse()
+                .ok()
+                .filter(|d| *d > 0)
+                .ok_or_else(|| util::usage("the number of days is a positive whole number"))?;
+            if days != current {
+                cat.set_setting("sync.initial_days", &json!(days))?;
+            }
+            eprintln!("The first sync reaches back {days} days.");
+        } else {
+            eprintln!("The first sync reaches back {current} days (sync.initial_days).");
+        }
+        eprintln!(
+            "To go further back later: `sb sync --since 90d` fetches only what is older than what is already synced."
+        );
+    }
     if interactive && util::confirm("Estimate the first sync now (`sb sync --estimate`)?", true)? {
         let code = super::ingest::sync(
             ctx,
@@ -544,6 +570,7 @@ async fn wizard(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
                 sources: vec![],
                 deep: false,
                 since: None,
+                until: None,
                 no_summary: false,
                 limits: Default::default(),
                 dry_run: false,
@@ -564,6 +591,7 @@ async fn wizard(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
                     sources: vec![],
                     deep: false,
                     since: None,
+                    until: None,
                     no_summary: false,
                     limits: Default::default(),
                     dry_run: false,

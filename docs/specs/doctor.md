@@ -19,6 +19,7 @@ Related ADRs: 0003, 0009, 0011.
 | `raw.consistency` | Entries with `raw_status = present` have their files; segments are contiguous; hashes spot-checked (sample of 50) | warning | mark `missing` |
 | `raw.orphans` | Files under `raw/` or `tmp/` not referenced by any `raw_objects` row (left by an interrupted run) | info | delete |
 | `sync.queue` | Items in `sync_queue` older than 7 days, or at their attempt limit | warning | — |
+| `config.legacy_keys` | An account config still has `backfill_days`, `drive_backfill_days` or `calendar_days`, which are ignored since ADR-0016 | info | — (`sb config edit --account <id>`, remove the keys) |
 | `accounts.status` | No account in `needs_reauth` | error | — (use `sb auth login`) |
 | `accounts.online` (`--online`) | Google token refresh works; Slack `auth.test` succeeds; required scopes present | error | — |
 | `llm.profiles` | Every profile referenced by `summary.profile.*` exists; the secret or env var is present; the CLI binary is found on `PATH` | error | — |

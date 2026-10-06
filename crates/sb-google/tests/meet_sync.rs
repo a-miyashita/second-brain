@@ -213,3 +213,194 @@ async fn calendar_strategy_native_summary_and_skip_unchanged() {
     assert_eq!(raws.len(), 1);
     assert_eq!(raws[0].seq, 0);
 }
+
+// ---------- windows and coverage (ADR-0016) ----------
+
+fn pipeline_at(home: &Home, server: &MockServer, now: &str) -> Pipeline {
+    let clock = Arc::new(FixedClock::new(sb_core::util::parse_ts(now).unwrap()));
+    Pipeline::new(
+        Catalog::open_with_clock(home, clock).unwrap(),
+        Arc::new(Factory(server.uri())),
+    )
+}
+
+fn param(r: &Request, key: &str) -> Option<String> {
+    r.url
+        .query_pairs()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.to_string())
+}
+
+/// `(timeMin, timeMax)` of every Calendar request, in order.
+async fn calendar_windows(server: &MockServer) -> Vec<(String, String)> {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/calendar/v3/calendars/primary/events")
+        .map(|r| (param(r, "timeMin").unwrap(), param(r, "timeMax").unwrap()))
+        .collect()
+}
+
+/// The `q` of every Drive list request that targets the notes folder.
+async fn drive_queries(server: &MockServer) -> Vec<String> {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.url.path() == "/drive/v3/files")
+        .filter_map(|r| param(r, "q"))
+        .filter(|q| q.contains("in parents"))
+        .collect()
+}
+
+fn cursor(p: &Pipeline, key: &str) -> serde_json::Value {
+    p.catalog()
+        .cursor(
+            &AccountId::new("work").unwrap(),
+            SourceKind::GoogleMeet,
+            key,
+        )
+        .unwrap()
+        .unwrap_or_default()
+}
+
+fn window_home() -> (tempfile::TempDir, Home) {
+    let dir = tempfile::tempdir().unwrap();
+    let home = Home::new(dir.path().join("home"));
+    let mut config = sb_google::default_config_json(&["meet".into()]);
+    config["meet_folder_id"] = json!("F1");
+    Catalog::create(&home)
+        .unwrap()
+        .add_account(
+            &AccountId::new("work").unwrap(),
+            AccountKind::Google,
+            "Work",
+            Some("alice@example.test"),
+            &config,
+        )
+        .unwrap();
+    (dir, home)
+}
+
+fn no_summary(since: Option<&str>, until: Option<&str>) -> SyncOptions {
+    SyncOptions {
+        no_summary: true,
+        since: since.map(|s| sb_core::util::parse_ts(s).unwrap()),
+        until: until.map(|s| sb_core::util::parse_ts(s).unwrap()),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn first_window_is_thirty_days_and_later_runs_follow_the_cursors() {
+    let server = google_mock(Arc::new(Mutex::new("2026-09-09T02:00:00Z".into()))).await;
+    let (_dir, home) = window_home();
+
+    let p = pipeline_at(&home, &server, "2026-09-10T00:00:00Z");
+    let r = p.sync(&no_summary(None, None)).await.unwrap();
+    assert!(r.stats.errors.is_empty(), "{:?}", r.stats.errors);
+    // Calendar: 30 days back, one hour ahead. Drive: modified in the last 30 days.
+    assert_eq!(
+        calendar_windows(&server).await,
+        vec![("2026-08-11T00:00:00Z".into(), "2026-09-10T01:00:00Z".into())]
+    );
+    assert!(drive_queries(&server).await[0].ends_with("modifiedTime > '2026-08-11T00:00:00Z'"));
+    // Cursors stay five minutes behind the run start and record the coverage.
+    assert_eq!(
+        cursor(&p, "calendar")["last_time_max"],
+        "2026-09-09T23:55:00Z"
+    );
+    assert_eq!(
+        cursor(&p, "calendar")["covered_since"],
+        "2026-08-11T00:00:00Z"
+    );
+    assert_eq!(
+        cursor(&p, "drive")["modified_after"],
+        "2026-09-09T23:55:00Z"
+    );
+    assert_eq!(cursor(&p, "drive")["covered_since"], "2026-08-11T00:00:00Z");
+
+    // The next day: Calendar reaches three days behind its cursor (notes are
+    // attached after an event ends); Drive continues from its cursor.
+    let p = pipeline_at(&home, &server, "2026-09-11T00:00:00Z");
+    p.sync(&no_summary(None, None)).await.unwrap();
+    assert_eq!(
+        calendar_windows(&server).await[1],
+        ("2026-09-06T23:55:00Z".into(), "2026-09-11T01:00:00Z".into())
+    );
+    assert!(drive_queries(&server).await[1].ends_with("modifiedTime > '2026-09-09T23:55:00Z'"));
+    assert_eq!(
+        cursor(&p, "calendar")["covered_since"],
+        "2026-08-11T00:00:00Z"
+    );
+}
+
+#[tokio::test]
+async fn since_fetches_only_what_is_older_than_the_coverage() {
+    let server = google_mock(Arc::new(Mutex::new("2026-09-09T02:00:00Z".into()))).await;
+    let (_dir, home) = window_home();
+    let p = pipeline_at(&home, &server, "2026-09-10T00:00:00Z");
+    p.sync(&no_summary(None, None)).await.unwrap();
+    let p = pipeline_at(&home, &server, "2026-09-11T00:00:00Z");
+
+    p.sync(&no_summary(Some("2026-07-01T00:00:00Z"), None))
+        .await
+        .unwrap();
+    let windows = calendar_windows(&server).await;
+    assert_eq!(
+        windows.last().unwrap(),
+        &("2026-07-01T00:00:00Z".into(), "2026-08-11T00:00:00Z".into())
+    );
+    assert!(drive_queries(&server).await.last().unwrap().ends_with(
+        "modifiedTime > '2026-07-01T00:00:00Z' and modifiedTime <= '2026-08-11T00:00:00Z'"
+    ));
+    for key in ["calendar", "drive"] {
+        assert_eq!(
+            cursor(&p, key)["covered_since"],
+            "2026-07-01T00:00:00Z",
+            "{key}"
+        );
+    }
+    // The forward cursor of the Drive strategy did not move backwards.
+    assert_eq!(
+        cursor(&p, "drive")["modified_after"],
+        "2026-09-10T23:55:00Z"
+    );
+
+    // Already covered: nothing more is requested backwards.
+    let calls = calendar_windows(&server).await.len();
+    p.sync(&no_summary(Some("2026-07-15T00:00:00Z"), None))
+        .await
+        .unwrap();
+    assert_eq!(
+        calendar_windows(&server).await.len(),
+        calls + 1,
+        "forward only"
+    );
+}
+
+#[tokio::test]
+async fn detached_window_is_fetched_but_not_recorded() {
+    let server = google_mock(Arc::new(Mutex::new("2026-09-09T02:00:00Z".into()))).await;
+    let (_dir, home) = window_home();
+    let p = pipeline_at(&home, &server, "2026-09-10T00:00:00Z");
+    p.sync(&no_summary(None, None)).await.unwrap();
+    p.sync(&no_summary(
+        Some("2026-05-01T00:00:00Z"),
+        Some("2026-06-01T00:00:00Z"),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(
+        calendar_windows(&server).await.last().unwrap(),
+        &("2026-05-01T00:00:00Z".into(), "2026-06-01T00:00:00Z".into())
+    );
+    assert_eq!(
+        cursor(&p, "calendar")["covered_since"],
+        "2026-08-11T00:00:00Z"
+    );
+    assert_eq!(cursor(&p, "drive")["covered_since"], "2026-08-11T00:00:00Z");
+}

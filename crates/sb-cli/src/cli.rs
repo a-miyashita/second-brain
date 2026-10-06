@@ -302,9 +302,12 @@ pub struct SyncArgs {
     /// Also dormant conversations and all watched threads.
     #[arg(long)]
     pub deep: bool,
-    /// Back-fill from this date.
-    #[arg(long, value_name = "DATE")]
+    /// Extend the data backwards to this date or age (`2026-07-01`, `90d`, `12w`).
+    #[arg(long, value_name = "DATE|AGE")]
     pub since: Option<String>,
+    /// With --since: fetch the explicit window [since, until) regardless of coverage.
+    #[arg(long, value_name = "DATE|AGE")]
+    pub until: Option<String>,
     #[arg(long)]
     pub no_summary: bool,
     #[command(flatten)]

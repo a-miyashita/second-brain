@@ -43,8 +43,22 @@ unioned by file ID.
 
 | Strategy | How | Covers | Phase |
 |---|---|---|---|
-| `calendar` | Calendar `events.list` over the last N days (default 3; `--since` for backfill). Skip cancelled events and events I declined. Take attachments whose MIME type is a Google Doc | Meetings I attended where notes are attached to the event, including notes stored in the organizer's Drive | M |
+| `calendar` | Calendar `events.list` over `[max(covered_until - calendar_overlap_days, start), run_started_at + 1h]`, where `start` is the initial window on the first run. Skip cancelled events and events I declined. Take attachments whose MIME type is a Google Doc | Meetings I attended where notes are attached to the event, including notes stored in the organizer's Drive | M |
 | `drive` | Drive `files.list` for Google Docs in the "Meet Recordings" folder (folder ID detected by name at setup, configurable), `modifiedTime > cursor` | Notes stored in my Drive | M |
+
+Window and coverage (ADR-0016):
+
+- The first run of a strategy covers `run_started_at - initial_days` (global
+  `sync.initial_days`, default 30) for **both** strategies. Later runs continue from
+  the strategy's forward cursor.
+- The `calendar` window keeps an overlap of `calendar_overlap_days` (default 3)
+  before the cursor, because notes are attached to an event after it ends. Unchanged
+  notes are skipped through `modifiedTime`, so the overlap costs one list call.
+- Each strategy's `sync_state` value also holds `covered_since`. `sb sync --since X
+  [--until Y]` fetches `[X, covered_since)` (or the explicit `[X, Y)`): for `calendar`
+  by event start time; for `drive` with `modifiedTime > X and modifiedTime <= Y`.
+  Backward ranges never write the forward cursor (`modified_after`, `last_time_max`),
+  and are paged and committed like the forward ones.
 | `meet_api` | Meet v2 `conferenceRecords.list` → `smartNotes.list` (state `FILE_GENERATED`) → `docsDestination.document`; `transcripts.list` for transcripts | To be verified: whether records of meetings I did not organize are visible | Spike S1; adopt if it covers the other two |
 
 Documents that do not look like Gemini notes are rejected by `normalize` and
@@ -122,10 +136,13 @@ processing has proven sufficient for Gemini notes and transcripts.
 
 - Per-account settings live in `accounts.config`: `features` (e.g. `["meet"]`),
   `meet_strategies` (default `["calendar", "drive"]`; this is the per-account
-  `google.meet.strategies`), `calendar_days` (default 3), `drive_backfill_days`
-  (default 30, the first drive look-back) and an optional `meet_folder_id`.
+  `google.meet.strategies`), `calendar_overlap_days` (default 3), an optional
+  `initial_days` (overrides `sync.initial_days`) and an optional `meet_folder_id`.
+  `calendar_days` and `drive_backfill_days` are replaced by these and ignored
+  (ADR-0016).
 - `sync_state` keys (source kind `google.meet`): `calendar`
-  (`{"last_time_max"}`), `drive` (`{"modified_after"}`) and `drive_folder`
+  (`{"last_time_max", "covered_since"}`; `last_time_max` is now also the forward
+  cursor), `drive` (`{"modified_after", "covered_since"}`) and `drive_folder`
   (`{"id"}`, the detected "Meet Recordings" folder).
 - Calendar event details (title, start, recurring, link, attendees) travel as the
   queue `hint` and are stored in the entry metadata at fetch time, so that

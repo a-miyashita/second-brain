@@ -59,6 +59,11 @@ fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
             )),
         };
     }
+    if matches!(key, "sync.initial_days" | "sync.overlap_secs")
+        && value.as_u64().is_none_or(|n| n == 0)
+    {
+        return Err(usage(format!("{key} is a positive whole number")));
+    }
     if matches!(
         key,
         "ingest.max_file_bytes"

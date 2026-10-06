@@ -5,6 +5,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, TimeZone, Utc};
+use sb_core::coverage::{
+    BackwardPlan, Coverage, TimeRange, covered_since_of, next_cursor, plan_ranges,
+    with_covered_since,
+};
 use sb_core::source::{Source, SourceError, SyncHost};
 use sb_core::{
     AccountCtx, AccountKind, CursorUpdate, DiscoveryBatch, FetchOutcome, FetchRequest,
@@ -53,8 +57,6 @@ pub struct SlackConfig {
     pub mention_scan: MentionScan,
     #[serde(default)]
     pub search_terms: Vec<String>,
-    #[serde(default = "d365")]
-    pub backfill_days: i64,
     #[serde(default = "d45")]
     pub thread_watch_days: i64,
     #[serde(default = "d7")]
@@ -70,9 +72,6 @@ pub struct SlackConfig {
     pub team_url: Option<String>,
 }
 
-fn d365() -> i64 {
-    365
-}
 fn d45() -> i64 {
     45
 }
@@ -95,7 +94,6 @@ pub fn default_config_json() -> Value {
         "exclude_channels": [],
         "mention_scan": "all",
         "search_terms": [],
-        "backfill_days": 365,
         "thread_watch_days": 45,
         "thread_hot_days": 7,
         "dormant_days": 30,
@@ -423,10 +421,9 @@ impl SlackSource {
         host: &dyn SyncHost,
         conv: &Conv,
         messages: &[Value],
-        window_end: &str,
         prev_activity: Option<&str>,
         kinds: &[SourceKind],
-    ) -> Result<DiscoveryBatch, SourceError> {
+    ) -> Result<(DiscoveryBatch, Option<String>), SourceError> {
         let mut batch = DiscoveryBatch::default();
         let want = |k: SourceKind| kinds.is_empty() || kinds.contains(&k);
         // Day entries (full conversations only).
@@ -540,81 +537,188 @@ impl SlackSource {
                 value: Some(json!({"last_activity": latest})),
             });
         }
-        batch.cursors.push(CursorUpdate {
-            source_kind: SourceKind::SlackThread,
-            key: format!("conv:{}", conv.id),
-            value: Some(json!({"oldest": window_end, "last_activity": activity})),
-        });
-        Ok(batch)
+        Ok((batch, activity))
+    }
+
+    /// The local midnight at or before `t` in `slack.day_timezone`.
+    fn local_midnight(&self, t: DateTime<Utc>) -> DateTime<Utc> {
+        let date = t
+            .with_timezone(&render::tz(&self.tz))
+            .format("%Y-%m-%d")
+            .to_string();
+        self.day_bounds(&date).map_or(t, |(s, _)| s)
+    }
+
+    /// The local midnight `days` calendar days before the one at or before `t`
+    /// (a calendar shift, so a DST change cannot break the alignment).
+    fn midnight_before(&self, t: DateTime<Utc>, days: i64) -> DateTime<Utc> {
+        let local = t.with_timezone(&render::tz(&self.tz)).date_naive();
+        self.day_bounds(
+            &(local - ChronoDuration::days(days))
+                .format("%Y-%m-%d")
+                .to_string(),
+        )
+        .map_or(t - ChronoDuration::days(days), |(s, _)| s)
     }
 
     fn ts_of(t: DateTime<Utc>) -> String {
         format!("{}.{:06}", t.timestamp(), t.timestamp_subsec_micros())
     }
 
+    /// Scan one conversation: the forward step from its cursor, then the
+    /// backward range requested with `--since` (ADR-0016). Returns the backward
+    /// range that was fetched, for the involvement search.
     async fn scan_conversation(
         &self,
         host: &dyn SyncHost,
         conv: &Conv,
         opts: &SyncOptions,
-    ) -> Result<(), SourceError> {
-        let now = host.now();
-        let cursor = host.cursor(SourceKind::SlackThread, &format!("conv:{}", conv.id))?;
+    ) -> Result<Option<TimeRange>, SourceError> {
+        let key = format!("conv:{}", conv.id);
+        let run_start = opts.run_start(host.now());
+        let initial_start = self.local_midnight(opts.initial_start(run_start));
+        let cursor = host.cursor(SourceKind::SlackThread, &key)?;
         let last_activity = cursor
             .as_ref()
             .and_then(|c| c.get("last_activity"))
             .and_then(Value::as_str)
             .map(str::to_string);
-        let start: DateTime<Utc> = match (
-            opts.since,
-            cursor
-                .as_ref()
-                .and_then(|c| c.get("oldest"))
-                .and_then(Value::as_str),
-        ) {
-            (Some(s), _) => s,
-            (None, Some(o)) => render::ts_to_time(o).unwrap_or(now),
-            (None, None) => now - ChronoDuration::days(self.config.backfill_days),
-        };
-        // Dormant conversations are only scanned in deep runs (full channels
-        // excepted); the deep run continues from the stored cursor.
+        let cov = cursor.as_ref().map(|c| Coverage {
+            since: covered_since_of(c),
+            until: c
+                .get("oldest")
+                .and_then(Value::as_str)
+                .and_then(render::ts_to_time)
+                .unwrap_or(run_start),
+        });
+        let mut plan = plan_ranges(
+            cov,
+            run_start,
+            initial_start,
+            opts.since.map(|t| self.local_midnight(t)),
+            opts.until.map(|t| self.local_midnight(t)),
+        );
+        // Dormant conversations are only scanned forward in deep runs (full
+        // channels excepted); the deep run continues from the stored cursor.
         if opts.mode == SyncMode::Normal
             && cursor.is_some()
-            && opts.since.is_none()
             && !self.is_full_channel(conv)
             && let Some(a) = last_activity.as_deref().and_then(render::ts_to_time)
-            && now - a > ChronoDuration::days(self.config.dormant_days)
+            && run_start - a > ChronoDuration::days(self.config.dormant_days)
         {
-            return Ok(());
+            plan.forward = None;
         }
-        let mut w_start = start;
-        while w_start < now {
+        if let Some(fw) = plan.forward {
+            self.scan_forward(
+                host,
+                conv,
+                opts,
+                fw,
+                run_start,
+                cov,
+                initial_start,
+                last_activity,
+            )
+            .await?;
+        }
+        let Some(bw) = plan.backward else {
+            return Ok(None);
+        };
+        self.scan_backward(host, conv, opts, bw).await?;
+        Ok(Some(bw.range))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn scan_forward(
+        &self,
+        host: &dyn SyncHost,
+        conv: &Conv,
+        opts: &SyncOptions,
+        range: TimeRange,
+        run_start: DateTime<Utc>,
+        cov: Option<Coverage>,
+        initial_start: DateTime<Utc>,
+        mut activity: Option<String>,
+    ) -> Result<(), SourceError> {
+        // Without a cursor the first window defines the covered start.
+        let covered_since = cov.map_or(Some(initial_start), |c| c.since);
+        let mut w_start = range.from;
+        while w_start < range.to {
             if host.is_cancelled() {
                 return Err(SourceError::Cancelled);
             }
-            let w_end = (w_start + ChronoDuration::days(WINDOW_DAYS)).min(now);
+            let w_end = (w_start + ChronoDuration::days(WINDOW_DAYS)).min(range.to);
             let msgs = self
                 .client()?
                 .history(&conv.id, &Self::ts_of(w_start), &Self::ts_of(w_end))
                 .await?;
             self.harvest(host, &msgs)?;
-            let prev = host
-                .cursor(SourceKind::SlackThread, &format!("conv:{}", conv.id))?
-                .and_then(|c| {
-                    c.get("last_activity")
-                        .and_then(Value::as_str)
-                        .map(str::to_string)
-                });
-            let batch = self.window_batch(
-                host,
-                conv,
-                &msgs,
-                &Self::ts_of(w_end),
-                prev.as_deref(),
-                &opts.kinds,
-            )?;
+            let (mut batch, act) =
+                self.window_batch(host, conv, &msgs, activity.as_deref(), &opts.kinds)?;
+            activity = act;
+            // The last window ends at the run start; the stored cursor stays a
+            // little behind it to absorb clock skew (ADR-0016).
+            let cursor_at = if w_end >= range.to {
+                next_cursor(w_start, run_start, opts.overlap())
+            } else {
+                w_end
+            };
+            let mut value = json!({"oldest": Self::ts_of(cursor_at), "last_activity": activity});
+            if let Some(s) = covered_since {
+                value = with_covered_since(&value, s);
+            }
+            batch.cursors.push(CursorUpdate {
+                source_kind: SourceKind::SlackThread,
+                key: format!("conv:{}", conv.id),
+                value: Some(value),
+            });
             host.commit(batch)?;
             w_start = w_end;
+        }
+        Ok(())
+    }
+
+    /// Fetch a backward range newest window first, so that every committed window
+    /// extends the contiguous coverage (ADR-0016).
+    async fn scan_backward(
+        &self,
+        host: &dyn SyncHost,
+        conv: &Conv,
+        opts: &SyncOptions,
+        plan: BackwardPlan,
+    ) -> Result<(), SourceError> {
+        let key = format!("conv:{}", conv.id);
+        let mut w_end = plan.range.to;
+        while w_end > plan.range.from {
+            if host.is_cancelled() {
+                return Err(SourceError::Cancelled);
+            }
+            let w_start = self
+                .midnight_before(w_end, WINDOW_DAYS)
+                .max(plan.range.from);
+            let msgs = self
+                .client()?
+                .history(&conv.id, &Self::ts_of(w_start), &Self::ts_of(w_end))
+                .await?;
+            self.harvest(host, &msgs)?;
+            // The conversation's activity marker belongs to the forward cursor.
+            let (mut batch, _) = self.window_batch(host, conv, &msgs, None, &opts.kinds)?;
+            if plan.record
+                && let Some(cur) = host.cursor(SourceKind::SlackThread, &key)?
+            {
+                // Only a window that touches the covered interval extends it,
+                // and never by moving the start forward.
+                let known = covered_since_of(&cur);
+                if known.is_none_or(|s| w_end >= s && w_start < s) {
+                    batch.cursors.push(CursorUpdate {
+                        source_kind: SourceKind::SlackThread,
+                        key: key.clone(),
+                        value: Some(with_covered_since(&cur, w_start)),
+                    });
+                }
+            }
+            host.commit(batch)?;
+            w_end = w_start;
         }
         Ok(())
     }
@@ -679,22 +783,37 @@ impl SlackSource {
         convs: &BTreeMap<String, Conv>,
         excluded: &BTreeSet<String>,
         opts: &SyncOptions,
+        range: Option<TimeRange>,
     ) -> Result<(), SourceError> {
         let Some(me) = &self.me else { return Ok(()) };
-        let now = host.now();
-        let days = match opts.mode {
-            SyncMode::Normal => self.config.thread_hot_days,
-            SyncMode::Deep => self.config.thread_watch_days,
+        // Recent activity by default; a backward range searches that range
+        // instead (`after:` and `before:` are exclusive day bounds).
+        let (after, before) = match range {
+            Some(r) => (r.from, Some(r.to)),
+            None => {
+                let days = match opts.mode {
+                    SyncMode::Normal => self.config.thread_hot_days,
+                    SyncMode::Deep => self.config.thread_watch_days,
+                };
+                (
+                    opts.run_start(host.now()) - ChronoDuration::days(days),
+                    None,
+                )
+            }
         };
-        let after =
-            opts.since.unwrap_or(now - ChronoDuration::days(days)) - ChronoDuration::days(1);
-        let after = after.format("%Y-%m-%d").to_string();
-        let mut queries = vec![
-            format!("from:<@{me}> after:{after}"),
-            format!("<@{me}> after:{after}"),
-        ];
+        let after = (after - ChronoDuration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let bound = match before {
+            Some(b) => format!(
+                " after:{after} before:{}",
+                (b + ChronoDuration::days(1)).format("%Y-%m-%d")
+            ),
+            None => format!(" after:{after}"),
+        };
+        let mut queries = vec![format!("from:<@{me}>{bound}"), format!("<@{me}>{bound}")];
         for t in &self.config.search_terms {
-            queries.push(format!("\"{}\" after:{after}", t.replace('"', "")));
+            queries.push(format!("\"{}\"{bound}", t.replace('"', "")));
         }
         let mut batch = DiscoveryBatch::default();
         let mut seen = BTreeSet::new();
@@ -977,17 +1096,28 @@ impl Source for SlackSource {
             Duration::from_secs(86_400),
         )?;
         let wants_threads = opts.kinds.is_empty() || opts.kinds.contains(&SourceKind::SlackThread);
+        // The union of the backward ranges fetched by the conversations.
+        let mut backward: Option<TimeRange> = None;
         for conv in convs.values() {
             if host.is_cancelled() {
                 return Err(SourceError::Cancelled);
             }
-            self.scan_conversation(host, conv, opts).await?;
+            if let Some(r) = self.scan_conversation(host, conv, opts).await? {
+                backward = Some(backward.map_or(r, |b| TimeRange {
+                    from: b.from.min(r.from),
+                    to: b.to.max(r.to),
+                }));
+            }
         }
         if wants_threads {
             self.enqueue_watched(host, opts.mode)?;
             if self.config.mention_scan != MentionScan::Off {
-                self.search_involvement(host, &convs, &excluded, opts)
+                self.search_involvement(host, &convs, &excluded, opts, None)
                     .await?;
+                if backward.is_some() {
+                    self.search_involvement(host, &convs, &excluded, opts, backward)
+                        .await?;
+                }
             }
         }
         Ok(())
@@ -1028,7 +1158,7 @@ mod tests {
     fn config_defaults() {
         let c: SlackConfig = serde_json::from_value(json!({})).unwrap();
         assert!(c.include_dms);
-        assert_eq!(c.backfill_days, 365);
+        assert_eq!(c.dormant_days, 30);
         assert_eq!(c.mention_scan, MentionScan::All);
         let d: SlackConfig = serde_json::from_value(default_config_json()).unwrap();
         assert_eq!(d.thread_watch_days, 45);

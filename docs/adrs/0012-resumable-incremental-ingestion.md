@@ -118,3 +118,13 @@ Re-downloading a whole thread for every new reply wastes API quota and time.
 - Long threads accumulate many small segments. `normalize` handles any number of
   them. A later `sb raw compact` could merge segments, but it is not needed for
   correctness.
+
+## Amendments
+
+### 2026-10-06: first-sync depth
+
+The Context sentence "It back-fills a year of Slack and months of meetings"
+describes the original defaults. The depth of the first sync and the meaning of
+`--since` are now governed by [ADR-0016](0016-sync-window-and-coverage.md)
+(initial window `sync.initial_days`, default 30 days, and tracked backward coverage).
+The resumability rules in this ADR are unchanged.

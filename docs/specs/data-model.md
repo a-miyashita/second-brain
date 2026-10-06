@@ -171,6 +171,12 @@ Periods in which the tool did not run summarization have no row.
 Per-account, per-source cursors (Slack conversation `last_ts`, thread watch lists,
 Calendar sync window, and so on).
 
+Scopes that fetch by time range (a Slack conversation, the Meet `calendar` and
+`drive` strategies) store their fetched interval in the value as
+`covered_since` (start) and the forward cursor (`covered_until`: Slack `oldest`,
+Meet `last_time_max` / `modified_after`). The interval is contiguous, and a missing
+`covered_since` means "unknown" (ADR-0016). No migration is needed: the value is JSON.
+
 `account_id, source_kind, key TEXT, value TEXT (JSON), updated_at` — primary key
 `(account_id, source_kind, key)`.
 

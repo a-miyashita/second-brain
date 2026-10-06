@@ -114,6 +114,25 @@ fn stop_hint(stop: &Option<Stop>, command: &str) {
 }
 
 pub async fn sync(ctx: &Ctx, a: SyncArgs) -> anyhow::Result<i32> {
+    if a.until.is_some() && a.since.is_none() {
+        return Err(usage("--until needs --since"));
+    }
+    let now = chrono::Utc::now();
+    let since = a
+        .since
+        .as_deref()
+        .map(|s| util::parse_when(s, now))
+        .transpose()?;
+    let until = a
+        .until
+        .as_deref()
+        .map(|s| util::parse_when(s, now))
+        .transpose()?;
+    if let (Some(s), Some(u)) = (since, until)
+        && s >= u
+    {
+        return Err(usage("--since must be earlier than --until"));
+    }
     let p = ctx.pipeline()?;
     let opts = SyncOptions {
         accounts: a.accounts.clone(),
@@ -123,11 +142,8 @@ pub async fn sync(ctx: &Ctx, a: SyncArgs) -> anyhow::Result<i32> {
         } else {
             SyncMode::Normal
         },
-        since: a
-            .since
-            .as_deref()
-            .map(|s| parse_date(s, false))
-            .transpose()?,
+        since,
+        until,
         no_summary: a.no_summary,
         limits: limits(&a.limits)?,
         dry_run: a.dry_run,
@@ -171,7 +187,12 @@ pub async fn sync(ctx: &Ctx, a: SyncArgs) -> anyhow::Result<i32> {
     if ctx.json {
         ctx.out_json(
             "sb.sync/v1",
-            json!({"run_id": r.run_id, "status": status, "stats": r.stats}),
+            json!({
+                "run_id": r.run_id,
+                "status": status,
+                "stats": r.stats,
+                "coverage": super::coverage::rows(&ctx.catalog()?)?,
+            }),
         );
     } else {
         print_run_stats(&r.stats);
