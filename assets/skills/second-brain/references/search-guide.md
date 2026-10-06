@@ -37,4 +37,7 @@ raw file path.
 
 - `sb list --json --source google.meet --since 2026-09-01 --limit 20` lists
   entries newest first (useful for "what meetings did I have last week").
-- `sb stats --json` shows what the knowledge base contains.
+- `sb stats --json` shows what the knowledge base contains and, under
+  `coverage`, how far back each account and source is synced (`covered_since`,
+  `covered_until`; `null` means unknown). A question about a period older than
+  `covered_since` cannot be answered from the knowledge base yet.

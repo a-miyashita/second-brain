@@ -26,6 +26,11 @@ sb search <terms>... --json [--section decisions] [--source slack.thread|slack.d
 - Two-character Japanese terms (契約, 要件, 納期) work.
 - No hits? Retry with synonyms, fewer terms, the other language, or no
   `--section`. Do not conclude "nothing exists" after one query.
+- Still nothing for a period? The data may not reach that far back: check
+  `sb stats --json` (`coverage`, `covered_since` per account and source). If the
+  period is older, tell the user it is not synced yet and suggest
+  `sb sync --since <age>` (for example `90d`). Do not run it yourself: it can
+  spend money on summaries.
 - Pick the section by question type (details in
   [references/search-guide.md](references/search-guide.md)):
   - "What was decided about X?" → `--section decisions` first. Agreed outcomes are

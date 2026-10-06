@@ -37,7 +37,14 @@ fn msg(ts: &str, user: &str, text: &str) -> Value {
     json!({"type": "message", "ts": ts, "user": user, "text": text})
 }
 
+/// Called for every `conversations.history` request (before it is answered).
+type Hook = Arc<dyn Fn(&Request) + Send + Sync>;
+
 async fn slack_mock(state: Messages) -> MockServer {
+    slack_mock_hooked(state, None).await
+}
+
+async fn slack_mock_hooked(state: Messages, hook: Option<Hook>) -> MockServer {
     let server = MockServer::start().await;
     Mock::given(path("/users.list"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true, "members": [
@@ -59,6 +66,9 @@ async fn slack_mock(state: Messages) -> MockServer {
     let st = state.clone();
     Mock::given(path("/conversations.history"))
         .respond_with(move |req: &Request| {
+            if let Some(h) = &hook {
+                h(req);
+            }
             let ch = q(req, "channel").unwrap();
             let oldest = f(&q(req, "oldest").unwrap());
             let latest = f(&q(req, "latest").unwrap());
@@ -374,4 +384,226 @@ async fn count_summaries(llm: &MockServer) -> usize {
                 && !String::from_utf8_lossy(&r.body).contains("ping")
         })
         .count()
+}
+
+// ---------- initial window and backward coverage (ADR-0016) ----------
+
+// 2026-09-10T00:00:00Z, the fixed clock of `pipeline`.
+const NOW: i64 = 1_788_998_400;
+
+fn day_ts(days_ago: i64) -> String {
+    // 01:00 UTC of the day `days_ago` days before NOW.
+    format!("{}.000100", NOW - days_ago * 86_400 + 3600)
+}
+
+fn day_id(days_ago: i64) -> String {
+    let d = chrono::DateTime::from_timestamp(NOW - days_ago * 86_400, 0).unwrap();
+    format!("C1:day:{}", d.format("%Y-%m-%d"))
+}
+
+fn window_home(slack_state: &Messages) -> (tempfile::TempDir, Home) {
+    {
+        let mut s = slack_state.lock().unwrap();
+        s.insert(
+            "C1".into(),
+            [5, 20, 45, 80]
+                .iter()
+                .map(|d| msg(&day_ts(*d), "U2", &format!("note from {d} days ago")))
+                .collect(),
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let home = Home::new(dir.path().join("home"));
+    let cat = Catalog::create(&home).unwrap();
+    let mut config = sb_slack::default_config_json();
+    config["full_channels"] = json!(["dev"]);
+    config["include_dms"] = json!(false);
+    config["team_url"] = json!("https://acme.slack.test/");
+    cat.add_account(
+        &AccountId::new("acme").unwrap(),
+        AccountKind::Slack,
+        "Acme",
+        Some("T1:U1"),
+        &config,
+    )
+    .unwrap();
+    cat.set_setting("slack.day_timezone", &json!("UTC"))
+        .unwrap();
+    (dir, home)
+}
+
+fn has(p: &Pipeline, days_ago: i64) -> bool {
+    p.catalog()
+        .entry_by_key("acme", SourceKind::SlackDay, &day_id(days_ago))
+        .unwrap()
+        .is_some()
+}
+
+fn covered_since(p: &Pipeline) -> String {
+    p.catalog()
+        .cursor(
+            &AccountId::new("acme").unwrap(),
+            SourceKind::SlackThread,
+            "conv:C1",
+        )
+        .unwrap()
+        .and_then(|c| c["covered_since"].as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+fn midnight(days_ago: i64) -> String {
+    chrono::DateTime::from_timestamp(NOW - days_ago * 86_400, 0)
+        .unwrap()
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
+}
+
+fn history_oldest(reqs: &[Request]) -> Vec<f64> {
+    reqs.iter()
+        .filter(|r| {
+            r.url.path() == "/conversations.history" && q(r, "channel").as_deref() == Some("C1")
+        })
+        .map(|r| f(&q(r, "oldest").unwrap()))
+        .collect()
+}
+
+fn sync_opts(since_days: Option<i64>, until_days: Option<i64>) -> SyncOptions {
+    let at = |d: i64| sb_core::util::parse_ts(&midnight(d)).unwrap();
+    SyncOptions {
+        no_summary: true,
+        since: since_days.map(at),
+        until: until_days.map(at),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn first_sync_covers_the_initial_window_and_since_extends_it() {
+    let state: Messages = Arc::new(Mutex::new(BTreeMap::new()));
+    let (_dir, home) = window_home(&state);
+    let slack = slack_mock(state.clone()).await;
+    let p = pipeline(&home, &slack);
+
+    // First run: 30 days.
+    let r = p.sync(&sync_opts(None, None)).await.unwrap();
+    assert!(r.stats.errors.is_empty(), "{:?}", r.stats.errors);
+    assert!(has(&p, 5) && has(&p, 20));
+    assert!(!has(&p, 45) && !has(&p, 80));
+    assert_eq!(covered_since(&p), midnight(30));
+
+    // Extend to 60 days: only 31..60 days are requested.
+    let before = slack.received_requests().await.unwrap().len();
+    let r = p.sync(&sync_opts(Some(60), None)).await.unwrap();
+    assert!(r.stats.errors.is_empty(), "{:?}", r.stats.errors);
+    assert!(has(&p, 45) && !has(&p, 80));
+    assert_eq!(covered_since(&p), midnight(60));
+    let reqs = slack.received_requests().await.unwrap()[before..].to_vec();
+    let low = (NOW - 60 * 86_400) as f64;
+    let high = (NOW - 30 * 86_400) as f64;
+    for o in history_oldest(&reqs) {
+        // The forward step asks from the cursor (recent); the backward step
+        // never reaches into the covered 30 days.
+        assert!(
+            o >= high || (low..high).contains(&o),
+            "unexpected oldest {o}"
+        );
+    }
+    assert!(
+        history_oldest(&reqs)
+            .iter()
+            .filter(|o| **o < high)
+            .all(|o| *o >= low),
+        "the backward step stays inside 31..60 days"
+    );
+
+    // `--since` inside the covered interval fetches nothing backwards.
+    let before = slack.received_requests().await.unwrap().len();
+    p.sync(&sync_opts(Some(50), None)).await.unwrap();
+    let reqs = slack.received_requests().await.unwrap()[before..].to_vec();
+    assert!(history_oldest(&reqs).iter().all(|o| *o >= high));
+    assert_eq!(covered_since(&p), midnight(60));
+
+    // Further back.
+    p.sync(&sync_opts(Some(90), None)).await.unwrap();
+    assert!(has(&p, 80));
+    assert_eq!(covered_since(&p), midnight(90));
+}
+
+#[tokio::test]
+async fn detached_explicit_window_is_fetched_but_not_recorded() {
+    let state: Messages = Arc::new(Mutex::new(BTreeMap::new()));
+    let (_dir, home) = window_home(&state);
+    let slack = slack_mock(state.clone()).await;
+    let p = pipeline(&home, &slack);
+    p.sync(&sync_opts(None, None)).await.unwrap();
+    assert_eq!(covered_since(&p), midnight(30));
+
+    p.sync(&sync_opts(Some(85), Some(75))).await.unwrap();
+    assert!(has(&p, 80), "the window is fetched");
+    assert!(!has(&p, 45), "the gap in between is not");
+    assert_eq!(covered_since(&p), midnight(30), "and not recorded");
+}
+
+#[tokio::test]
+async fn cursor_without_covered_since_is_treated_as_unknown() {
+    let state: Messages = Arc::new(Mutex::new(BTreeMap::new()));
+    let (_dir, home) = window_home(&state);
+    let slack = slack_mock(state.clone()).await;
+    let p = pipeline(&home, &slack);
+    p.sync(&sync_opts(None, None)).await.unwrap();
+    // A cursor written before ADR-0016.
+    p.catalog()
+        .commit_batch(&sb_store::CommitBatch {
+            account_id: Some(AccountId::new("acme").unwrap()),
+            cursors: vec![sb_core::CursorUpdate {
+                source_kind: SourceKind::SlackThread,
+                key: "conv:C1".into(),
+                value: Some(json!({"oldest": format!("{NOW}.000000"), "last_activity": day_ts(5)})),
+            }],
+            ..Default::default()
+        })
+        .unwrap();
+    p.sync(&sync_opts(Some(60), None)).await.unwrap();
+    assert!(has(&p, 45));
+    assert_eq!(covered_since(&p), midnight(60));
+}
+
+#[tokio::test]
+async fn interrupted_extension_keeps_its_windows_and_resumes() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let state: Messages = Arc::new(Mutex::new(BTreeMap::new()));
+    let (_dir, home) = window_home(&state);
+    let token = tokio_util::sync::CancellationToken::new();
+    let armed = Arc::new(AtomicBool::new(false));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let hook: Hook = {
+        let (token, armed, calls) = (token.clone(), armed.clone(), calls.clone());
+        Arc::new(move |_| {
+            if armed.load(Ordering::SeqCst) && calls.fetch_add(1, Ordering::SeqCst) + 1 == 3 {
+                token.cancel();
+            }
+        })
+    };
+    let slack = slack_mock_hooked(state.clone(), Some(hook)).await;
+    let mut p = pipeline(&home, &slack);
+    p.cancel = token;
+    p.sync(&sync_opts(None, None)).await.unwrap();
+    assert_eq!(covered_since(&p), midnight(30));
+
+    // Stop after the second backward window (the first call is the forward step).
+    armed.store(true, Ordering::SeqCst);
+    p.sync(&sync_opts(Some(90), None)).await.unwrap();
+    let partial = covered_since(&p);
+    assert!(
+        partial.as_str() < midnight(30).as_str() && partial.as_str() > midnight(90).as_str(),
+        "partial coverage {partial}"
+    );
+    assert!(!has(&p, 80));
+
+    // Resume: the same command continues from the recorded start.
+    drop(p);
+    let p = pipeline(&home, &slack);
+    p.sync(&sync_opts(Some(90), None)).await.unwrap();
+    assert_eq!(covered_since(&p), midnight(90));
+    assert!(has(&p, 45) && has(&p, 80));
 }

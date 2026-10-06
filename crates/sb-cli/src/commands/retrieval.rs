@@ -332,6 +332,12 @@ pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
                 json!({"weekly": one(&b.week), "monthly": one(&b.month)}),
             );
         }
+        if let Some(o) = v.as_object_mut() {
+            o.insert(
+                "coverage".into(),
+                serde_json::to_value(super::coverage::rows(&cat)?)?,
+            );
+        }
         ctx.out_json("sb.stats/v1", v);
         return Ok(exit::OK);
     }
@@ -349,6 +355,27 @@ pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
             c.oldest.as_deref().unwrap_or("-").get(..10).unwrap_or("-"),
             c.newest.as_deref().unwrap_or("-").get(..10).unwrap_or("-")
         );
+    }
+    let coverage = super::coverage::rows(&cat)?;
+    if !coverage.is_empty() {
+        println!("\nSynced range (see `sb sync --since`):");
+        for c in &coverage {
+            println!(
+                "  {:<16} {:<13} {} .. {}",
+                c.account,
+                c.source,
+                c.covered_since
+                    .as_deref()
+                    .unwrap_or("unknown")
+                    .get(..10)
+                    .unwrap_or("unknown"),
+                c.covered_until
+                    .as_deref()
+                    .unwrap_or("-")
+                    .get(..10)
+                    .unwrap_or("-")
+            );
+        }
     }
     println!("\nRaw status:");
     for c in &s.by_raw_status {

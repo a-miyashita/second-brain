@@ -2,6 +2,7 @@
 
 pub mod budget;
 pub mod clock;
+pub mod coverage;
 pub mod document;
 pub mod kinds;
 pub mod model;

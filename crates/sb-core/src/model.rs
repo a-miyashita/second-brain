@@ -420,10 +420,44 @@ pub enum SyncMode {
 #[derive(Debug, Clone, Default)]
 pub struct SyncOptions {
     pub mode: SyncMode,
-    /// Back-fill from this date instead of the source default.
+    /// Extend coverage backwards to this instant (`--since`, ADR-0016).
     pub since: Option<DateTime<Utc>>,
+    /// With `since`: the explicit window ends here (`--until`).
+    pub until: Option<DateTime<Utc>>,
+    /// When the run started; the upper bound of everything it fetches. `None`
+    /// means "the host's current time" (tests, single-item callers).
+    pub run_started_at: Option<DateTime<Utc>>,
+    /// Length of the first window in days (`sync.initial_days`, with the
+    /// account override applied). `None` means the default.
+    pub initial_days: Option<i64>,
+    /// Overlap kept before the forward cursor, in seconds (`sync.overlap_secs`).
+    pub overlap_secs: Option<i64>,
     /// Only these source kinds (empty = all kinds of the adapter).
     pub kinds: Vec<SourceKind>,
+}
+
+impl SyncOptions {
+    /// The run's start instant.
+    pub fn run_start(&self, now: DateTime<Utc>) -> DateTime<Utc> {
+        self.run_started_at.unwrap_or(now)
+    }
+
+    /// The start of the initial window for a scope without a cursor.
+    pub fn initial_start(&self, run_start: DateTime<Utc>) -> DateTime<Utc> {
+        run_start
+            - chrono::Duration::days(
+                self.initial_days
+                    .unwrap_or(crate::coverage::DEFAULT_INITIAL_DAYS),
+            )
+    }
+
+    /// The overlap kept before the forward cursor.
+    pub fn overlap(&self) -> chrono::Duration {
+        chrono::Duration::seconds(
+            self.overlap_secs
+                .unwrap_or(crate::coverage::DEFAULT_OVERLAP_SECS),
+        )
+    }
 }
 
 #[cfg(test)]

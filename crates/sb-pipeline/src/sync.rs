@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use sb_core::coverage::{DEFAULT_INITIAL_DAYS, DEFAULT_OVERLAP_SECS};
 use sb_core::source::{Source, SourceError};
 use sb_core::{
     AccountStatus, EntryOrigin, FetchOutcome, FetchRequest, RunStatus, Severity, SourceKind,
@@ -30,7 +31,10 @@ pub struct SyncOptions {
     pub accounts: Vec<String>,
     pub sources: Vec<SourceKind>,
     pub mode: SyncMode,
+    /// Extend coverage backwards to this instant (ADR-0016).
     pub since: Option<DateTime<Utc>>,
+    /// With `since`: an explicit window ending here.
+    pub until: Option<DateTime<Utc>>,
     pub no_summary: bool,
     pub limits: Limits,
     pub dry_run: bool,
@@ -82,6 +86,9 @@ impl Pipeline {
 
     /// Run `sb sync`.
     pub async fn sync(&self, opts: &SyncOptions) -> Result<SyncReport, PipelineError> {
+        if opts.until.is_some() && opts.since.is_none() {
+            return Err(PipelineError::Invalid("--until needs --since".into()));
+        }
         if opts.dry_run {
             return self.sync_dry_run(opts);
         }
@@ -123,7 +130,9 @@ impl Pipeline {
         };
         self.set_run_id(run_id);
         let mut stats = RunStats::default();
-        let result = self.sync_inner(opts, &mut stats).await;
+        // One instant bounds everything this run fetches (ADR-0016).
+        let run_started_at = self.catalog().now();
+        let result = self.sync_inner(opts, run_started_at, &mut stats).await;
         let mut summarize = None;
         if let Err(e) = &result {
             stats.errors.push(e.to_string());
@@ -185,6 +194,7 @@ impl Pipeline {
     async fn sync_inner(
         &self,
         opts: &SyncOptions,
+        run_started_at: DateTime<Utc>,
         stats: &mut RunStats,
     ) -> Result<(), PipelineError> {
         let policy = SummaryPolicy::load(&self.catalog())?;
@@ -232,7 +242,7 @@ impl Pipeline {
                 EntryOrigin::Sync,
             )?;
             let res = self
-                .sync_account(&host, source.as_ref(), &kinds, opts)
+                .sync_account(&host, source.as_ref(), &kinds, opts, run_started_at)
                 .await;
             // Merge the host's counters.
             if let Ok(s) = host.stats.lock() {
@@ -309,13 +319,32 @@ impl Pipeline {
         source: &dyn Source,
         kinds: &[SourceKind],
         opts: &SyncOptions,
+        run_started_at: DateTime<Utc>,
     ) -> Result<Option<Stop>, PipelineError> {
         if let Some(stop) = self.drain_queue(host, kinds, &opts.limits).await? {
             return Ok(Some(stop));
         }
+        let (initial_days, overlap_secs) = {
+            let cat = self.catalog();
+            let global: i64 = cat.setting_or("sync.initial_days", DEFAULT_INITIAL_DAYS)?;
+            let overlap: i64 = cat.setting_or("sync.overlap_secs", DEFAULT_OVERLAP_SECS)?;
+            (global, overlap)
+        };
+        // An account may override the initial window (ADR-0016).
+        let initial_days = host
+            .account
+            .config
+            .get("initial_days")
+            .and_then(Value::as_i64)
+            .filter(|d| *d > 0)
+            .unwrap_or(initial_days);
         let sopts = SourceSyncOptions {
             mode: opts.mode,
             since: opts.since,
+            until: opts.until,
+            run_started_at: Some(run_started_at),
+            initial_days: Some(initial_days),
+            overlap_secs: Some(overlap_secs),
             kinds: kinds.to_vec(),
         };
         source.sync(host, &sopts).await?;

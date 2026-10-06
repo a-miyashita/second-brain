@@ -244,6 +244,7 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
 
     check_raw(&cat, &a, &mut r)?;
     check_queue(&cat, &mut r)?;
+    check_legacy_keys(&cat, &mut r)?;
 
     // accounts.status
     let accounts = cat.accounts()?;
@@ -437,6 +438,34 @@ fn check_queue(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
                 "{stale} items older than 7 days, {stuck} at the attempt limit{example}"
             )),
             Some("sb sync (check the account's errors)"),
+        );
+    }
+    Ok(())
+}
+
+/// Account config keys replaced by `sync.initial_days` (ADR-0016).
+const LEGACY_KEYS: &[&str] = &["backfill_days", "drive_backfill_days", "calendar_days"];
+
+fn check_legacy_keys(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
+    let mut found = Vec::new();
+    for a in cat.accounts()? {
+        for k in LEGACY_KEYS {
+            if a.config.get(k).is_some() {
+                found.push(format!("{}: {k}", a.id));
+            }
+        }
+    }
+    if found.is_empty() {
+        r.ok("config.legacy_keys", None);
+    } else {
+        r.add(
+            "config.legacy_keys",
+            Status::Info,
+            Some(format!(
+                "ignored since ADR-0016 (use sync.initial_days): {}",
+                found.join(", ")
+            )),
+            Some("sb config edit --account <id> (remove the keys)"),
         );
     }
     Ok(())

@@ -72,6 +72,47 @@ fn uninitialized_home_and_usage_errors() {
 }
 
 #[test]
+fn sync_range_options_are_validated() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("h");
+    assert_eq!(
+        sb(&home, &["setup", "home", "--yes"]).status.code(),
+        Some(0)
+    );
+    for args in [
+        &["sync", "--until", "2026-07-01"][..],
+        &["sync", "--since", "2026-08-01", "--until", "2026-07-01"],
+        &["sync", "--since", "soon"],
+    ] {
+        let o = sb(&home, &[args, &["--json"]].concat());
+        assert_eq!(o.status.code(), Some(64), "{args:?}");
+        assert_eq!(json_of(&o)["error"]["code"], "usage", "{args:?}");
+    }
+    for bad in ["0", "-3", "\"soon\"", "1.5"] {
+        let o = sb(
+            &home,
+            &["config", "set", "sync.initial_days", bad, "--json"],
+        );
+        assert_eq!(o.status.code(), Some(64), "initial_days {bad}");
+    }
+    assert_eq!(
+        sb(&home, &["config", "set", "sync.initial_days", "45"])
+            .status
+            .code(),
+        Some(0)
+    );
+    // Valid ranges are accepted (nothing to sync without accounts).
+    let o = sb(&home, &["sync", "--since", "90d", "--no-summary", "--json"]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(json_of(&o)["coverage"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn import_search_show_list_stats_doctor() {
     let d = tempfile::tempdir().unwrap();
     let home = d.path().join("h");

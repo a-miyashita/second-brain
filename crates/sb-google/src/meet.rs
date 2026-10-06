@@ -2,6 +2,9 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
+use sb_core::coverage::{
+    Coverage, TimeRange, covered_since_of, next_cursor, plan_ranges, with_covered_since,
+};
 use sb_core::source::{Source, SourceError, SyncHost};
 use sb_core::util::parse_ts;
 use sb_core::{
@@ -25,9 +28,6 @@ fn default_strategies() -> Vec<String> {
 fn d3() -> i64 {
     3
 }
-fn d30() -> i64 {
-    30
-}
 
 /// Per-account configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -37,12 +37,10 @@ pub struct MeetConfig {
     /// Ordered discovery strategies (`calendar`, `drive`).
     #[serde(default = "default_strategies")]
     pub meet_strategies: Vec<String>,
-    /// Calendar look-back in days for normal runs.
+    /// Days the Calendar window reaches behind its cursor, because notes are
+    /// attached to an event after it ends (ADR-0016).
     #[serde(default = "d3")]
-    pub calendar_days: i64,
-    /// Drive look-back for the first run.
-    #[serde(default = "d30")]
-    pub drive_backfill_days: i64,
+    pub calendar_overlap_days: i64,
     /// The "Meet Recordings" folder, when detection by name is not wanted.
     #[serde(default)]
     pub meet_folder_id: Option<String>,
@@ -53,8 +51,7 @@ pub fn default_config_json(features: &[String]) -> Value {
     json!({
         "features": features,
         "meet_strategies": ["calendar", "drive"],
-        "calendar_days": 3,
-        "drive_backfill_days": 30,
+        "calendar_overlap_days": 3,
     })
 }
 
@@ -91,16 +88,65 @@ impl MeetSource {
         self.config.features.is_empty() || self.config.features.iter().any(|f| f == "meet")
     }
 
+    /// Calendar discovery: the forward step from the stored cursor, then the
+    /// backward range requested with `--since` (ADR-0016).
     async fn sync_calendar(
         &self,
         host: &dyn SyncHost,
         opts: &SyncOptions,
     ) -> Result<(), SourceError> {
-        let now = host.now();
-        let min = opts
-            .since
-            .unwrap_or(now - ChronoDuration::days(self.config.calendar_days));
-        let max = now + ChronoDuration::hours(1);
+        let run_start = opts.run_start(host.now());
+        let initial_start = opts.initial_start(run_start);
+        let cursor = host.cursor(SourceKind::GoogleMeet, "calendar")?;
+        let cov = cursor.as_ref().and_then(|c| {
+            Some(Coverage {
+                since: covered_since_of(c),
+                until: c
+                    .get("last_time_max")
+                    .and_then(Value::as_str)
+                    .and_then(parse_ts)?,
+            })
+        });
+        let plan = plan_ranges(cov, run_start, initial_start, opts.since, opts.until);
+        if let Some(fw) = plan.forward {
+            // Notes are attached after an event ends: look back past the cursor.
+            let min = if cov.is_some() {
+                fw.from - ChronoDuration::days(self.config.calendar_overlap_days)
+            } else {
+                fw.from
+            };
+            let mut value = json!({
+                "last_time_max": rfc3339(next_cursor(fw.from, run_start, opts.overlap())),
+            });
+            if let Some(s) = cov.map_or(Some(initial_start), |c| c.since) {
+                value = with_covered_since(&value, s);
+            }
+            let max = run_start + ChronoDuration::hours(1);
+            self.list_events(host, min, max, Some(value)).await?;
+        }
+        if let Some(bw) = plan.backward {
+            // The forward step may have just created the cursor.
+            let current = host.cursor(SourceKind::GoogleMeet, "calendar")?;
+            let value = bw
+                .record
+                .then(|| current.and_then(|c| extended(&c, bw.range)))
+                .flatten();
+            self.list_events(host, bw.range.from, bw.range.to, value)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// List events in `[min, max)` and enqueue the notes attached to them. The
+    /// cursor `final_cursor` is committed together with the last page only, so
+    /// it never runs ahead of undiscovered events.
+    async fn list_events(
+        &self,
+        host: &dyn SyncHost,
+        min: DateTime<Utc>,
+        max: DateTime<Utc>,
+        final_cursor: Option<Value>,
+    ) -> Result<(), SourceError> {
         let mut page: Option<String> = None;
         loop {
             if host.is_cancelled() {
@@ -179,11 +225,15 @@ impl MeetSource {
                     });
                 }
             }
-            batch.cursors.push(CursorUpdate {
-                source_kind: SourceKind::GoogleMeet,
-                key: "calendar".into(),
-                value: Some(json!({"last_time_max": rfc3339(max)})),
-            });
+            if next.is_none()
+                && let Some(v) = &final_cursor
+            {
+                batch.cursors.push(CursorUpdate {
+                    source_kind: SourceKind::GoogleMeet,
+                    key: "calendar".into(),
+                    value: Some(v.clone()),
+                });
+            }
             host.commit(batch)?;
             match next {
                 Some(n) => page = Some(n),
@@ -228,40 +278,105 @@ impl MeetSource {
             tracing::info!(account = %self.account.id, "no \"{MEET_FOLDER_NAME}\" folder found; skipping the drive strategy");
             return Ok(());
         };
-        let cursor = host.cursor(SourceKind::GoogleMeet, "drive")?.and_then(|v| {
-            v.get("modified_after")
-                .and_then(Value::as_str)
-                .map(str::to_string)
+        let run_start = opts.run_start(host.now());
+        let initial_start = opts.initial_start(run_start);
+        let cursor = host.cursor(SourceKind::GoogleMeet, "drive")?;
+        let cov = cursor.as_ref().and_then(|c| {
+            Some(Coverage {
+                since: covered_since_of(c),
+                until: c
+                    .get("modified_after")
+                    .and_then(Value::as_str)
+                    .and_then(parse_ts)?,
+            })
         });
-        let after = match (opts.since, cursor) {
-            (Some(s), _) => rfc3339(s),
-            (None, Some(c)) => c,
-            (None, None) => {
-                rfc3339(host.now() - ChronoDuration::days(self.config.drive_backfill_days))
-            }
-        };
+        let plan = plan_ranges(cov, run_start, initial_start, opts.since, opts.until);
+        if let Some(fw) = plan.forward {
+            let covered_since = cov.map_or(Some(initial_start), |c| c.since);
+            self.drive_forward(host, &folder, fw.from, run_start, opts, covered_since)
+                .await?;
+        }
+        if let Some(bw) = plan.backward {
+            let q = format!(
+                "'{folder}' in parents and mimeType = '{GOOGLE_DOC_MIME}' and trashed = false and modifiedTime > '{}' and modifiedTime <= '{}'",
+                rfc3339(bw.range.from),
+                rfc3339(bw.range.to)
+            );
+            // Backward ranges never touch the forward cursor `modified_after`.
+            let value = bw
+                .record
+                .then(|| host.cursor(SourceKind::GoogleMeet, "drive").ok().flatten())
+                .flatten()
+                .and_then(|c| extended(&c, bw.range));
+            self.drive_pages(host, &q, |_| None, value).await?;
+        }
+        Ok(())
+    }
+
+    /// Forward step: files modified after `from`, oldest first. While paging, the
+    /// cursor follows the newest file seen; the last page stores the run start
+    /// minus the overlap.
+    async fn drive_forward(
+        &self,
+        host: &dyn SyncHost,
+        folder: &str,
+        from: DateTime<Utc>,
+        run_start: DateTime<Utc>,
+        opts: &SyncOptions,
+        covered_since: Option<DateTime<Utc>>,
+    ) -> Result<(), SourceError> {
+        let after = rfc3339(from);
         let q = format!(
             "'{folder}' in parents and mimeType = '{GOOGLE_DOC_MIME}' and trashed = false and modifiedTime > '{after}'"
         );
+        let with_since = |mut v: Value| {
+            if let Some(s) = covered_since {
+                v = with_covered_since(&v, s);
+            }
+            v
+        };
+        let last = with_since(
+            json!({"modified_after": rfc3339(next_cursor(from, run_start, opts.overlap()))}),
+        );
+        let mut newest = after;
+        self.drive_pages(
+            host,
+            &q,
+            |m| {
+                if m > newest.as_str() {
+                    newest = m.to_string();
+                }
+                Some(with_since(json!({"modified_after": newest})))
+            },
+            Some(last),
+        )
+        .await
+    }
+
+    /// Page through a Drive query and enqueue the notes. `progress` maps each
+    /// file's `modifiedTime` to the cursor to store after its page (the listing is
+    /// ordered by `modifiedTime`); `final_cursor` replaces it on the last page.
+    async fn drive_pages(
+        &self,
+        host: &dyn SyncHost,
+        q: &str,
+        mut progress: impl FnMut(&str) -> Option<Value>,
+        final_cursor: Option<Value>,
+    ) -> Result<(), SourceError> {
         let mut page: Option<String> = None;
-        let mut newest = after.clone();
         loop {
             if host.is_cancelled() {
                 return Err(SourceError::Cancelled);
             }
-            let (files, next) = self
-                .api()?
-                .list(&q, "modifiedTime", page.as_deref())
-                .await?;
+            let (files, next) = self.api()?.list(q, "modifiedTime", page.as_deref()).await?;
             let mut batch = DiscoveryBatch::default();
+            let mut cursor = None;
             for f in &files {
                 let Some(id) = f.get("id").and_then(Value::as_str) else {
                     continue;
                 };
-                if let Some(m) = f.get("modifiedTime").and_then(Value::as_str)
-                    && m > newest.as_str()
-                {
-                    newest = m.to_string();
+                if let Some(m) = f.get("modifiedTime").and_then(Value::as_str) {
+                    cursor = progress(m).or(cursor);
                 }
                 batch.enqueue.push(QueueItem {
                     source_kind: SourceKind::GoogleMeet,
@@ -270,11 +385,18 @@ impl MeetSource {
                     hint: json!({}),
                 });
             }
-            batch.cursors.push(CursorUpdate {
-                source_kind: SourceKind::GoogleMeet,
-                key: "drive".into(),
-                value: Some(json!({"modified_after": newest})),
-            });
+            let cursor = if next.is_none() {
+                final_cursor.clone()
+            } else {
+                cursor
+            };
+            if let Some(v) = cursor {
+                batch.cursors.push(CursorUpdate {
+                    source_kind: SourceKind::GoogleMeet,
+                    key: "drive".into(),
+                    value: Some(v),
+                });
+            }
             host.commit(batch)?;
             match next {
                 Some(n) => page = Some(n),
@@ -282,6 +404,15 @@ impl MeetSource {
             }
         }
     }
+}
+
+/// `cursor` with `covered_since` moved back to the start of `range`, when the
+/// range touches the covered interval and really extends it.
+fn extended(cursor: &Value, range: TimeRange) -> Option<Value> {
+    let known = covered_since_of(cursor);
+    known
+        .is_none_or(|s| range.to >= s && range.from < s)
+        .then(|| with_covered_since(cursor, range.from))
 }
 
 #[async_trait]

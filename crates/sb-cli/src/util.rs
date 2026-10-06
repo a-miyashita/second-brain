@@ -72,6 +72,32 @@ pub fn parse_date(s: &str, end_of_day: bool) -> anyhow::Result<DateTime<Utc>> {
         .unwrap_or_default())
 }
 
+/// Parse a point in time for `sb sync --since/--until`: a date, an RFC 3339
+/// time, or an age such as `90d` or `12w` (before `now`).
+pub fn parse_when(s: &str, now: DateTime<Utc>) -> anyhow::Result<DateTime<Utc>> {
+    let t = s.trim();
+    if let Some((n, unit)) = t.split_at_checked(t.len().saturating_sub(1))
+        && let Ok(n) = n.parse::<i64>()
+        && n >= 0
+    {
+        let days = match unit {
+            "d" => Some(n),
+            "w" => n.checked_mul(7),
+            _ => None,
+        };
+        if let Some(days) = days {
+            return now
+                .checked_sub_signed(ChronoDuration::days(days))
+                .ok_or_else(|| usage(format!("age {s:?} is out of range")));
+        }
+    }
+    parse_date(t, false).map_err(|_| {
+        usage(format!(
+            "invalid time {s:?} (use YYYY-MM-DD, an RFC 3339 time, or an age like 90d or 12w)"
+        ))
+    })
+}
+
 /// Parse durations like `90s`, `30m`, `2h`, `1h30m`.
 pub fn parse_duration(s: &str) -> anyhow::Result<Duration> {
     let mut total = 0u64;
@@ -230,6 +256,27 @@ mod tests {
         assert_eq!(parse_duration("15").unwrap().as_secs(), 900);
         assert!(parse_duration("abc").is_err());
         assert!(parse_duration("0m").is_err());
+    }
+
+    #[test]
+    fn when_accepts_dates_and_ages() {
+        let now = parse_date("2026-09-10", false).unwrap();
+        let ts = sb_core::util::ts;
+        assert_eq!(ts(parse_when("90d", now).unwrap()), "2026-06-12T00:00:00Z");
+        assert_eq!(ts(parse_when("2w", now).unwrap()), "2026-08-27T00:00:00Z");
+        assert_eq!(ts(parse_when("0d", now).unwrap()), "2026-09-10T00:00:00Z");
+        assert_eq!(
+            ts(parse_when("2026-07-01", now).unwrap()),
+            "2026-07-01T00:00:00Z"
+        );
+        assert_eq!(
+            ts(parse_when("2026-07-01T09:00:00+09:00", now).unwrap()),
+            "2026-07-01T00:00:00Z"
+        );
+        assert!(parse_when("90x", now).is_err());
+        assert!(parse_when("d", now).is_err());
+        assert!(parse_when("-5d", now).is_err());
+        assert!(parse_when("", now).is_err());
     }
 
     #[test]
