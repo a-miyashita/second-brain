@@ -76,20 +76,29 @@ mod imp {
         } else {
             format!("{}:F", current_user())
         };
-        let out = Command::new("icacls")
-            .arg(path)
-            .args(["/inheritance:r", "/grant:r", &grant, "/q"])
-            .output()
-            .map_err(|e| StoreError::io(path, e))?;
-        if out.status.success() {
-            Ok(())
-        } else {
-            Err(StoreError::Invalid(format!(
-                "icacls failed on {}: {}",
-                path.display(),
-                String::from_utf8_lossy(&out.stderr).trim()
-            )))
+        // Separate invocations: with everything in one call the broad ACEs
+        // (SYSTEM, Administrators) were observed to survive on GitHub runners.
+        // The well-known SIDs are used so the names need not be localized.
+        let steps: [Vec<&str>; 3] = [
+            vec!["/inheritance:r", "/q"],
+            vec!["/grant:r", &grant, "/q"],
+            vec!["/remove:g", "*S-1-5-18", "*S-1-5-32-544", "/q"],
+        ];
+        for args in &steps {
+            let out = Command::new("icacls")
+                .arg(path)
+                .args(args)
+                .output()
+                .map_err(|e| StoreError::io(path, e))?;
+            if !out.status.success() {
+                return Err(StoreError::Invalid(format!(
+                    "icacls failed on {}: {}",
+                    path.display(),
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )));
+            }
         }
+        Ok(())
     }
 
     pub fn describe(path: &Path) -> String {
