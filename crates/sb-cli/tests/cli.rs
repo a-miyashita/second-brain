@@ -146,7 +146,13 @@ fn import_search_show_list_stats_doctor() {
     let o = sb(&home, &["doctor", "--json"]);
     let v = json_of(&o);
     assert_eq!(v["schema"], "sb.doctor/v1");
-    assert_eq!(v["status"], "warning");
+    let failing: Vec<&Value> = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["status"] == "error")
+        .collect();
+    assert_eq!(v["status"], "warning", "failing checks: {failing:#?}");
     assert_eq!(o.status.code(), Some(1));
     let ids: Vec<&str> = v["checks"]
         .as_array()

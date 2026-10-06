@@ -257,7 +257,13 @@ impl OpenAiBackend {
         if let Some(k) = &self.api_key {
             rb = rb.bearer_auth(k.expose());
         }
-        let resp = rb.send().await.map_err(map_send_error)?;
+        // A probe that gets no answer in time means the server is not reachable.
+        // (Windows does not refuse a closed port at once; it retries the SYN until
+        // the timeout, so a refused connection surfaces as a timeout there.)
+        let resp = rb.send().await.map_err(|e| match map_send_error(e) {
+            LlmError::Timeout(m) => LlmError::Unreachable(m),
+            other => other,
+        })?;
         if resp.status().is_success() {
             Ok(())
         } else {

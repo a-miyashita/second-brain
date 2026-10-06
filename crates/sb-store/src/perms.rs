@@ -21,6 +21,11 @@ pub fn is_private(path: &Path, dir: bool) -> Result<Option<bool>> {
     imp::is_private(path, dir)
 }
 
+/// Human-readable access description of a path, for diagnostics.
+pub fn describe(path: &Path) -> String {
+    imp::describe(path)
+}
+
 #[cfg(unix)]
 mod imp {
     use std::fs;
@@ -33,6 +38,13 @@ mod imp {
         let mode = if dir { 0o700 } else { 0o600 };
         fs::set_permissions(path, fs::Permissions::from_mode(mode))
             .map_err(|e| StoreError::io(path, e))
+    }
+
+    pub fn describe(path: &Path) -> String {
+        match fs::metadata(path) {
+            Ok(m) => format!("mode {:o}", m.permissions().mode() & 0o777),
+            Err(e) => e.to_string(),
+        }
     }
 
     pub fn is_private(path: &Path, _dir: bool) -> Result<Option<bool>> {
@@ -64,19 +76,42 @@ mod imp {
         } else {
             format!("{}:F", current_user())
         };
-        let out = Command::new("icacls")
-            .arg(path)
-            .args(["/inheritance:r", "/grant:r", &grant, "/q"])
-            .output()
-            .map_err(|e| StoreError::io(path, e))?;
-        if out.status.success() {
-            Ok(())
-        } else {
-            Err(StoreError::Invalid(format!(
-                "icacls failed on {}: {}",
-                path.display(),
-                String::from_utf8_lossy(&out.stderr).trim()
-            )))
+        // Separate invocations: with everything in one call the broad ACEs
+        // (SYSTEM, Administrators) were observed to survive on GitHub runners.
+        // The well-known SIDs are used so the names need not be localized.
+        let steps: [Vec<&str>; 3] = [
+            vec!["/inheritance:r", "/q"],
+            vec!["/grant:r", &grant, "/q"],
+            vec!["/remove:g", "*S-1-5-18", "*S-1-5-32-544", "/q"],
+        ];
+        for args in &steps {
+            let out = Command::new("icacls")
+                .arg(path)
+                .args(args)
+                .output()
+                .map_err(|e| StoreError::io(path, e))?;
+            if !out.status.success() {
+                return Err(StoreError::Invalid(format!(
+                    "icacls failed on {}: {}",
+                    path.display(),
+                    String::from_utf8_lossy(&out.stderr).trim()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn describe(path: &Path) -> String {
+        match Command::new("icacls").arg(path).output() {
+            Ok(o) => format!(
+                "icacls (current user {}): {}",
+                current_user(),
+                String::from_utf8_lossy(&o.stdout)
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+            Err(e) => e.to_string(),
         }
     }
 
@@ -89,22 +124,51 @@ mod imp {
             return Ok(None);
         }
         let text = String::from_utf8_lossy(&out.stdout).to_string();
-        let path_str = path.display().to_string();
         let user = current_user().to_lowercase();
         let mut principals = Vec::new();
         for line in text.lines() {
-            let line = line.strip_prefix(&path_str).unwrap_or(line).trim();
+            let line = line.trim();
             if line.is_empty() || line.starts_with("Successfully") {
                 continue;
             }
-            if let Some((who, _)) = line.split_once(':') {
-                principals.push(who.trim().to_lowercase());
+            // Each ACE ends with `:(<rights>)`. Split on the last such marker so
+            // that the drive colon in the echoed path (`C:\...`) is not mistaken
+            // for the principal separator, whatever form the path is printed in.
+            if let Some(i) = line.rfind(":(") {
+                let who = line[..i].trim().to_lowercase();
+                // The first line is `<path> <principal>`; drop the path part,
+                // which may be printed differently from how we spelled it.
+                principals.push(principal_of(&who));
             }
         }
         if principals.is_empty() {
             return Ok(None);
         }
-        Ok(Some(principals.iter().all(|p| *p == user)))
+        let name = principal_of(&user);
+        Ok(Some(principals.iter().all(|p| *p == name)))
+    }
+
+    /// `DOMAIN\user` reduced to `user`; the domain is not stable across the
+    /// environment variables and `icacls` (machine name vs. resolved account).
+    /// Anything before the last space that precedes the account is the path.
+    fn principal_of(s: &str) -> String {
+        let account = match s.find('\\') {
+            // `c:\dir\file DOMAIN\user`: the account starts after the last space
+            // before the final backslash segment only when a path was echoed.
+            Some(_) => s.rsplit_once(' ').map_or(s, |(head, tail)| {
+                if tail.contains('\\') && head.contains('\\') {
+                    tail
+                } else {
+                    s
+                }
+            }),
+            None => s,
+        };
+        account
+            .rsplit_once('\\')
+            .map_or(account, |(_, u)| u)
+            .trim()
+            .to_string()
     }
 }
 
@@ -116,6 +180,10 @@ mod imp {
 
     pub fn make_private(_path: &Path, _dir: bool) -> Result<()> {
         Ok(())
+    }
+
+    pub fn describe(_path: &Path) -> String {
+        "unavailable".into()
     }
 
     pub fn is_private(_path: &Path, _dir: bool) -> Result<Option<bool>> {
