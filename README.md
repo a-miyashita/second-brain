@@ -1,265 +1,126 @@
 # second-brain
 
-A personal knowledge base for AI agents.
+second-brain is a command-line tool (`second-brain`, short alias `sb`) that builds a
+personal knowledge base for AI agents.
 
-second-brain collects your Slack conversations, Google Meet notes (Gemini), documents
-and more. It stores them locally with summaries and makes them searchable from the
-command line, from agent skills (GitHub Copilot CLI, Claude Code, ...) and over MCP.
+The tool does the following:
 
-> **Status: MVP in development.** Slack and Google Meet sync, `sb ingest` for Google
-> Docs, web pages and local files, summaries, search, import, `doctor`, setup and the
-> agent skill are implemented. Releases are not
-> published yet; build from source (below). See [docs/](docs/README.md) for the
-> architecture decisions and specifications.
+- It collects context from Slack, Google Meet notes, documents and web pages.
+- It stores the raw data as files and keeps a catalog in SQLite.
+- It summarizes each entry with an LLM and records which model wrote each summary.
+- It lets AI agents search the catalog through an agent skill that calls the CLI
+  with `--json`.
 
-## Features
+## Build and test
 
-- **Ingest** context from multiple accounts:
-
-  | Source | Phase |
-  |---|---|
-  | Slack threads and conversations | MVP |
-  | Google Meet notes and transcripts | MVP |
-  | Google Docs, Sheets, Slides and Drive files | `sb ingest` |
-  | Local files (text, Markdown, CSV, HTML, docx, pptx, xlsx, PDF) | `sb ingest` |
-  | Web pages | `sb ingest` |
-  | Email (Gmail, IMAP) | Later |
-
-- **Summarize** each entry into an overview, decisions and action items. You can
-  use:
-  - an LLM API (Anthropic, OpenAI; Google Gemini later);
-  - an LLM CLI (Claude Code, GitHub Copilot CLI);
-  - a model behind an OpenAI-compatible endpoint (Ollama, llama.cpp, vLLM, ...).
-    Small local models (about 5 to 10B parameters) summarize poorly and are not
-    recommended; use a model of at least Haiku-class quality.
-- **Re-summarize at any time.** Raw data is kept, and every summary records the
-  model and prompt version that produced it. You can later redo the summaries of
-  a cheap model with a stronger one, or replace Gemini's meeting notes with another
-  model's.
-- **Search** with SQLite FTS5, which works for Japanese, including two-character
-  terms. The search backend is pluggable, so vector and hybrid search can be added.
-- **Run unattended** from Task Scheduler, launchd or cron, with `second-brain doctor`
-  to show what needs attention (for example, expired logins).
-- **Ship as a single static binary** (`second-brain`, alias `sb`) for Windows,
-  macOS and Linux. No runtime dependencies.
-
-## How it works
-
-```text
-Slack / Google (Meet, Calendar, Drive) / ...
-        │  fetch (per account)
-        ▼
-  raw data (files)  ──normalize──▶  catalog (SQLite: entries, sections, summaries)
-                                        │                     ▲
-                                        ├─ summarize (LLM) ───┘
-                                        ▼
-                                  search index (FTS5; vectors later)
-                                        │
-          sb search / sb show / MCP ◀───┘ ── used by agents via skill or MCP
-```
-
-## Installation
-
-Once releases are published:
+You need Rust 1.88 or later. The project uses Rust edition 2024.
 
 ```sh
-# macOS / Linux
-curl -LsSf https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.sh | sh
-
-# Windows (PowerShell)
-irm https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.ps1 | iex
+cargo build --workspace
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
 ```
 
-Until then, build from source with a recent Rust toolchain:
+CI runs the same checks on Linux, macOS and Windows. CI also runs `cargo check` on
+Rust 1.88.
+
+The tests use no real network. HTTP APIs are replaced with `wiremock`, and LLM CLIs
+are replaced with stub executables.
+
+## Try it without touching your own data
+
+The tool keeps all its data in one directory. The variable `SECOND_BRAIN_HOME` sets
+this directory. Point it at a temporary location to try the tool safely:
+
+```sh
+export SECOND_BRAIN_HOME="$(mktemp -d)/home"
+cargo run --bin sb -- version
+cargo run --bin sb -- setup home     # creates the directory and the catalog
+cargo run --bin sb -- doctor         # shows the health of the setup
+```
+
+Without `SECOND_BRAIN_HOME`, the tool uses a default directory for your OS. Sync
+and `ingest` need real Slack or Google accounts. Use a test account or a temporary
+home when you try them.
+
+To install the binaries from your working copy:
 
 ```sh
 cargo install --path crates/sb-cli --locked   # installs second-brain and sb
 ```
 
-Then run the setup wizard:
+## Repository layout
 
-```sh
-second-brain setup
+```text
+crates/sb-core      domain types and traits (no I/O)
+crates/sb-store     SQLite catalog, raw file store, secrets, FTS5 search backend
+crates/sb-pipeline  ingestion and summarization pipeline
+crates/sb-llm       summarizers (LLM APIs and LLM CLIs)
+crates/sb-google    Google OAuth, Meet and Docs sources
+crates/sb-slack     Slack source
+crates/sb-extract   text extraction from documents
+crates/sb-ondemand  sources that need no sync: web pages and local files
+crates/sb-setup     setup, scheduler registration, skill install
+crates/sb-cli       the binaries `second-brain` and `sb`
+assets/             embedded agent skill, Slack app manifest
+docs/               ADRs and specs
 ```
 
-The wizard walks you through these steps. Each one can also be run on its own
-(`sb setup home|llm|schedule|skills|env`):
+The dependency direction is: `sb-core` ← sources, `sb-llm` and `sb-store` ←
+`sb-pipeline` ← `sb-cli`. Library crates never print to stdout.
 
-1. Create the data directory.
-2. Add your Google and Slack accounts.
-3. Choose a summarizer.
-4. Register the daily sync.
-5. Install the agent skill.
-6. Optionally estimate and run the first sync.
+## How the data flows
 
-## Adding a Google account (Meet notes)
-
-second-brain uses your own OAuth client, so no third party ever sees your data.
-A Workspace admin can create one client for the whole organization and share its
-JSON file.
-
-1. In the [Google Cloud console](https://console.cloud.google.com/), create a
-   project (or pick one).
-2. **APIs & Services → Library**: enable the **Google Drive API** and the
-   **Google Calendar API**.
-3. **APIs & Services → OAuth consent screen**:
-   - Workspace organizations: choose **Internal**. Refresh tokens then do not
-     expire weekly, and no verification is needed.
-   - Personal accounts: choose **External** and add yourself as a test user. In
-     "Testing" status, Google expires refresh tokens after 7 days, so you will
-     need `sb auth login <account>` about once a week (`sb doctor` tells you).
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID**,
-   application type **Desktop app**. Download the JSON file.
-5. Add the account (a browser opens for consent; use `--no-browser` on a
-   headless machine):
-
-   ```sh
-   sb account add google work-google --client-secret ~/Downloads/client_secret_XXXX.json
-   ```
-
-   The client JSON and the refresh token are stored in the catalog database, so
-   you can delete the downloaded file afterwards. For a second Google account
-   that uses the same client, pass `--client-secret` the same file again.
-
-Meet notes are found through your calendar (notes attached to events you
-attended) and in your "Meet Recordings" Drive folder.
-
-## Adding a Slack workspace
-
-Each workspace needs its own small Slack app that only you use.
-
-1. Go to <https://api.slack.com/apps> → **Create New App** → **From an app
-   manifest**, choose the workspace, and paste
-   [assets/slack-app-manifest.yaml](assets/slack-app-manifest.yaml).
-2. **Install to Workspace** and approve.
-3. Copy the **User OAuth Token** (`xoxp-...`) from **OAuth & Permissions**. A
-   user token is required: only it can read your DMs and private channels.
-4. Do **not** enable "Distribute App". Distributed apps are limited to one
-   `conversations.history` request per minute.
-5. Add the account and paste the token at the hidden prompt:
-
-   ```sh
-   sb account add slack acme-slack
-   ```
-
-By default, DMs and group DMs are ingested fully, and in other channels only
-threads that involve you (your messages, mentions, `@here`/`@channel`). To ingest
-whole channels, list them in `full_channels`:
-
-```sh
-sb config edit --account acme-slack
+```text
+sources (Slack, Google, web, files)
+   │ fetch
+   ▼
+raw files ──normalize──▶ catalog (SQLite: entries, sections, summaries)
+                            │            ▲
+                            │            └── summarize (LLM)
+                            ▼
+                      search index (FTS5)
+                            │
+                  sb search / sb show  ◀── agents (skill, `--json`)
 ```
 
-## Adding documents
+Raw files are the source of truth. The catalog and the index can be built again
+from them. Every summary records the model and the prompt version that made it, so
+you can replace summaries with a better model later.
 
-`sb ingest` adds single items: a Google Doc, a web page or a file on your disk. It
-is meant for context that sync does not bring in, such as a design document linked
-from a thread.
+## Design documents
 
-```sh
-sb ingest https://docs.google.com/document/d/<id>/edit --context "Q3 launch case"
-sb ingest https://example.com/blog/release-notes
-sb ingest ./minutes.docx ./budget.xlsx --context "FY27 planning"
-sb ingest ./notes.md --dry-run          # show what would happen
-```
+Read these documents before you change the design:
 
-- `--context` says why the item matters. It is stored as the entry's *background*
-  section and given to the summarizer as a hint.
-- Google URLs are read with the first of your Google accounts that can open the file
-  (`--account` picks one). The account needs the `docs` or `meet` feature.
-- Only the **extracted text** is stored, not the original file or page. `--keep-original`
-  also keeps the original. Ingesting the same item again updates it.
-- Not supported: pages behind a login or built with JavaScript (save the page as a file
-  and ingest that), scanned documents without a text layer, password-protected files and
-  legacy `.doc` / `.ppt`. PDF text extraction is new and may fail on unusual files; please
-  report them.
-- For safety, web pages on private or loopback addresses are refused (see
-  `ingest.web.allow_private`), and files in the second-brain home and in credential folders
-  such as `~/.ssh` are never read. See [docs/specs/ingest.md](docs/specs/ingest.md).
+- [docs/README.md](docs/README.md): index of all ADRs and specs.
+- ADR-0002 (data layers) and ADR-0005 (summaries). The other design depends on them.
+- [docs/specs/architecture.md](docs/specs/architecture.md): crates and conventions.
+- [docs/specs/mvp-plan.md](docs/specs/mvp-plan.md): what is in scope and what is done.
 
-## Choosing a summarizer
+ADRs record decisions. After an ADR is accepted, do not rewrite it. Add an
+`## Amendments` section instead. Specs are living documents. Update a spec in the
+same change as the code.
 
-```sh
-sb setup llm                       # interactive
-sb setup llm --preset anthropic    # Claude Haiku via the Anthropic API
-sb setup llm --preset claude_cli   # your Claude Code login (`claude -p`)
-sb setup llm --preset local --base-url http://127.0.0.1:11434/v1 --model <model>
-```
+## Contributing
 
-Google Meet entries keep Gemini's own notes by default (no LLM call). Slack
-threads are summarized by the default profile. Without a profile, entries stay
-`pending` and are still searchable.
+[AGENTS.md](AGENTS.md) has the full rules. These are the main ones:
 
-## Limiting summarization cost
+- Write all documentation, code comments, identifiers and messages in English.
+- Do not use `unwrap()` or `expect()` outside tests.
+- Never log secrets. Never log message bodies at `info` level or above.
+- Add schema changes as new numbered migrations. Never edit an applied migration.
+- Every `--json` output has a `schema` field.
+- Do not use real network access or real personal data in tests and fixtures.
+- Use small commits with a prefix such as `feat:`, `fix:` or `docs:`.
 
-Summaries from a paid API (or a CLI that reports its cost) are capped so that token
-cost cannot grow unnoticed: **$2 per week and $10 per month** by default. Weeks start
-on Monday and months on the 1st, in your time zone. When a cap is used up, `sb sync`
-and `sb summarize` stop cleanly, the remaining entries stay `pending` and are still
-searchable, and they resume by themselves in the next period.
+## Security
 
-```sh
-sb budget                                  # this week and month, history, total
-sb budget --by-model                       # also the spend per model
-sb config set summary.budget.weekly_usd 5  # change a cap (0 or null disables it)
-sb config set summary.budget.monthly_usd 20
-sb config set summary.min_chars 2000       # do not summarize short threads at all
-```
+The catalog database holds credentials: OAuth refresh tokens, the Slack token and
+API keys. The tool sets the files to owner-only access. Treat copies and backups of
+the data directory as secrets.
 
-The amounts are estimates computed by second-brain from token counts and list
-prices. They are a guard, not an invoice. Local models are free and are never
-blocked. A paid profile whose model has no known price is not run while a cap is
-enabled; set its price with `llm.prices`. As an independent backstop, also set a
-spend limit in your provider's console.
-
-## Quick usage
-
-```sh
-sb sync                                   # fetch new content and summarize (Ctrl+C to stop; re-run to resume)
-sb sync --estimate                        # tokens and cost of pending summaries
-sb search CSV --section decisions         # "what did we decide about CSV?"
-sb search 契約 納期                        # two-character Japanese terms work
-sb show 01J9ABC...                        # read one entry
-sb review --limit 3                       # summaries next to their source text
-sb resummarize --source slack.thread --where-model claude-haiku-4-5 --profile best --estimate
-sb budget                                 # summarization spend against the weekly/monthly cap
-sb ingest ./minutes.docx --context "why"  # add a document, page or Google Doc
-sb doctor                                 # health and pending issues
-```
-
-Agents use the same commands with `--json` through the installed skill.
-
-## Importing existing data
-
-Data from other tools can be imported from a
-[`second-brain-import/v1` bundle](docs/specs/import-format.md):
-
-```sh
-sb import ./bundle --dry-run
-sb import ./bundle
-sb refetch --raw-missing     # later: fetch the original raw data
-```
-
-## Data location
-
-| OS | Default `SECOND_BRAIN_HOME` |
-|---|---|
-| Windows | `%LOCALAPPDATA%\second-brain` |
-| macOS | `~/Library/Application Support/second-brain` |
-| Linux | `~/.local/share/second-brain` |
-
-Set `SECOND_BRAIN_HOME` to use another location.
-
-The database contains your credentials (OAuth refresh tokens, Slack token, API keys)
-and is readable only by your OS user. Treat copies and backups as secrets.
-
-To uninstall: `sb setup schedule --remove`, `sb setup skills --remove --target all`,
-then delete the binaries. The data directory is kept until you delete it.
-
-## Documentation
-
-- [docs/README.md](docs/README.md): index of ADRs and specs
-- [AGENTS.md](AGENTS.md): guidelines for contributors and coding agents
+Never commit real configuration, tokens, OAuth client files or data exports.
 
 ## License
 
