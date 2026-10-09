@@ -131,7 +131,7 @@ and dependency order (`cargo metadata --no-deps --format-version 1`).
 
 | Command | Behavior | Exit code |
 |---|---|---|
-| `bump <version>` | Validates SemVer. Requires a non-empty `## Unreleased`. Sets `workspace.package.version` and every internal pin. Runs `cargo update --workspace`. Renames `## Unreleased` to `## <version> - <UTC date>` and inserts an empty `## Unreleased` | 0, or 1 with a message |
+| `bump <version>` | Validates SemVer. The version must not be lower than the current one; the current version is allowed while its changelog section does not exist yet (first release). Requires a non-empty `## Unreleased`. Sets `workspace.package.version` and every internal pin. Runs `cargo update --workspace`. Renames `## Unreleased` to `## <version> - <UTC date>` and inserts an empty `## Unreleased` | 0, or 1 with a message |
 | `check` | Working-tree checks: version syntax; all internal pins equal the workspace version; every crate inherits the version; every crate holds a copy of the root `LICENSE`; `Cargo.lock` is current (`cargo update --workspace --locked`) | 0 / 1 |
 | `check --tag vX.Y.Z` | The above, plus: tag equals `v` + version; the changelog section exists, is dated and non-empty; `HEAD` is on `origin/main` (an ancestor of it) and the tag, if it exists, points to `HEAD`; the version is greater than every earlier `v*` tag | 0 / 1 |
 | `notes <version>` | Prints the body of the changelog section (without its heading) | 0 / 1 |

@@ -270,8 +270,10 @@ export function cmdBump(ctx, version, date) {
   if (!parseSemver(version)) throw new ReleaseError(`'${version}' is not a valid version (X.Y.Z)`);
   const cargo = read(ctx, "Cargo.toml");
   const current = readWorkspaceVersion(cargo);
-  if (compareSemver(version, current) <= 0) {
-    throw new ReleaseError(`the new version ${version} must be greater than the current ${current}`);
+  // The same version is allowed for a first release: the manifests already have it and
+  // only the changelog is dated. bumpChangelog refuses a version that is already released.
+  if (compareSemver(version, current) < 0) {
+    throw new ReleaseError(`the new version ${version} must not be lower than the current ${current}`);
   }
   // Validate the changelog first so that a failure leaves the tree untouched.
   const changelog = bumpChangelog(read(ctx, "CHANGELOG.md"), version, date ?? ctx.today());

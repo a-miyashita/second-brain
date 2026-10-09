@@ -203,9 +203,18 @@ test("bump refuses an invalid or non-increasing version and leaves the files alo
   const root = fixture();
   const ctx = fakeContext(root);
   assert.throws(() => cmdBump(ctx, "1.0"), /not a valid version/);
-  assert.throws(() => cmdBump(ctx, "0.1.0"), /must be greater/);
-  assert.throws(() => cmdBump(ctx, "0.0.9"), /must be greater/);
+  assert.throws(() => cmdBump(ctx, "0.0.9"), /must not be lower/);
+  // 0.1.0 already has a dated section in the fixture changelog.
+  assert.throws(() => cmdBump(ctx, "0.1.0"), /already has a section/);
   assert.equal(fs.readFileSync(path.join(root, "Cargo.toml"), "utf8"), CARGO);
+});
+
+test("bump accepts the current version when it is not released yet (first release)", () => {
+  const first = "# Changelog\n\n## Unreleased\n\n- Initial release.\n";
+  const root = fixture({ changelog: first });
+  cmdBump(fakeContext(root), "0.1.0", "2026-11-01");
+  assert.equal(fs.readFileSync(path.join(root, "Cargo.toml"), "utf8"), CARGO);
+  assert.match(fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8"), /## Unreleased\n\n## 0\.1\.0 - 2026-11-01/);
 });
 
 test("bump with an empty changelog does not touch Cargo.toml", () => {
