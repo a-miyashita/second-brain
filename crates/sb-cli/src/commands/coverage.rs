@@ -2,10 +2,10 @@
 //! and the JSON of `sb sync`.
 
 use chrono::{DateTime, TimeZone, Utc};
-use sb_core::coverage::covered_since_of;
-use sb_core::util::{parse_ts, ts};
-use sb_core::{AccountId, SourceKind};
-use sb_store::Catalog;
+use second_brain_kernel::coverage::covered_since_of;
+use second_brain_kernel::util::{parse_ts, ts};
+use second_brain_kernel::{AccountId, SourceKind};
+use second_brain_store::Catalog;
 use serde::Serialize;
 use serde_json::Value;
 

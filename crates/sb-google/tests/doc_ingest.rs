@@ -5,16 +5,16 @@
 
 use std::sync::Arc;
 
-use sb_core::clock::FixedClock;
-use sb_core::document::IngestSettings;
-use sb_core::source::Source;
-use sb_core::{
+use second_brain_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
+use second_brain_kernel::clock::FixedClock;
+use second_brain_kernel::document::IngestSettings;
+use second_brain_kernel::source::Source;
+use second_brain_kernel::{
     AccountId, AccountKind, RawRole, RawStatus, Secret, SectionKind, SourceKind, SummaryStatus,
 };
-use sb_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
-use sb_pipeline::ingest::{IngestOptions, IngestStatus};
-use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
-use sb_store::{Account, Catalog, Home};
+use second_brain_pipeline::ingest::{IngestOptions, IngestStatus};
+use second_brain_pipeline::{Pipeline, PipelineError, SourceFactory};
+use second_brain_store::{Account, Catalog, Home};
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -151,13 +151,13 @@ fn setup(server: &MockServer, accounts: &[&str]) -> (tempfile::TempDir, Pipeline
             AccountKind::Google,
             a,
             Some(&format!("{a}@example.test")),
-            &sb_google::default_config_json(&["docs".into()]),
+            &second_brain_google::default_config_json(&["docs".into()]),
         )
         .unwrap();
     }
     drop(cat);
     let clock = Arc::new(FixedClock::new(
-        sb_core::util::parse_ts("2026-09-10T00:00:00Z").unwrap(),
+        second_brain_kernel::util::parse_ts("2026-09-10T00:00:00Z").unwrap(),
     ));
     let p = Pipeline::new(
         Catalog::open_with_clock(&home, clock).unwrap(),
@@ -213,7 +213,7 @@ async fn native_doc_is_exported_cleaned_and_stored_as_text() {
     assert_eq!(e.metadata["owners"][0]["name"], "Alice Example");
     assert_eq!(
         e.source_created_at,
-        sb_core::util::parse_ts("2026-09-01T00:00:00Z")
+        second_brain_kernel::util::parse_ts("2026-09-01T00:00:00Z")
     );
     assert_eq!(
         e.fetch_state.as_ref().unwrap()["modified_time"],
@@ -378,7 +378,7 @@ async fn gemini_notes_are_a_duplicate_and_dry_run_writes_nothing() {
     // The same Drive file already known as a Meet entry.
     {
         let cat = p.catalog();
-        let sref = sb_core::SourceRef {
+        let sref = second_brain_kernel::SourceRef {
             account_id: AccountId::new("work").unwrap(),
             source_kind: SourceKind::GoogleMeet,
             source_id: "DOC1".into(),
@@ -386,9 +386,9 @@ async fn gemini_notes_are_a_duplicate_and_dry_run_writes_nothing() {
             created_at: None,
             updated_at: None,
         };
-        cat.upsert_entry(&sb_store::EntryUpdate {
+        cat.upsert_entry(&second_brain_store::EntryUpdate {
             source_ref: sref,
-            origin: sb_core::EntryOrigin::Sync,
+            origin: second_brain_kernel::EntryOrigin::Sync,
             raw: None,
             fetch_state: None,
             metadata: Some(json!({})),

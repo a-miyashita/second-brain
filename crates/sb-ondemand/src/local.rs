@@ -5,13 +5,13 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sb_core::document::{IngestHint, IngestSettings, normalize_document};
-use sb_core::source::{Source, SourceError, SyncHost};
-use sb_core::{
+use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle, sha256_hex};
+use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
+use second_brain_kernel::source::{Source, SourceError, SyncHost};
+use second_brain_kernel::{
     AccountCtx, AccountKind, FetchOutcome, FetchRequest, FetchedEntry, NormalizeCtx,
     NormalizeInput, NormalizeOutcome, SourceKind, SourceRef, SyncOptions,
 };
-use sb_extract::bundle::{BundleInput, DocBundle, build_bundle, sha256_hex};
 use serde_json::{Map, Value, json};
 
 use crate::glob;
@@ -307,7 +307,7 @@ impl Source for LocalSource {
         extra.insert("size".into(), json!(meta.len()));
         extra.insert(
             "media_type".into(),
-            json!(sb_extract::detect(&bytes, None, Some(&file_name)).as_str()),
+            json!(second_brain_extract::detect(&bytes, None, Some(&file_name)).as_str()),
         );
         if let Some(t) = &mtime_text {
             extra.insert("file_mtime".into(), json!(t));
@@ -358,7 +358,7 @@ impl Source for LocalSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_core::AccountId;
+    use second_brain_kernel::AccountId;
 
     fn source(deny: Vec<String>, sb_home: &Path, user_home: &Path) -> LocalSource {
         LocalSource::with_user_home(

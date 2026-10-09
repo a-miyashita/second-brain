@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, Row, params, params_from_iter};
-use sb_core::util::{sha256_parts, ts};
-use sb_core::{
+use second_brain_kernel::util::{sha256_parts, ts};
+use second_brain_kernel::{
     AccountId, EntryOrigin, Generator, GeneratorKind, RawMode, RawRole, RawStatus, SectionDraft,
     SectionKind, SectionOrigin, SourceKind, SourceRef, SummaryStatus, Usage,
 };
@@ -973,7 +973,7 @@ impl Catalog {
 mod tests {
     use super::*;
     use crate::catalog::test_util::temp_catalog;
-    use sb_core::AccountKind;
+    use second_brain_kernel::AccountKind;
 
     pub(crate) fn sref(id: &str) -> SourceRef {
         SourceRef {
@@ -981,7 +981,7 @@ mod tests {
             source_kind: SourceKind::SlackThread,
             source_id: id.into(),
             source_url: Some(format!("https://slack.example/{id}")),
-            created_at: sb_core::util::parse_ts("2026-09-01T00:00:00Z"),
+            created_at: second_brain_kernel::util::parse_ts("2026-09-01T00:00:00Z"),
             updated_at: None,
         }
     }

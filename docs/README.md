@@ -25,6 +25,8 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0015](adrs/0015-local-llm-not-recommended.md) | Local LLMs are not recommended for summaries; the Foundry Local wizard is dropped |
 | [0016](adrs/0016-sync-window-and-coverage.md) | Sync window — a short first window, forward cursors, tracked backward coverage |
 | [0017](adrs/0017-cli-support-and-stable-regeneration.md) | Richer CLI support — resolved model provenance, body-only regeneration, Codex and Antigravity providers |
+| [0018](adrs/0018-crates-io-distribution-via-cargo-install.md) | Distribute through crates.io with `cargo install` only; crate renaming (`second-brain-*`, `core` → `kernel`) |
+| [0019](adrs/0019-tag-triggered-release-and-changelog.md) | Tag-triggered release workflow, `CHANGELOG.md` and the release skill |
 
 ## Specs (`specs/`)
 
@@ -48,3 +50,4 @@ Specs describe how things work and may be edited as the design evolves.
 | [source-documents.md](specs/source-documents.md) | `google.doc`, `web.page` and `local.file` sources |
 | [extract.md](specs/extract.md) | `sb-extract`: formats, encodings, limits, library choice |
 | [mvp-plan.md](specs/mvp-plan.md) | Spikes, phases, work items, testing strategy |
+| [release.md](specs/release.md) | Installation, crate names, manifest rules, CI checks, release workflow, `release.mjs`, release skill |

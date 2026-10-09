@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use sb_core::search::{SearchMode, SearchQuery};
-use sb_core::{Language, RawRole, SectionKind, SectionOrigin, SourceKind};
-use sb_store::{Catalog, Entry, EntryFilter};
+use second_brain_kernel::search::{SearchMode, SearchQuery};
+use second_brain_kernel::{Language, RawRole, SectionKind, SectionOrigin, SourceKind};
+use second_brain_store::{Catalog, Entry, EntryFilter};
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -50,7 +50,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
     let accounts = a
         .accounts
         .iter()
-        .map(|s| sb_core::AccountId::new(s.clone()).map_err(|e| usage(e.to_string())))
+        .map(|s| second_brain_kernel::AccountId::new(s.clone()).map_err(|e| usage(e.to_string())))
         .collect::<anyhow::Result<Vec<_>>>()?;
     let q = SearchQuery {
         terms: a.terms.clone(),
@@ -71,7 +71,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
         mode: SearchMode::FullText,
         all_sections: a.all_sections,
     };
-    let hits = sb_store::fts::search(cat.conn(), &q).map_err(|e| usage(e.to_string()))?;
+    let hits = second_brain_store::fts::search(cat.conn(), &q).map_err(|e| usage(e.to_string()))?;
     let labels = labels(&cat)?;
     let lang = ctx.language(&cat);
     let mut out = Vec::new();
@@ -90,7 +90,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
                     "title": e.title,
                     "source_kind": e.source_kind,
                     "account": account_json(&labels, &e.account_id),
-                    "date": sb_core::util::ts(e.date()),
+                    "date": second_brain_kernel::util::ts(e.date()),
                     "section": h.section,
                     "snippet": h.snippet,
                     "score": h.score,
@@ -106,7 +106,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
         ctx.out_json(
             "sb.search/v1",
             json!({"query": {"terms": q.terms, "section": section, "source": q.source_kinds, "account": a.accounts,
-                              "since": q.since.map(sb_core::util::ts), "until": q.until.map(sb_core::util::ts),
+                              "since": q.since.map(second_brain_kernel::util::ts), "until": q.until.map(second_brain_kernel::util::ts),
                               "limit": q.effective_limit()},
                    "hits": hits}),
         );
@@ -144,7 +144,7 @@ fn raw_text(cat: &Catalog, e: &Entry, role: Option<RawRole>) -> anyhow::Result<S
         .into_iter()
         .filter(|r| role.is_none_or(|x| x == r.role))
         .collect();
-    let segs = sb_store::rawstore::read_segments(cat.home(), &rows)?;
+    let segs = second_brain_store::rawstore::read_segments(cat.home(), &rows)?;
     Ok(segs
         .iter()
         .map(|s| String::from_utf8_lossy(&s.bytes).to_string())
@@ -191,17 +191,17 @@ pub fn show(ctx: &Ctx, a: ShowArgs) -> anyhow::Result<i32> {
             "source_kind": e.source_kind,
             "source_id": e.source_id,
             "account": account_json(&labels, &e.account_id),
-            "date": sb_core::util::ts(e.date()),
-            "source_created_at": e.source_created_at.map(sb_core::util::ts),
-            "source_updated_at": e.source_updated_at.map(sb_core::util::ts),
-            "ingested_at": sb_core::util::ts(e.ingested_at),
+            "date": second_brain_kernel::util::ts(e.date()),
+            "source_created_at": e.source_created_at.map(second_brain_kernel::util::ts),
+            "source_updated_at": e.source_updated_at.map(second_brain_kernel::util::ts),
+            "ingested_at": second_brain_kernel::util::ts(e.ingested_at),
             "raw_status": e.raw_status,
             "summary_status": e.summary_status,
             "cite_url": cite_url(&cat, &e)?,
             "summary": summary.as_ref().map(|s| json!({
                 "generator_kind": s.generator_kind, "provider": s.provider, "model": s.model,
                 "profile": s.profile, "prompt_version": s.prompt_version,
-                "generated_at": sb_core::util::ts(s.generated_at)})),
+                "generated_at": second_brain_kernel::util::ts(s.generated_at)})),
             "sections": sections.iter().map(|s| json!({"kind": s.kind, "origin": s.origin, "text": s.text})).collect::<Vec<_>>(),
         });
         if a.meta {
@@ -280,7 +280,7 @@ fn entry_row(cat: &Catalog, labels: &HashMap<String, String>, e: &Entry) -> anyh
         "title": e.title,
         "source_kind": e.source_kind,
         "account": account_json(labels, &e.account_id),
-        "date": sb_core::util::ts(e.date()),
+        "date": second_brain_kernel::util::ts(e.date()),
         "raw_status": e.raw_status,
         "summary_status": e.summary_status,
         "cite_url": cite_url(cat, e)?,
@@ -321,12 +321,12 @@ pub fn list(ctx: &Ctx, a: ListArgs) -> anyhow::Result<i32> {
 pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
     let cat = ctx.catalog()?;
     let s = cat.stats()?;
-    let policy = sb_pipeline::policy::SummaryPolicy::load(&cat)?;
-    let b = sb_pipeline::budget::status(&cat, &policy)?;
+    let policy = second_brain_pipeline::policy::SummaryPolicy::load(&cat)?;
+    let b = second_brain_pipeline::budget::status(&cat, &policy)?;
     if ctx.json {
         let mut v = serde_json::to_value(&s)?;
         if let Some(o) = v.as_object_mut() {
-            let one = |p: &sb_pipeline::budget::PeriodStatus| json!({"spent_usd": p.spent_usd, "cap_usd": p.cap_usd, "resets_at": p.resets_at});
+            let one = |p: &second_brain_pipeline::budget::PeriodStatus| json!({"spent_usd": p.spent_usd, "cap_usd": p.cap_usd, "resets_at": p.resets_at});
             o.insert(
                 "budget".into(),
                 json!({"weekly": one(&b.week), "monthly": one(&b.month)}),
@@ -396,18 +396,20 @@ pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
 
 /// The source text to review next to the summary.
 fn source_text(cat: &Catalog, e: &Entry) -> anyhow::Result<String> {
-    if e.source_kind == SourceKind::GoogleMeet && e.raw_status == sb_core::RawStatus::Present {
+    if e.source_kind == SourceKind::GoogleMeet
+        && e.raw_status == second_brain_kernel::RawStatus::Present
+    {
         let t = raw_text(cat, e, Some(RawRole::Transcript))?;
         if !t.trim().is_empty() {
-            return Ok(sb_google::gemini::clean(&t));
+            return Ok(second_brain_google::gemini::clean(&t));
         }
         let notes = raw_text(cat, e, Some(RawRole::Notes))?;
-        if let Some(p) = sb_google::gemini::parse(&notes)
+        if let Some(p) = second_brain_google::gemini::parse(&notes)
             && let Some(t) = p.transcript
         {
             return Ok(t);
         }
-        return Ok(sb_google::gemini::clean(&notes));
+        return Ok(second_brain_google::gemini::clean(&notes));
     }
     Ok(cat
         .sections(e.id)?
@@ -451,7 +453,7 @@ pub fn review(ctx: &Ctx, a: ReviewArgs) -> anyhow::Result<i32> {
             .map(|(e, g, shown, total)| {
                 Ok(json!({
                     "entry_uid": e.entry_uid, "title": e.title, "source_kind": e.source_kind,
-                    "date": sb_core::util::ts(e.date()), "cite_url": cite_url(&cat, e)?,
+                    "date": second_brain_kernel::util::ts(e.date()), "cite_url": cite_url(&cat, e)?,
                     "summary": cat.summary(e.id)?.map(|s| json!({"provider": s.provider, "model": s.model})),
                     "generated": g.iter().map(|s| json!({"kind": s.kind, "text": s.text})).collect::<Vec<_>>(),
                     "source_text": shown,

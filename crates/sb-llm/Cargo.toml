@@ -1,14 +1,15 @@
 [package]
-name = "sb-llm"
-description = "Summarizers for second-brain: LLM APIs, LLM CLIs and local OpenAI-compatible servers"
+name = "second-brain-llm"
+description = "Summarizers for second-brain: LLM APIs, LLM CLIs and local OpenAI-compatible servers (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 async-trait.workspace = true
 directories.workspace = true
 reqwest.workspace = true

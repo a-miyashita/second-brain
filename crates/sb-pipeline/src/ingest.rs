@@ -8,13 +8,13 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use regex::Regex;
-use sb_core::document::IngestHint;
-use sb_core::source::{Source, SourceError};
-use sb_core::{
+use second_brain_kernel::document::IngestHint;
+use second_brain_kernel::source::{Source, SourceError};
+use second_brain_kernel::{
     AccountKind, AccountStatus, EntryOrigin, FetchOutcome, FetchRequest, FetchedEntry, RawRole,
     RawStatus, RunStatus, Severity, SourceKind,
 };
-use sb_store::{Account, Entry, EntryFilter, StoreError, SyncLock};
+use second_brain_store::{Account, Entry, EntryFilter, StoreError, SyncLock};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -406,7 +406,7 @@ impl Pipeline {
                 {
                     r.summary_status = Some(e.summary_status.to_string());
                     r.title = Some(e.title.clone());
-                    if e.summary_status == sb_core::SummaryStatus::Skipped
+                    if e.summary_status == second_brain_kernel::SummaryStatus::Skipped
                         && matches!(r.status, IngestStatus::Created | IngestStatus::Updated)
                         && r.message.is_none()
                     {
@@ -678,14 +678,14 @@ impl Pipeline {
         let sha = fe
             .bundle
             .metadata
-            .get(sb_core::document::keys::ORIGINAL_SHA256)?
+            .get(second_brain_kernel::document::keys::ORIGINAL_SHA256)?
             .as_str()?
             .to_string();
         let found = self
             .catalog()
             .entries_by_metadata_text(
                 SourceKind::LocalFile,
-                sb_core::document::keys::ORIGINAL_SHA256,
+                second_brain_kernel::document::keys::ORIGINAL_SHA256,
                 &sha,
             )
             .ok()?;

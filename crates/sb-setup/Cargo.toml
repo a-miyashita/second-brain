@@ -1,15 +1,16 @@
 [package]
-name = "sb-setup"
-description = "Home initialization, scheduler registration, skill install and environment setup for second-brain"
+name = "second-brain-setup"
+description = "Home initialization, scheduler registration, skill install and environment setup for second-brain (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
-sb-core.workspace = true
-sb-store.workspace = true
+second-brain-kernel.workspace = true
+second-brain-store.workspace = true
 chrono.workspace = true
 directories.workspace = true
 serde.workspace = true

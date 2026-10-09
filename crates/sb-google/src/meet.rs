@@ -2,12 +2,12 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, SecondsFormat, Utc};
-use sb_core::coverage::{
+use second_brain_kernel::coverage::{
     Coverage, TimeRange, covered_since_of, next_cursor, plan_ranges, with_covered_since,
 };
-use sb_core::source::{Source, SourceError, SyncHost};
-use sb_core::util::parse_ts;
-use sb_core::{
+use second_brain_kernel::source::{Source, SourceError, SyncHost};
+use second_brain_kernel::util::parse_ts;
+use second_brain_kernel::{
     AccountCtx, AccountKind, CursorUpdate, DiscoveryBatch, FetchOutcome, FetchRequest,
     FetchedEntry, Generator, NormalizeCtx, NormalizeInput, NormalizeOutcome, Normalized,
     PromptKind, QueueItem, RawBundle, RawMode, RawObject, RawRole, SourceKind, SourceRef,
@@ -659,7 +659,7 @@ pub fn normalize(input: &NormalizeInput) -> Result<NormalizeOutcome, SourceError
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_core::{AccountId, RawSegment};
+    use second_brain_kernel::{AccountId, RawSegment};
 
     fn input(notes: &str, transcript: Option<&str>, meta: Value) -> NormalizeInput {
         let mut segments = vec![RawSegment {

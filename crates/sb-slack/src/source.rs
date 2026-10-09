@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, TimeZone, Utc};
-use sb_core::coverage::{
+use second_brain_kernel::coverage::{
     BackwardPlan, Coverage, TimeRange, covered_since_of, next_cursor, plan_ranges,
     with_covered_since,
 };
-use sb_core::source::{Source, SourceError, SyncHost};
-use sb_core::{
+use second_brain_kernel::source::{Source, SourceError, SyncHost};
+use second_brain_kernel::{
     AccountCtx, AccountKind, CursorUpdate, DiscoveryBatch, FetchOutcome, FetchRequest,
     FetchedEntry, NormalizeCtx, NormalizeInput, NormalizeOutcome, QueueItem, RawBundle, RawMode,
     RawObject, RawRole, Secret, SourceKind, SourceRef, SyncMode, SyncOptions,

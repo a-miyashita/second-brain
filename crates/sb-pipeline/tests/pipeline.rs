@@ -9,12 +9,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use sb_core::source::{Source, SourceError, SyncHost};
-use sb_core::*;
-use sb_pipeline::summarize::{SummarizeOptions, Target};
-use sb_pipeline::sync::SyncOptions;
-use sb_pipeline::{Limits, Pipeline, PipelineError, SourceFactory};
-use sb_store::{Account, Catalog, EntryFilter, Home};
+use second_brain_kernel::source::{Source, SourceError, SyncHost};
+use second_brain_kernel::*;
+use second_brain_pipeline::summarize::{SummarizeOptions, Target};
+use second_brain_pipeline::sync::SyncOptions;
+use second_brain_pipeline::{Limits, Pipeline, PipelineError, SourceFactory};
+use second_brain_store::{Account, Catalog, EntryFilter, Home};
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -168,7 +168,7 @@ impl Source for FakeSource {
     }
 }
 
-use sb_core::SyncOptions as SyncOptions_;
+use second_brain_kernel::SyncOptions as SyncOptions_;
 
 struct Factory(Arc<FakeSource>);
 
@@ -311,9 +311,9 @@ async fn sync_fetches_summarizes_and_skips_unchanged() {
     // Search finds the generated decision.
     {
         let cat = p.catalog();
-        let hits = sb_store::fts::search(
+        let hits = second_brain_store::fts::search(
             cat.conn(),
-            &sb_core::search::SearchQuery {
+            &second_brain_kernel::search::SearchQuery {
                 terms: vec!["decided".into()],
                 sections: vec![SectionKind::Decisions],
                 ..Default::default()
@@ -614,7 +614,7 @@ async fn import_bundle_is_idempotent_and_never_downgrades() {
 // Budget (ADR-0013)
 // ---------------------------------------------------------------------------
 
-use sb_core::clock::FixedClock;
+use second_brain_kernel::clock::FixedClock;
 
 /// Wednesday of the week starting Monday 2026-10-05.
 const NOW: &str = "2026-10-07T10:00:00Z";
@@ -656,9 +656,9 @@ fn use_api_profile(env: &Env, llm: &MockServer, model: &str, weekly: Value, mont
     )
     .unwrap();
     cat.set_secret(
-        &sb_store::SecretScope::Global,
+        &second_brain_store::SecretScope::Global,
         "anthropic.api_key",
-        &sb_core::Secret::new("k"),
+        &second_brain_kernel::Secret::new("k"),
     )
     .unwrap();
     cat.set_setting("summary.profile.default", &json!("claude"))
@@ -711,7 +711,7 @@ async fn budget_stops_the_stage_then_resumes_when_the_cap_is_raised() {
     assert_eq!(r.status, Some(RunStatus::StoppedByLimit));
     assert_eq!(
         r.stats.stop,
-        Some(sb_pipeline::Stop::Limit("budget.weekly".into()))
+        Some(second_brain_pipeline::Stop::Limit("budget.weekly".into()))
     );
     // $0.2 + $0.2 + $0.2 > $0.5: the fourth unit is not started.
     assert_eq!(r.stats.summaries.summarized, 3);
@@ -725,7 +725,7 @@ async fn budget_stops_the_stage_then_resumes_when_the_cap_is_raised() {
     assert!((spend.cost_usd - 0.6).abs() < 1e-9, "{spend:?}");
     assert_eq!(spend.calls, 3);
     let week = cat
-        .period_rows(sb_core::budget::PeriodKind::Week, 5)
+        .period_rows(second_brain_kernel::budget::PeriodKind::Week, 5)
         .unwrap();
     assert_eq!(week.len(), 1);
     assert_eq!(week[0].cap_usd, Some(0.5));
@@ -780,7 +780,7 @@ async fn budget_resumes_after_the_week_rolls_over_but_the_month_still_binds() {
     assert_eq!(r.stats.summaries.summarized, 3, "the weekly cap stops it");
     assert_eq!(
         r.stats.stop,
-        Some(sb_pipeline::Stop::Limit("budget.weekly".into()))
+        Some(second_brain_pipeline::Stop::Limit("budget.weekly".into()))
     );
 
     // Monday: the weekly cap has room again, but $0.6 of $0.9 is already spent
@@ -795,7 +795,7 @@ async fn budget_resumes_after_the_week_rolls_over_but_the_month_still_binds() {
 
     let cat = Catalog::open_with_clock(&env.home, clock.clone()).unwrap();
     assert_eq!(
-        cat.period_rows(sb_core::budget::PeriodKind::Week, 5)
+        cat.period_rows(second_brain_kernel::budget::PeriodKind::Week, 5)
             .unwrap()
             .len(),
         2,

@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use sb_core::Secret;
-use sb_setup::schedule::{self, Mechanism, ScheduleSpec, TimeOfDay, Weekday};
-use sb_setup::skills::{self, Target};
-use sb_store::{Catalog, SecretScope};
+use second_brain_kernel::Secret;
+use second_brain_setup::schedule::{self, Mechanism, ScheduleSpec, TimeOfDay, Weekday};
+use second_brain_setup::skills::{self, Target};
+use second_brain_store::{Catalog, SecretScope};
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -32,17 +32,17 @@ fn llm_executables(cat: &Catalog) -> anyhow::Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     for (key, v) in cat.settings_with_prefix("llm.profiles.")? {
         let name = key.trim_start_matches("llm.profiles.");
-        let Ok(p) = sb_llm::Profile::from_value(name, &v) else {
+        let Ok(p) = second_brain_llm::Profile::from_value(name, &v) else {
             continue;
         };
-        if let Some(b) = p.cli_binary().and_then(sb_llm::resolve_program) {
+        if let Some(b) = p.cli_binary().and_then(second_brain_llm::resolve_program) {
             out.push(b);
         }
         if let Some(cmd) = p
             .start_command
             .as_ref()
             .and_then(|c| c.first())
-            .and_then(|c| sb_llm::resolve_program(c))
+            .and_then(|c| second_brain_llm::resolve_program(c))
         {
             out.push(cmd);
         }
@@ -89,7 +89,7 @@ pub async fn run(ctx: &Ctx, cmd: SetupCmd) -> anyhow::Result<i32> {
 }
 
 fn setup_home(ctx: &Ctx) -> anyhow::Result<i32> {
-    let (_, report) = sb_setup::home::setup_home(&ctx.home)?;
+    let (_, report) = second_brain_setup::home::setup_home(&ctx.home)?;
     if ctx.json {
         ctx.out_json("sb.setup/v1", json!({"step": "home", "report": report}));
     } else {
@@ -109,7 +109,7 @@ fn setup_home(ctx: &Ctx) -> anyhow::Result<i32> {
 
 async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32> {
     let cat = ctx.catalog()?;
-    let presets = sb_setup::llm::presets();
+    let presets = second_brain_setup::llm::presets();
     let preset = match &a.preset {
         Some(k) => presets
             .iter()
@@ -170,11 +170,12 @@ async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32>
         profile["base_url"] = json!(u);
     }
     if let Some(bin) = preset.binary
-        && sb_llm::resolve_program(bin).is_none()
+        && second_brain_llm::resolve_program(bin).is_none()
     {
         eprintln!("warning: `{bin}` was not found on PATH");
     }
-    let p = sb_llm::Profile::from_value(&name, &profile).map_err(|e| usage(e.to_string()))?;
+    let p =
+        second_brain_llm::Profile::from_value(&name, &profile).map_err(|e| usage(e.to_string()))?;
     if let Some(secret) = preset.secret
         && cat.secret_or_env(&SecretScope::Global, secret)?.is_none()
     {
@@ -197,10 +198,10 @@ async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32>
         };
         let started = std::time::Instant::now();
         let result = async {
-            let built = sb_llm::build(
+            let built = second_brain_llm::build(
                 &name,
                 &p,
-                &sb_llm::BuildOptions {
+                &second_brain_llm::BuildOptions {
                     language: "auto".into(),
                     scratch_dir: ctx.home.tmp_dir(),
                     secret,
@@ -294,7 +295,7 @@ fn setup_schedule(ctx: &Ctx, a: SetupScheduleArgs) -> anyhow::Result<i32> {
     schedule::register(&spec, mechanism, &user_home, &ctx.home.tmp_dir())?;
     let mut stored = reg.clone();
     stored["binary"] = json!(spec.binary.display().to_string());
-    stored["registered_at"] = json!(sb_core::util::ts(cat.now()));
+    stored["registered_at"] = json!(second_brain_kernel::util::ts(cat.now()));
     cat.set_setting("schedule.registered", &stored)?;
     if ctx.json {
         ctx.out_json(
@@ -367,7 +368,7 @@ fn setup_env(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
         return Ok(exit::OK);
     }
     if cfg!(windows) {
-        sb_setup::env::set_windows_user_env(home)?;
+        second_brain_setup::env::set_windows_user_env(home)?;
         if ctx.json {
             ctx.out_json(
                 "sb.setup/v1",
@@ -379,12 +380,12 @@ fn setup_env(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
         return Ok(exit::OK);
     }
     let shell = std::env::var("SHELL").unwrap_or_default();
-    let (rc, line) = sb_setup::env::shell_rc(&skills::user_home()?, &shell, home);
+    let (rc, line) = second_brain_setup::env::shell_rc(&skills::user_home()?, &shell, home);
     let write = yes
         || (util::interactive()
             && util::confirm(&format!("Add `{line}` to {}?", rc.display()), true)?);
     if write {
-        sb_setup::env::write_rc(&rc, &line)?;
+        second_brain_setup::env::write_rc(&rc, &line)?;
     }
     if ctx.json {
         ctx.out_json(

@@ -4,7 +4,7 @@ Related ADR: 0010.
 
 ## Skill
 
-Files are embedded from `assets/skills/second-brain/`:
+Files are embedded from `crates/sb-setup/assets/skills/second-brain/`:
 
 ```text
 SKILL.md               # frontmatter: name, description, version

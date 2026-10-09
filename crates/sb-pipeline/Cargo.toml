@@ -1,16 +1,17 @@
 [package]
-name = "sb-pipeline"
-description = "Ingestion and summarization pipeline for second-brain"
+name = "second-brain-pipeline"
+description = "Ingestion and summarization pipeline for second-brain (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
-sb-core.workspace = true
-sb-store.workspace = true
-sb-llm.workspace = true
+second-brain-kernel.workspace = true
+second-brain-store.workspace = true
+second-brain-llm.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

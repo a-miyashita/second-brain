@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use sb_core::summarizer::LlmError;
-use sb_core::{GeneratorKind, Secret};
+use second_brain_kernel::summarizer::LlmError;
+use second_brain_kernel::{GeneratorKind, Secret};
 
 use backend::{AnthropicBackend, Backend, CompletionRequest, OpenAiBackend, Role};
 use cli::{CliBackend, CliFlavor};

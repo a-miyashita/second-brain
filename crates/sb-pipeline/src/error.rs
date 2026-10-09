@@ -1,6 +1,6 @@
-use sb_core::source::SourceError;
-use sb_core::summarizer::LlmError;
-use sb_store::StoreError;
+use second_brain_kernel::source::SourceError;
+use second_brain_kernel::summarizer::LlmError;
+use second_brain_store::StoreError;
 
 /// Errors raised by the pipeline.
 #[derive(Debug, thiserror::Error)]

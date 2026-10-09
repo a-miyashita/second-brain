@@ -2,7 +2,7 @@
 
 Guidelines for coding agents and contributors working **on this repository**. This is
 not the guide for agents that *use* second-brain as a knowledge base; that guide is
-the skill in `assets/skills/second-brain/`.
+the skill in `crates/sb-setup/assets/skills/second-brain/`.
 
 ## Project in one paragraph
 
@@ -38,7 +38,7 @@ second-brain is a Rust CLI (`second-brain`, alias `sb`) that:
 See [docs/specs/architecture.md](docs/specs/architecture.md). In short:
 
 ```text
-crates/sb-core      domain types and traits (no I/O)
+crates/sb-kernel    domain types and traits (no I/O)
 crates/sb-store     SQLite catalog, raw file store, secrets, sqlite-fts backend
 crates/sb-pipeline  ingestion / summarization pipeline
 crates/sb-llm       summarizers
@@ -48,10 +48,10 @@ crates/sb-extract   document text extraction
 crates/sb-mcp       MCP server
 crates/sb-setup     setup, scheduler registration, skill install
 crates/sb-cli       binaries `second-brain` and `sb`
-assets/             embedded skill files, Slack app manifest
+assets/             Slack app manifest (the skill files are in crates/sb-setup/assets/)
 ```
 
-Dependency direction: `sb-core` ← sources / llm / store ← `sb-pipeline` ← `sb-cli` /
+Dependency direction: `sb-kernel` ← sources / llm / store ← `sb-pipeline` ← `sb-cli` /
 `sb-mcp`. Library crates never print to stdout.
 
 ## Build and test
@@ -62,7 +62,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI runs these on Windows, macOS and Linux. Release builds use cargo-dist.
+CI runs these on Windows, macOS and Linux. The only supported installation is
+`cargo install second-brain` (ADR-0018). Releases are made by tagging; see
+[docs/specs/release.md](docs/specs/release.md).
 
 ## Coding conventions
 
@@ -105,6 +107,16 @@ CI runs these on Windows, macOS and Linux. Release builds use cargo-dist.
   must cover them.
 - The MCP server exposes write operations (`ingest`) only when
   `mcp.allow_ingest` is true.
+
+## Releases
+
+- A release is a pull request (`chore: release vX.Y.Z`) followed by a `vX.Y.Z` tag that
+  starts the release workflow (ADR-0019). Use the `release` skill
+  (`.claude/skills/release/SKILL.md`) or follow
+  [docs/specs/release.md](docs/specs/release.md).
+- Never edit version numbers or `CHANGELOG.md` headings by hand; use
+  `node scripts/release.mjs`.
+- Never run `cargo publish` locally except for the bootstrap of the first release.
 
 ## Commits
 

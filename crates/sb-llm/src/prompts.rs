@@ -1,7 +1,7 @@
 //! Embedded, versioned prompts (summarization.md). Changing a prompt's wording
 //! bumps its version.
 
-use sb_core::{PromptKind, SummaryInput, SummaryOutput};
+use second_brain_kernel::{PromptKind, SummaryInput, SummaryOutput};
 use serde_json::Value;
 
 /// Version string of a prompt.
@@ -230,7 +230,7 @@ pub fn parse_output(text: &str, want_details: bool) -> Result<SummaryOutput, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_core::SourceKind;
+    use second_brain_kernel::SourceKind;
 
     fn input() -> SummaryInput {
         SummaryInput {

@@ -2,35 +2,48 @@
 
 This chapter shows how to install `sb` on your computer.
 
-## Install a release
+## Before you start
 
-**Note:** The project has not published releases yet. Until it does, build the tool
-from source (see the next section).
+You need two things:
 
-On macOS and Linux, run:
+- **Rust 1.88 or later.** Install it with [rustup](https://rustup.rs/).
+- **A C compiler.** The tool builds its SQLite library from source.
+  - Windows: the Visual Studio Build Tools with the "Desktop development with C++"
+    workload.
+  - macOS: the Xcode command line tools (`xcode-select --install`).
+  - Linux: `cc`, for example the package `build-essential`.
 
-```sh
-$ curl -LsSf https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.sh | sh
-```
+## Install the tool
 
-On Windows, run this command in PowerShell:
-
-```powershell
-> irm https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.ps1 | iex
-```
-
-On macOS and Linux, you can also use Homebrew:
+Run this command:
 
 ```sh
-$ brew install a-miyashita/tap/second-brain
+$ cargo install second-brain --locked
 ```
 
-The installer puts `second-brain` and `sb` in a folder and adds that folder to your
+The command builds the tool and installs two programs, `second-brain` and `sb`. The
+first build takes a few minutes. Cargo puts the programs in `~/.cargo/bin` (on
+Windows, `%USERPROFILE%\.cargo\bin`). The Rust installer adds this folder to your
 `PATH`. Open a new terminal after the installation.
+
+**Note:** The first release is not published yet. Until it is, build the tool from
+source (see "Build from source" below).
+
+## Update the tool
+
+Run the same command with `--force`:
+
+```sh
+$ cargo install second-brain --locked --force
+```
+
+Then run `sb doctor`. It tells you if the installed agent skill is older than the
+program. In that case, run `sb setup skills` again.
 
 ## Build from source
 
-You need Rust 1.88 or later. Then run this command in the repository folder:
+Use this method to try a version that is not released yet. Run this command in the
+repository folder:
 
 ```sh
 $ cargo install --path crates/sb-cli --locked
@@ -54,7 +67,8 @@ second-brain 0.1.0 (x86_64-linux), skill version 2, schema 3
 ```
 
 If your terminal says that it cannot find `sb`, the folder of the program is not in
-your `PATH`. Open a new terminal, or add the folder to your `PATH`.
+your `PATH`. Open a new terminal, or add Cargo's bin folder (`~/.cargo/bin`) to your
+`PATH`.
 
 ## Next step
 

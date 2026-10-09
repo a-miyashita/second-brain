@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use sb_core::RunStatus;
+use second_brain_kernel::RunStatus;
 use serde::Serialize;
 
 /// Limits that stop a run cleanly (ADR-0012).

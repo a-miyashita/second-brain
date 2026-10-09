@@ -5,16 +5,16 @@
 
 use std::sync::{Arc, Mutex};
 
-use sb_core::clock::FixedClock;
-use sb_core::source::Source;
-use sb_core::{
+use second_brain_google::{GoogleApi, MeetSource, OAuthClient, TokenProvider};
+use second_brain_kernel::clock::FixedClock;
+use second_brain_kernel::source::Source;
+use second_brain_kernel::{
     AccountId, AccountKind, GeneratorKind, RawStatus, Secret, SectionKind, SourceKind,
     SummaryStatus,
 };
-use sb_google::{GoogleApi, MeetSource, OAuthClient, TokenProvider};
-use sb_pipeline::sync::SyncOptions;
-use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
-use sb_store::{Account, Catalog, Home};
+use second_brain_pipeline::sync::SyncOptions;
+use second_brain_pipeline::{Pipeline, PipelineError, SourceFactory};
+use second_brain_store::{Account, Catalog, Home};
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -114,7 +114,7 @@ impl SourceFactory for Factory {
 
 fn pipeline(home: &Home, server: &MockServer) -> Pipeline {
     let clock = Arc::new(FixedClock::new(
-        sb_core::util::parse_ts("2026-09-10T00:00:00Z").unwrap(),
+        second_brain_kernel::util::parse_ts("2026-09-10T00:00:00Z").unwrap(),
     ));
     Pipeline::new(
         Catalog::open_with_clock(home, clock).unwrap(),
@@ -145,7 +145,7 @@ async fn calendar_strategy_native_summary_and_skip_unchanged() {
             AccountKind::Google,
             "Work",
             Some("alice@example.test"),
-            &sb_google::default_config_json(&["meet".into()]),
+            &second_brain_google::default_config_json(&["meet".into()]),
         )
         .unwrap();
     let p = pipeline(&home, &server);
@@ -175,7 +175,7 @@ async fn calendar_strategy_native_summary_and_skip_unchanged() {
         assert_eq!(e.summary_status, SummaryStatus::Done);
         assert_eq!(
             e.source_created_at,
-            sb_core::util::parse_ts("2026-09-09T01:00:00Z")
+            second_brain_kernel::util::parse_ts("2026-09-09T01:00:00Z")
         );
         assert_eq!(e.metadata["recurring"], true);
         assert_eq!(e.metadata["has_transcript"], true);
@@ -217,7 +217,9 @@ async fn calendar_strategy_native_summary_and_skip_unchanged() {
 // ---------- windows and coverage (ADR-0016) ----------
 
 fn pipeline_at(home: &Home, server: &MockServer, now: &str) -> Pipeline {
-    let clock = Arc::new(FixedClock::new(sb_core::util::parse_ts(now).unwrap()));
+    let clock = Arc::new(FixedClock::new(
+        second_brain_kernel::util::parse_ts(now).unwrap(),
+    ));
     Pipeline::new(
         Catalog::open_with_clock(home, clock).unwrap(),
         Arc::new(Factory(server.uri())),
@@ -270,7 +272,7 @@ fn cursor(p: &Pipeline, key: &str) -> serde_json::Value {
 fn window_home() -> (tempfile::TempDir, Home) {
     let dir = tempfile::tempdir().unwrap();
     let home = Home::new(dir.path().join("home"));
-    let mut config = sb_google::default_config_json(&["meet".into()]);
+    let mut config = second_brain_google::default_config_json(&["meet".into()]);
     config["meet_folder_id"] = json!("F1");
     Catalog::create(&home)
         .unwrap()
@@ -288,8 +290,8 @@ fn window_home() -> (tempfile::TempDir, Home) {
 fn no_summary(since: Option<&str>, until: Option<&str>) -> SyncOptions {
     SyncOptions {
         no_summary: true,
-        since: since.map(|s| sb_core::util::parse_ts(s).unwrap()),
-        until: until.map(|s| sb_core::util::parse_ts(s).unwrap()),
+        since: since.map(|s| second_brain_kernel::util::parse_ts(s).unwrap()),
+        until: until.map(|s| second_brain_kernel::util::parse_ts(s).unwrap()),
         ..Default::default()
     }
 }

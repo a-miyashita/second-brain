@@ -3,14 +3,14 @@
 //! combined source adapter.
 
 use async_trait::async_trait;
-use sb_core::document::{IngestHint, IngestSettings, normalize_document};
-use sb_core::source::{Source, SourceError, SyncHost};
-use sb_core::util::parse_ts;
-use sb_core::{
+use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle};
+use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
+use second_brain_kernel::source::{Source, SourceError, SyncHost};
+use second_brain_kernel::util::parse_ts;
+use second_brain_kernel::{
     AccountCtx, AccountKind, FetchOutcome, FetchRequest, FetchedEntry, NormalizeCtx,
     NormalizeInput, NormalizeOutcome, SourceKind, SourceRef, SyncOptions,
 };
-use sb_extract::bundle::{BundleInput, DocBundle, build_bundle};
 use serde_json::{Map, Value, json};
 
 use crate::api::{GOOGLE_DOC_MIME, GoogleApi, doc_id_from_url};

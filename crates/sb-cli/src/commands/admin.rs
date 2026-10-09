@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
-use sb_core::{AccountId, AccountKind, AccountStatus, Secret};
-use sb_google::oauth::{self, OAuthClient, Tokens};
-use sb_store::settings::{default_value, is_known_key};
-use sb_store::{Account, Catalog, EntryFilter, SecretScope};
+use second_brain_google::oauth::{self, OAuthClient, Tokens};
+use second_brain_kernel::{AccountId, AccountKind, AccountStatus, Secret};
+use second_brain_store::settings::{default_value, is_known_key};
+use second_brain_store::{Account, Catalog, EntryFilter, SecretScope};
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -27,7 +27,7 @@ fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
         )));
     }
     if let Some(name) = key.strip_prefix("llm.profiles.") {
-        sb_llm::Profile::from_value(name, value).map_err(|e| usage(e.to_string()))?;
+        second_brain_llm::Profile::from_value(name, value).map_err(|e| usage(e.to_string()))?;
     }
     if key.starts_with("summary.profile.") && !value.is_string() {
         return Err(usage(format!("{key} takes a profile name")));
@@ -53,7 +53,7 @@ fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
     }
     if key == "summary.budget.timezone" {
         return match value.as_str() {
-            Some(name) if sb_core::budget::is_valid_tz(name) => Ok(()),
+            Some(name) if second_brain_kernel::budget::is_valid_tz(name) => Ok(()),
             _ => Err(usage(
                 "summary.budget.timezone is an IANA time zone name, like \"Asia/Tokyo\"",
             )),
@@ -238,11 +238,11 @@ pub fn config(ctx: &Ctx, c: ConfigCmd) -> anyhow::Result<i32> {
                 let v = serde_json::to_value(parsed)?;
                 match acc.kind {
                     AccountKind::Slack => {
-                        serde_json::from_value::<sb_slack::SlackConfig>(v.clone())
+                        serde_json::from_value::<second_brain_slack::SlackConfig>(v.clone())
                             .map_err(|e| usage(format!("invalid Slack config: {e}")))?;
                     }
                     AccountKind::Google => {
-                        serde_json::from_value::<sb_google::meet::MeetConfig>(v.clone())
+                        serde_json::from_value::<second_brain_google::meet::MeetConfig>(v.clone())
                             .map_err(|e| usage(format!("invalid Google config: {e}")))?;
                     }
                     _ => {}
@@ -362,7 +362,7 @@ async fn add_google(
         )
     })?;
     let email = tokens.email.clone().unwrap_or_default();
-    let mut config = sb_google::default_config_json(&features);
+    let mut config = second_brain_google::default_config_json(&features);
     config["scopes"] = json!(tokens.scopes);
     let label = label.unwrap_or_else(|| {
         if email.is_empty() {
@@ -392,7 +392,7 @@ async fn add_google(
 async fn check_slack_token(
     token: &Secret,
 ) -> anyhow::Result<(String, String, String, Vec<String>)> {
-    let (info, missing) = sb_slack::validate_token(token, None)
+    let (info, missing) = second_brain_slack::validate_token(token, None)
         .await
         .map_err(|e| failure("auth.slack", e.to_string()))?;
     Ok((
@@ -423,7 +423,7 @@ async fn add_slack(
             missing.join(", ")
         );
     }
-    let mut config = sb_slack::default_config_json();
+    let mut config = second_brain_slack::default_config_json();
     config["team_url"] = json!(url);
     cat.add_account(
         &aid,
@@ -455,7 +455,7 @@ fn account_json(cat: &Catalog, a: &Account) -> anyhow::Result<Value> {
     Ok(json!({
         "id": a.id, "kind": a.kind, "label": a.label, "identity": a.identity,
         "status": a.status, "entries": entries,
-        "created_at": sb_core::util::ts(a.created_at),
+        "created_at": second_brain_kernel::util::ts(a.created_at),
     }))
 }
 
@@ -550,7 +550,7 @@ pub async fn account(ctx: &Ctx, c: AccountCmd) -> anyhow::Result<i32> {
             let n = cat
                 .remove_account(&a.id, purge)
                 .map_err(|e| usage(e.to_string()))?;
-            sb_store::rawstore::delete_paths(cat.home(), &paths);
+            second_brain_store::rawstore::delete_paths(cat.home(), &paths);
             let dir = cat.home().raw_dir().join(a.id.as_str());
             if dir.exists() {
                 let _ = std::fs::remove_dir_all(dir);
@@ -603,11 +603,13 @@ pub(crate) async fn online_check(
             else {
                 return Ok(Some(Err("no stored token".into())));
             };
-            Ok(Some(match sb_slack::validate_token(&token, None).await {
-                Ok((_, missing)) if missing.is_empty() => Ok("auth.test OK".into()),
-                Ok((_, missing)) => Err(format!("missing scopes: {}", missing.join(", "))),
-                Err(e) => Err(e.to_string()),
-            }))
+            Ok(Some(
+                match second_brain_slack::validate_token(&token, None).await {
+                    Ok((_, missing)) if missing.is_empty() => Ok("auth.test OK".into()),
+                    Ok((_, missing)) => Err(format!("missing scopes: {}", missing.join(", "))),
+                    Err(e) => Err(e.to_string()),
+                },
+            ))
         }
         _ => Ok(None),
     }
@@ -767,10 +769,10 @@ pub fn index_rebuild(ctx: &Ctx) -> anyhow::Result<i32> {
     if ctx.json {
         ctx.out_json(
             "sb.index/v1",
-            json!({"backend": sb_store::fts::NAME, "rows": n}),
+            json!({"backend": second_brain_store::fts::NAME, "rows": n}),
         );
     } else {
-        eprintln!("Rebuilt {}: {n} rows.", sb_store::fts::NAME);
+        eprintln!("Rebuilt {}: {n} rows.", second_brain_store::fts::NAME);
     }
     Ok(exit::OK)
 }
@@ -779,8 +781,8 @@ pub fn version(ctx: &Ctx) -> anyhow::Result<i32> {
     let v = json!({
         "version": env!("CARGO_PKG_VERSION"),
         "target": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
-        "skill_version": sb_setup::skills::embedded_version(),
-        "schema_version": sb_store::SCHEMA_VERSION,
+        "skill_version": second_brain_setup::skills::embedded_version(),
+        "schema_version": second_brain_store::SCHEMA_VERSION,
     });
     if ctx.json {
         ctx.out_json("sb.version/v1", v);

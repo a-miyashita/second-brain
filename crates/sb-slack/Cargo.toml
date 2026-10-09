@@ -1,14 +1,15 @@
 [package]
-name = "sb-slack"
-description = "Slack source for second-brain (slack.thread, slack.day)"
+name = "second-brain-slack"
+description = "Slack source for second-brain (slack.thread, slack.day) (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
@@ -22,8 +23,8 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-sb-pipeline.workspace = true
-sb-store.workspace = true
+second-brain-pipeline.workspace = true
+second-brain-store.workspace = true
 tempfile.workspace = true
 tokio-util.workspace = true
 wiremock.workspace = true

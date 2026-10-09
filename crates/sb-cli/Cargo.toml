@@ -1,6 +1,10 @@
 [package]
-name = "sb-cli"
+name = "second-brain"
 description = "second-brain: a personal knowledge base for AI agents"
+readme = "README.md"
+keywords = ["knowledge-base", "cli", "slack", "llm", "ai-agents"]
+categories = ["command-line-utilities"]
+documentation = "https://github.com/a-miyashita/second-brain/tree/main/manuals/en"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,14 +21,14 @@ name = "sb"
 path = "src/bin/sb.rs"
 
 [dependencies]
-sb-core.workspace = true
-sb-store.workspace = true
-sb-pipeline.workspace = true
-sb-llm.workspace = true
-sb-google.workspace = true
-sb-slack.workspace = true
-sb-setup.workspace = true
-sb-ondemand.workspace = true
+second-brain-kernel.workspace = true
+second-brain-store.workspace = true
+second-brain-pipeline.workspace = true
+second-brain-llm.workspace = true
+second-brain-google.workspace = true
+second-brain-slack.workspace = true
+second-brain-setup.workspace = true
+second-brain-ondemand.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true

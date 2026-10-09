@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use sb_core::{Language, RunTrigger};
-use sb_pipeline::{Pipeline, PipelineError, Progress};
-use sb_store::{Catalog, Home, StoreError};
+use second_brain_kernel::{Language, RunTrigger};
+use second_brain_pipeline::{Pipeline, PipelineError, Progress};
+use second_brain_store::{Catalog, Home, StoreError};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 

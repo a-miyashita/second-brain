@@ -3,8 +3,8 @@
 
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::params;
-use sb_core::util::ts;
-use sb_core::{AccountId, CursorUpdate, QueueItem, SourceKind};
+use second_brain_kernel::util::ts;
+use second_brain_kernel::{AccountId, CursorUpdate, QueueItem, SourceKind};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -205,7 +205,7 @@ impl Catalog {
 mod tests {
     use super::*;
     use crate::catalog::test_util::temp_catalog;
-    use sb_core::AccountKind;
+    use second_brain_kernel::AccountKind;
     use serde_json::json;
 
     #[test]

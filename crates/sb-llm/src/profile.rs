@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use sb_core::GeneratorKind;
+use second_brain_kernel::GeneratorKind;
 
 /// Reserved profile name meaning "keep the source-native summary".
 pub const NATIVE: &str = "native";

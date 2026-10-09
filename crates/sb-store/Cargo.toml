@@ -1,14 +1,15 @@
 [package]
-name = "sb-store"
-description = "SQLite catalog, raw file store, secrets and the sqlite-fts search backend"
+name = "second-brain-store"
+description = "SQLite catalog, raw file store, secrets and the sqlite-fts search backend (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 chrono.workspace = true
 directories.workspace = true
 fs4.workspace = true

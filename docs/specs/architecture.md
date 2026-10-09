@@ -17,7 +17,7 @@ Related ADRs: 0001, 0002, 0004, 0005, 0008, 0014.
               │  sb-slack      raw files, secrets,      (summarizers)  (sqlite-fts;      │
               │  sb-google     settings, runs, issues)                  sqlite-vec later)│
               │  sb-extract                                                              │
-              │      ▲ all traits and domain types live in sb-core                       │
+              │      ▲ all traits and domain types live in sb-kernel                       │
               └──────┼───────────────────────────────────────────────────────────────────┘
                      │ HTTPS (rustls)
           Slack Web API / Google APIs / LLM APIs / local LLM server / LLM CLIs (subprocess)
@@ -29,7 +29,7 @@ Related ADRs: 0001, 0002, 0004, 0005, 0008, 0014.
 second-brain/
 ├── Cargo.toml                # [workspace]
 ├── crates/
-│   ├── sb-core/              # domain types + traits; no I/O
+│   ├── sb-kernel/            # domain types + traits; no I/O
 │   ├── sb-store/             # SQLite catalog, migrations, raw file store,
 │   │                         # secrets, settings, runs/issues, sqlite-fts backend
 │   ├── sb-pipeline/          # ingestion pipeline, summarization queue, locking
@@ -46,16 +46,20 @@ second-brain/
 │   │                         # MCP client config, env setup
 │   └── sb-cli/               # clap CLI; bins `second-brain` and `sb`
 ├── assets/
-│   ├── skills/second-brain/  # SKILL.md and references (embedded via include_str!)
 │   └── slack-app-manifest.yaml
 ├── docs/ (adrs/, specs/)
 └── tests/                    # workspace-level integration tests
 ```
 
+The skill files (`SKILL.md` and references, embedded with `include_str!`) are in
+`crates/sb-setup/assets/skills/second-brain/`, because a published crate contains only
+its own directory. The package names are `second-brain` for `sb-cli` and
+`second-brain-<role>` for the others (ADR-0018, [release.md](release.md)).
+
 Crate dependency rules:
 
-- `sb-core` depends on no other workspace crate. Source, LLM and store crates depend
-  only on `sb-core`, plus `sb-extract` where needed (`sb-google` for `google.doc`,
+- `sb-kernel` depends on no other workspace crate. Source, LLM and store crates depend
+  only on `sb-kernel`, plus `sb-extract` where needed (`sb-google` for `google.doc`,
   `sb-ondemand`).
 - An account may serve several source kinds (a Google account has `google.meet` and
   `google.doc`). Its adapter (`GoogleSource`) dispatches by source kind and delegates
@@ -65,7 +69,7 @@ Crate dependency rules:
   `sb-pipeline` and `sb-store`.
 - Only `sb-cli` (and `sb-mcp` for its server loop) may print to stdout.
 
-## Core types (sb-core)
+## Core types (sb-kernel)
 
 | Type | Meaning |
 |---|---|

@@ -8,8 +8,8 @@ pub mod source;
 pub use client::{AuthInfo, REQUIRED_SCOPES, SlackClient};
 pub use source::{SlackConfig, SlackSource, default_config_json};
 
-use sb_core::Secret;
-use sb_core::source::SourceError;
+use second_brain_kernel::Secret;
+use second_brain_kernel::source::SourceError;
 
 /// Validate a user token with `auth.test` and report missing scopes
 /// (`sb account add slack`, `sb auth login`).

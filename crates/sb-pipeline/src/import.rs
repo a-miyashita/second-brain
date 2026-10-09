@@ -5,12 +5,12 @@ use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use sb_core::{
+use second_brain_kernel::{
     AccountId, AccountKind, Generator, GeneratorKind, RawObject, RawRole, RawStatus, RunStatus,
     SectionDraft, SectionKind, SectionOrigin, SourceKind, SourceRef,
 };
-use sb_store::import::{ImportResult, ImportWrite};
-use sb_store::rawstore;
+use second_brain_store::import::{ImportResult, ImportWrite};
+use second_brain_store::rawstore;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

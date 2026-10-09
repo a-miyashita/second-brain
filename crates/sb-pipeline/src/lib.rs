@@ -15,10 +15,10 @@ pub mod sync;
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use sb_core::RunTrigger;
-use sb_core::clock::Clock;
-use sb_core::source::Source;
-use sb_store::{Account, Catalog, Home};
+use second_brain_kernel::RunTrigger;
+use second_brain_kernel::clock::Clock;
+use second_brain_kernel::source::Source;
+use second_brain_store::{Account, Catalog, Home};
 use tokio_util::sync::CancellationToken;
 
 pub use error::PipelineError;

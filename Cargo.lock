@@ -499,7 +499,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.6",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2040,220 +2040,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
-name = "sb-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "fs4",
- "open",
- "rpassword",
- "sb-core",
- "sb-google",
- "sb-llm",
- "sb-ondemand",
- "sb-pipeline",
- "sb-setup",
- "sb-slack",
- "sb-store",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-util",
- "toml",
- "tracing",
- "tracing-subscriber",
- "which",
-]
-
-[[package]]
-name = "sb-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "chrono-tz",
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "unicode-normalization",
-]
-
-[[package]]
-name = "sb-extract"
-version = "0.1.0"
-dependencies = [
- "calamine",
- "chardetng",
- "chrono",
- "csv",
- "ego-tree",
- "encoding_rs",
- "hex",
- "pdf-extract",
- "quick-xml 0.42.0",
- "regex",
- "sb-core",
- "scraper",
- "serde_json",
- "sha2",
- "thiserror",
- "zip",
-]
-
-[[package]]
-name = "sb-google"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "rand 0.9.5",
- "regex",
- "reqwest",
- "sb-core",
- "sb-extract",
- "sb-pipeline",
- "sb-store",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "url",
- "wiremock",
-]
-
-[[package]]
-name = "sb-llm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "directories",
- "reqwest",
- "sb-core",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "ulid",
- "which",
- "wiremock",
-]
-
-[[package]]
-name = "sb-ondemand"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "directories",
- "encoding_rs",
- "reqwest",
- "sb-core",
- "sb-extract",
- "sb-pipeline",
- "sb-store",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "url",
- "wiremock",
-]
-
-[[package]]
-name = "sb-pipeline"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "chrono-tz",
- "futures",
- "regex",
- "sb-core",
- "sb-llm",
- "sb-store",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
- "wiremock",
-]
-
-[[package]]
-name = "sb-setup"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "directories",
- "sb-core",
- "sb-store",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tracing",
- "which",
-]
-
-[[package]]
-name = "sb-slack"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "chrono-tz",
- "regex",
- "reqwest",
- "sb-core",
- "sb-pipeline",
- "sb-store",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
- "wiremock",
-]
-
-[[package]]
-name = "sb-store"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "chrono-tz",
- "directories",
- "fs4",
- "iana-time-zone",
- "rand 0.9.5",
- "rusqlite",
- "sb-core",
- "serde",
- "serde_json",
- "sys-locale",
- "tempfile",
- "thiserror",
- "tracing",
- "ulid",
-]
-
-[[package]]
 name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2272,6 +2058,220 @@ dependencies = [
  "precomputed-hash",
  "selectors",
  "tendril",
+]
+
+[[package]]
+name = "second-brain"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "fs4",
+ "open",
+ "rpassword",
+ "second-brain-google",
+ "second-brain-kernel",
+ "second-brain-llm",
+ "second-brain-ondemand",
+ "second-brain-pipeline",
+ "second-brain-setup",
+ "second-brain-slack",
+ "second-brain-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "which",
+]
+
+[[package]]
+name = "second-brain-extract"
+version = "0.1.0"
+dependencies = [
+ "calamine",
+ "chardetng",
+ "chrono",
+ "csv",
+ "ego-tree",
+ "encoding_rs",
+ "hex",
+ "pdf-extract",
+ "quick-xml 0.42.0",
+ "regex",
+ "scraper",
+ "second-brain-kernel",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "second-brain-google"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "rand 0.9.5",
+ "regex",
+ "reqwest",
+ "second-brain-extract",
+ "second-brain-kernel",
+ "second-brain-pipeline",
+ "second-brain-store",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "second-brain-kernel"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "second-brain-llm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "directories",
+ "reqwest",
+ "second-brain-kernel",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "ulid",
+ "which",
+ "wiremock",
+]
+
+[[package]]
+name = "second-brain-ondemand"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "directories",
+ "encoding_rs",
+ "reqwest",
+ "second-brain-extract",
+ "second-brain-kernel",
+ "second-brain-pipeline",
+ "second-brain-store",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "second-brain-pipeline"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "futures",
+ "regex",
+ "second-brain-kernel",
+ "second-brain-llm",
+ "second-brain-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "second-brain-setup"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "second-brain-kernel",
+ "second-brain-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "which",
+]
+
+[[package]]
+name = "second-brain-slack"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "regex",
+ "reqwest",
+ "second-brain-kernel",
+ "second-brain-pipeline",
+ "second-brain-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "wiremock",
+]
+
+[[package]]
+name = "second-brain-store"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "directories",
+ "fs4",
+ "iana-time-zone",
+ "rand 0.9.5",
+ "rusqlite",
+ "second-brain-kernel",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tempfile",
+ "thiserror",
+ "tracing",
+ "ulid",
 ]
 
 [[package]]
@@ -3300,9 +3300,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",

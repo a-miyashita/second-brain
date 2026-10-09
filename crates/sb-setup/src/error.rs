@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
     #[error(transparent)]
-    Store(#[from] sb_store::StoreError),
+    Store(#[from] second_brain_store::StoreError),
     #[error("I/O error on {path}: {source}")]
     Io {
         path: PathBuf,

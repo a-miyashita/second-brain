@@ -5,8 +5,10 @@ use std::collections::HashSet;
 
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, params, params_from_iter};
-use sb_core::search::{Capabilities, Hit, SearchBackend, SearchError, SearchMode, SearchQuery};
-use sb_core::util::{nfkc, ts};
+use second_brain_kernel::search::{
+    Capabilities, Hit, SearchBackend, SearchError, SearchMode, SearchQuery,
+};
+use second_brain_kernel::util::{nfkc, ts};
 
 use crate::catalog::{Catalog, parse_col};
 use crate::error::Result;
@@ -341,7 +343,7 @@ mod tests {
     use super::*;
     use crate::catalog::test_util::temp_catalog;
     use crate::entries::{EntryUpdate, NormalizedUpdate, SummaryDecision};
-    use sb_core::{
+    use second_brain_kernel::{
         AccountId, AccountKind, EntryOrigin, SectionDraft, SectionKind, SectionOrigin, SourceKind,
         SourceRef,
     };
@@ -353,7 +355,7 @@ mod tests {
                 source_kind: SourceKind::GoogleMeet,
                 source_id: id.into(),
                 source_url: None,
-                created_at: sb_core::util::parse_ts(date),
+                created_at: second_brain_kernel::util::parse_ts(date),
                 updated_at: None,
             },
             origin: EntryOrigin::Import,

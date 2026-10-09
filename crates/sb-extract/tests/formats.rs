@@ -3,7 +3,7 @@
 
 use std::io::Write;
 
-use sb_extract::{ExtractError, ExtractInput, ExtractLimits, extract, extract_bounded};
+use second_brain_extract::{ExtractError, ExtractInput, ExtractLimits, extract, extract_bounded};
 
 fn zip_of(parts: &[(&str, &str)]) -> Vec<u8> {
     let mut buf = Vec::new();
@@ -19,7 +19,7 @@ fn zip_of(parts: &[(&str, &str)]) -> Vec<u8> {
     buf
 }
 
-fn run(bytes: &[u8], name: &str) -> Result<sb_extract::Extracted, ExtractError> {
+fn run(bytes: &[u8], name: &str) -> Result<second_brain_extract::Extracted, ExtractError> {
     extract(
         &ExtractInput {
             bytes,

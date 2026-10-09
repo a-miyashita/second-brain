@@ -1,15 +1,16 @@
 [package]
-name = "sb-ondemand"
-description = "On-demand sources without sync: local.file and web.page"
+name = "second-brain-ondemand"
+description = "On-demand sources without sync: local.file and web.page (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
-sb-core.workspace = true
-sb-extract.workspace = true
+second-brain-kernel.workspace = true
+second-brain-extract.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 directories.workspace = true
@@ -21,8 +22,8 @@ url.workspace = true
 
 [dev-dependencies]
 encoding_rs.workspace = true
-sb-pipeline.workspace = true
-sb-store.workspace = true
+second-brain-pipeline.workspace = true
+second-brain-store.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 wiremock.workspace = true

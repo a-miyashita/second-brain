@@ -7,9 +7,9 @@ use std::sync::LazyLock;
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use regex::Regex;
-use sb_core::source::SourceError;
-use sb_core::util::truncate_chars;
-use sb_core::{
+use second_brain_kernel::source::SourceError;
+use second_brain_kernel::util::truncate_chars;
+use second_brain_kernel::{
     Language, NormalizeCtx, NormalizeInput, NormalizeOutcome, Normalized, PromptKind, SectionDraft,
     SectionKind, SectionOrigin, SourceKind, SummaryInput,
 };
@@ -642,7 +642,7 @@ pub fn normalize(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_core::{AccountCtx, AccountId, AccountKind, RawRole, RawSegment, SourceRef};
+    use second_brain_kernel::{AccountCtx, AccountId, AccountKind, RawRole, RawSegment, SourceRef};
 
     fn dir() -> Directory {
         let mut d = Directory::new();

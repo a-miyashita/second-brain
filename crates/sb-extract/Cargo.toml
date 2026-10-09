@@ -1,11 +1,12 @@
 [package]
-name = "sb-extract"
-description = "Pure text extraction (text, CSV, HTML, docx, pptx, xlsx, PDF) to Markdown"
+name = "second-brain-extract"
+description = "Pure text extraction (text, CSV, HTML, docx, pptx, xlsx, PDF) to Markdown (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [features]
 default = ["html", "docx", "pptx", "xlsx", "pdf"]
@@ -16,7 +17,7 @@ xlsx = ["dep:calamine"]
 pdf = ["dep:pdf-extract"]
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 hex.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

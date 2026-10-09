@@ -7,15 +7,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures::StreamExt;
-use sb_core::summarizer::{LlmError, Summarizer};
-use sb_core::{
+use second_brain_kernel::summarizer::{LlmError, Summarizer};
+use second_brain_kernel::{
     EntryOrigin, GeneratorKind, NormalizeOutcome, RawStatus, Severity, SummaryInput, SummaryStatus,
     Usage,
 };
-use sb_llm::prices::{ESTIMATED_OUTPUT_TOKENS, Price, estimate_tokens, price_for, usage_cost};
-use sb_llm::prompts::split_chunks;
-use sb_llm::{BuildOptions, Built, NATIVE};
-use sb_store::{Entry, EntryFilter, NewUsage, SummaryCommit, SummaryDecision, UsageOutcome};
+use second_brain_llm::prices::{
+    ESTIMATED_OUTPUT_TOKENS, Price, estimate_tokens, price_for, usage_cost,
+};
+use second_brain_llm::prompts::split_chunks;
+use second_brain_llm::{BuildOptions, Built, NATIVE};
+use second_brain_store::{
+    Entry, EntryFilter, NewUsage, SummaryCommit, SummaryDecision, UsageOutcome,
+};
 use serde::Serialize;
 
 use crate::Pipeline;
@@ -138,7 +142,7 @@ impl Pipeline {
                 .map_err(|e| LlmError::Config(e.to_string()))?,
             None => None,
         };
-        sb_llm::build(
+        second_brain_llm::build(
             name,
             profile,
             &BuildOptions {
@@ -263,8 +267,9 @@ impl Pipeline {
             PipelineError::Invalid(format!("profile {profile_name:?} is not defined"))
         })?;
         let hosts = self.hosts(&policy, &entries)?;
-        let target_version =
-            |input: &SummaryInput| sb_llm::prompts::prompt_version(input.prompt).to_string();
+        let target_version = |input: &SummaryInput| {
+            second_brain_llm::prompts::prompt_version(input.prompt).to_string()
+        };
         let mut jobs = Vec::new();
         for e in eligible {
             if !opts.force {
@@ -335,7 +340,7 @@ impl Pipeline {
                         .unwrap_or("");
                     nu.summary = SummaryDecision::Native {
                         generator,
-                        input_hash: sb_core::util::summary_input_hash(NATIVE, "", body),
+                        input_hash: second_brain_kernel::util::summary_input_hash(NATIVE, "", body),
                     };
                 }
                 self.catalog().upsert_entry(&u)?;
@@ -379,11 +384,12 @@ impl Pipeline {
                 let profile = policy.profile(name);
                 let max_chars = profile
                     .map(|p| p.max_input_chars)
-                    .unwrap_or(sb_llm::profile::DEFAULT_MAX_INPUT_CHARS);
+                    .unwrap_or(second_brain_llm::profile::DEFAULT_MAX_INPUT_CHARS);
                 let model = profile.map(|p| p.model_name()).unwrap_or_default();
                 let price = price_for(&model, policy.prices.as_ref());
                 let cli = profile.is_some_and(|p| {
-                    p.cli_binary().is_some() || p.kind == sb_core::GeneratorKind::LocalLlm
+                    p.cli_binary().is_some()
+                        || p.kind == second_brain_kernel::GeneratorKind::LocalLlm
                 });
                 for e in entries {
                     let Some(input) = self.rebuild_input(&hosts, e)? else {

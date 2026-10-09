@@ -6,8 +6,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Datelike, Utc};
-use sb_core::util::{sha256_hex, slugify_source_id};
-use sb_core::{RawObject, RawRole, RawSegment, SourceRef};
+use second_brain_kernel::util::{sha256_hex, slugify_source_id};
+use second_brain_kernel::{RawObject, RawRole, RawSegment, SourceRef};
 
 use crate::entries::{RawObjectRow, StoredRaw};
 use crate::error::{Result, StoreError};
@@ -176,7 +176,7 @@ pub fn dir_size(dir: &Path) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_core::{AccountId, SourceKind};
+    use second_brain_kernel::{AccountId, SourceKind};
 
     #[test]
     fn write_read_and_orphans() {
@@ -188,7 +188,7 @@ mod tests {
             source_kind: SourceKind::SlackThread,
             source_id: "C1:1727000000.000100".into(),
             source_url: None,
-            created_at: sb_core::util::parse_ts("2026-09-01T10:00:00Z"),
+            created_at: second_brain_kernel::util::parse_ts("2026-09-01T10:00:00Z"),
             updated_at: None,
         };
         let dir = entry_dir(&r, Utc::now());

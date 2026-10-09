@@ -3,9 +3,9 @@
 //! only on request.
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use sb_core::document::{IngestHint, IngestSettings, keys};
-use sb_core::source::SourceError;
-use sb_core::{RawBundle, RawMode, RawObject, RawRole};
+use second_brain_kernel::document::{IngestHint, IngestSettings, keys};
+use second_brain_kernel::source::SourceError;
+use second_brain_kernel::{RawBundle, RawMode, RawObject, RawRole};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 

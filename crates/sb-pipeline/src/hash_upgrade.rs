@@ -7,14 +7,14 @@
 
 use std::collections::BTreeMap;
 
-use sb_core::RawStatus;
-use sb_core::util::body_hash;
+use second_brain_kernel::RawStatus;
+use second_brain_kernel::util::body_hash;
 use serde::Serialize;
 
 use crate::policy::SummaryPolicy;
 use crate::run::Progress;
 use crate::{Pipeline, PipelineError};
-use sb_store::Entry;
+use second_brain_store::Entry;
 
 /// The setting that gates the upgrade: 1 = old hashes may exist, 2 = upgraded.
 pub const HASH_VERSION_KEY: &str = "summary.input_hash_version";

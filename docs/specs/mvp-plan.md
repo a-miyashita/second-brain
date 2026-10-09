@@ -6,7 +6,7 @@
 |---|---|---|
 | S1 | Does Meet v2 `conferenceRecords.list` + `smartNotes` return meetings I attended but did not organize? What scopes and admin settings does it need? | Whether `meet_api` becomes the default strategy |
 | S2 | Confirm the Gemini notes format as exported by Drive `text/markdown`. Check: section headings (observed to be Japanese even for English meetings), the embedded transcript heading, the survey line, timestamp anchors, the Invited line with struck-through absentees, and the auto-generated title patterns | Parser rules in source-google-meet.md |
-| S3 | Can cargo-dist install to `%LOCALAPPDATA%\Programs\second-brain\bin` and `~/.local/bin` and update `PATH`? | Custom installer, or not |
+| S3 | Can cargo-dist install to `%LOCALAPPDATA%\Programs\second-brain\bin` and `~/.local/bin` and update `PATH`? | Custom installer, or not (deferred, ADR-0018) |
 | S4 | Copilot CLI non-interactive flags, JSON output, skill directory, MCP config path | summarization.md and agent-integration.md |
 | S5 | Windows Task Scheduler without a console window flash | setup-and-scheduling.md |
 | S6 | Which pure-Rust libraries extract text well enough from PDF (Japanese and English), docx, pptx, xlsx and HTML, and survive malformed files? (phase 2, for `sb ingest`) | Library choice and PDF scope in extract.md |
@@ -22,7 +22,7 @@ terminal agents (Copilot CLI, Claude Code), with import of existing data.
 | # | Work item | Depends on |
 |---|---|---|
 | 1 | Workspace skeleton, CI (fmt, clippy, test on Windows/macOS/Linux), cargo-dist release config | — |
-| 2 | `sb-core` types and traits | 1 |
+| 2 | `sb-kernel` types and traits | 1 |
 | 3 | `sb-store`: migrations, schema, permissions (Unix mode, Windows ACL), settings, secrets, raw file store | 2 |
 | 4 | `sqlite-fts` search backend, including the short-term LIKE path; `sb search/show/list/stats/review`; `sb index rebuild` | 3 |
 | 5 | `sb-pipeline`: ingestion pipeline, run records, issues, sync lock, chunked commits, `sync_queue`, cancellation and graceful stop, limits (`--max-*`, `--time-limit`) | 3 |
@@ -55,7 +55,7 @@ early, so real imported data is available for testing search.
 | 1 | Workspace and CI done. `dist-workspace.toml` is written; the release workflow still has to be generated with `dist generate` |
 | 2–9 | Done, with the tests described below (mock HTTP servers, stub executables, resume and incremental tests) |
 | 10–13 | Done (`sb refetch`/`reextract`, `sb auth`/`account`/`config`, `sb doctor`, `sb setup` and the wizard) |
-| 14 | Done (`assets/skills/second-brain/`) |
+| 14 | Done (`crates/sb-setup/assets/skills/second-brain/`) |
 | 15 | Done (README guides) |
 | Phase 2: `sb ingest` | Done: `google.doc`, `web.page`, `local.file`, `sb-extract` (ADR-0014, [ingest.md](ingest.md)). Spike S6 resolved for everything except real-world PDFs, see [extract.md](extract.md) |
 
