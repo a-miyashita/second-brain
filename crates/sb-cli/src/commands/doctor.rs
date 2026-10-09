@@ -3,10 +3,10 @@
 use std::collections::HashSet;
 
 use chrono::Duration as ChronoDuration;
-use sb_store::{Catalog, EntryFilter, SCHEMA_VERSION, perms, rawstore};
 use second_brain_kernel::{
     AccountStatus, RawStatus, RunStatus, RunTrigger, Severity, SourceKind, SummaryStatus,
 };
+use second_brain_store::{Catalog, EntryFilter, SCHEMA_VERSION, perms, rawstore};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -104,7 +104,7 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
     // home.exists
     if !home.is_initialized() {
         if a.fix {
-            sb_setup::home::setup_home(home)?;
+            second_brain_setup::home::setup_home(home)?;
             r.fixed("home.exists", format!("created {}", home.root().display()));
         } else {
             r.add(
@@ -139,7 +139,7 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
     let mut loose = Vec::new();
     let mut targets = vec![(home.root().to_path_buf(), true)];
     for suffix in ["", "-wal", "-shm"] {
-        let p = db.with_file_name(format!("{}{suffix}", sb_store::home::DB_FILE));
+        let p = db.with_file_name(format!("{}{suffix}", second_brain_store::home::DB_FILE));
         if p.exists() {
             targets.push((p, false));
         }
@@ -420,14 +420,14 @@ fn check_queue(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
     let stale = q.iter().filter(|x| x.enqueued_at < week_ago).count();
     let stuck = q
         .iter()
-        .filter(|x| x.attempts >= sb_pipeline::sync::MAX_QUEUE_ATTEMPTS)
+        .filter(|x| x.attempts >= second_brain_pipeline::sync::MAX_QUEUE_ATTEMPTS)
         .count();
     if stale == 0 && stuck == 0 {
         r.ok("sync.queue", Some(format!("{} queued", q.len())));
     } else {
         let example = q
             .iter()
-            .find(|x| x.attempts >= sb_pipeline::sync::MAX_QUEUE_ATTEMPTS)
+            .find(|x| x.attempts >= second_brain_pipeline::sync::MAX_QUEUE_ATTEMPTS)
             .and_then(|x| x.last_error.clone())
             .map(|e| format!("; last error: {e}"))
             .unwrap_or_default();
@@ -491,7 +491,7 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
     let mut ok_profiles = Vec::new();
     let mut seen = HashSet::new();
     for (key, name) in &used {
-        if name == sb_llm::NATIVE || !seen.insert(name.clone()) {
+        if name == second_brain_llm::NATIVE || !seen.insert(name.clone()) {
             continue;
         }
         let Some(raw) = cat.setting(&format!("llm.profiles.{name}"))? else {
@@ -500,7 +500,7 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
             ));
             continue;
         };
-        let profile = match sb_llm::Profile::from_value(name, &raw) {
+        let profile = match second_brain_llm::Profile::from_value(name, &raw) {
             Ok(p) => p,
             Err(e) => {
                 problems.push(e.to_string());
@@ -508,7 +508,7 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
             }
         };
         if let Some(bin) = profile.cli_binary()
-            && sb_llm::resolve_program(bin).is_none()
+            && second_brain_llm::resolve_program(bin).is_none()
         {
             problems.push(format!("profile {name}: `{bin}` is not on PATH"));
             continue;
@@ -516,7 +516,7 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
         if profile.provider.default_secret().is_some() || profile.secret.is_some() {
             let reference = profile.secret_ref().unwrap_or_default();
             if cat.resolve_secret_ref(&reference)?.is_none()
-                && profile.provider != sb_llm::Provider::OpenaiCompatible
+                && profile.provider != second_brain_llm::Provider::OpenaiCompatible
             {
                 problems.push(format!(
                     "profile {name}: no secret {reference} (and no environment fallback)"
@@ -524,9 +524,9 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
                 continue;
             }
         }
-        if profile.provider == sb_llm::Provider::AntigravityCli {
-            let problem = match sb_llm::antigravity_state_dir() {
-                Some(dir) => sb_llm::antigravity_permissions_problem(&dir),
+        if profile.provider == second_brain_llm::Provider::AntigravityCli {
+            let problem = match second_brain_llm::antigravity_state_dir() {
+                Some(dir) => second_brain_llm::antigravity_permissions_problem(&dir),
                 None => Some("cannot locate the home directory".into()),
             };
             if let Some(p) = problem {
@@ -569,10 +569,10 @@ async fn check_llm(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Res
                 Some(r) => cat.resolve_secret_ref(&r)?,
                 None => None,
             };
-            let built = match sb_llm::build(
+            let built = match second_brain_llm::build(
                 name,
                 profile,
-                &sb_llm::BuildOptions {
+                &second_brain_llm::BuildOptions {
                     language: "auto".into(),
                     scratch_dir: cat.home().tmp_dir(),
                     secret,
@@ -632,12 +632,12 @@ fn check_schedule(
         return Ok(false);
     };
     let (spec, mechanism) = schedule_spec_from_settings(ctx, cat, &reg)?;
-    let user_home = sb_setup::skills::user_home()?;
-    let problems = sb_setup::schedule::check(&spec, mechanism, &user_home);
+    let user_home = second_brain_setup::skills::user_home()?;
+    let problems = second_brain_setup::schedule::check(&spec, mechanism, &user_home);
     if problems.is_empty() {
         r.ok("schedule.registered", Some(format!("{mechanism:?}")));
     } else if a.fix {
-        sb_setup::schedule::register(&spec, mechanism, &user_home, &ctx.home.tmp_dir())?;
+        second_brain_setup::schedule::register(&spec, mechanism, &user_home, &ctx.home.tmp_dir())?;
         r.fixed(
             "schedule.registered",
             "re-registered the scheduled jobs".into(),
@@ -787,9 +787,9 @@ fn check_summaries(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
 }
 
 fn check_budget(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
-    let policy = sb_pipeline::policy::SummaryPolicy::load(cat)?;
-    let b = sb_pipeline::budget::status(cat, &policy)?;
-    let line = |label: &str, p: &sb_pipeline::budget::PeriodStatus| match p.cap_usd {
+    let policy = second_brain_pipeline::policy::SummaryPolicy::load(cat)?;
+    let b = second_brain_pipeline::budget::status(cat, &policy)?;
+    let line = |label: &str, p: &second_brain_pipeline::budget::PeriodStatus| match p.cap_usd {
         Some(c) => format!(
             "{label} {} / {}",
             super::budget::usd(p.spent_usd),
@@ -832,12 +832,12 @@ fn check_budget(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
 }
 
 fn check_skills(a: &DoctorArgs, r: &mut Report) -> anyhow::Result<()> {
-    let user_home = sb_setup::skills::user_home()?;
-    let want = sb_setup::skills::embedded_version();
+    let user_home = second_brain_setup::skills::user_home()?;
+    let want = second_brain_setup::skills::embedded_version();
     let mut outdated = Vec::new();
     let mut installed = 0;
-    for t in sb_setup::skills::Target::ALL {
-        if let Some(v) = sb_setup::skills::installed_version(t, &user_home) {
+    for t in second_brain_setup::skills::Target::ALL {
+        if let Some(v) = second_brain_setup::skills::installed_version(t, &user_home) {
             installed += 1;
             if v != want {
                 outdated.push(t);
@@ -857,7 +857,7 @@ fn check_skills(a: &DoctorArgs, r: &mut Report) -> anyhow::Result<()> {
         }
     } else if a.fix {
         for t in &outdated {
-            sb_setup::skills::install(*t, &user_home)?;
+            second_brain_setup::skills::install(*t, &user_home)?;
         }
         r.fixed(
             "skills.version",

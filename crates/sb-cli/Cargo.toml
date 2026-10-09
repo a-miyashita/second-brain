@@ -1,5 +1,5 @@
 [package]
-name = "sb-cli"
+name = "second-brain"
 description = "second-brain: a personal knowledge base for AI agents"
 version.workspace = true
 edition.workspace = true
@@ -18,13 +18,13 @@ path = "src/bin/sb.rs"
 
 [dependencies]
 second-brain-kernel.workspace = true
-sb-store.workspace = true
-sb-pipeline.workspace = true
-sb-llm.workspace = true
-sb-google.workspace = true
-sb-slack.workspace = true
-sb-setup.workspace = true
-sb-ondemand.workspace = true
+second-brain-store.workspace = true
+second-brain-pipeline.workspace = true
+second-brain-llm.workspace = true
+second-brain-google.workspace = true
+second-brain-slack.workspace = true
+second-brain-setup.workspace = true
+second-brain-ondemand.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true

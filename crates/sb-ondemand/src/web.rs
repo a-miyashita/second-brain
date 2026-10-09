@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::header::{self, HeaderMap, HeaderValue};
-use sb_extract::bundle::{BundleInput, DocBundle, build_bundle, sha256_hex};
+use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle, sha256_hex};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
 use second_brain_kernel::source::{Source, SourceError, SyncHost};
 use second_brain_kernel::{

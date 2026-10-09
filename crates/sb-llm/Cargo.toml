@@ -1,5 +1,5 @@
 [package]
-name = "sb-llm"
+name = "second-brain-llm"
 description = "Summarizers for second-brain: LLM APIs, LLM CLIs and local OpenAI-compatible servers"
 version.workspace = true
 edition.workspace = true

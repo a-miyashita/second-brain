@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use sb_store::{Catalog, Entry, EntryFilter};
 use second_brain_kernel::search::{SearchMode, SearchQuery};
 use second_brain_kernel::{Language, RawRole, SectionKind, SectionOrigin, SourceKind};
+use second_brain_store::{Catalog, Entry, EntryFilter};
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -71,7 +71,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
         mode: SearchMode::FullText,
         all_sections: a.all_sections,
     };
-    let hits = sb_store::fts::search(cat.conn(), &q).map_err(|e| usage(e.to_string()))?;
+    let hits = second_brain_store::fts::search(cat.conn(), &q).map_err(|e| usage(e.to_string()))?;
     let labels = labels(&cat)?;
     let lang = ctx.language(&cat);
     let mut out = Vec::new();
@@ -144,7 +144,7 @@ fn raw_text(cat: &Catalog, e: &Entry, role: Option<RawRole>) -> anyhow::Result<S
         .into_iter()
         .filter(|r| role.is_none_or(|x| x == r.role))
         .collect();
-    let segs = sb_store::rawstore::read_segments(cat.home(), &rows)?;
+    let segs = second_brain_store::rawstore::read_segments(cat.home(), &rows)?;
     Ok(segs
         .iter()
         .map(|s| String::from_utf8_lossy(&s.bytes).to_string())
@@ -321,12 +321,12 @@ pub fn list(ctx: &Ctx, a: ListArgs) -> anyhow::Result<i32> {
 pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
     let cat = ctx.catalog()?;
     let s = cat.stats()?;
-    let policy = sb_pipeline::policy::SummaryPolicy::load(&cat)?;
-    let b = sb_pipeline::budget::status(&cat, &policy)?;
+    let policy = second_brain_pipeline::policy::SummaryPolicy::load(&cat)?;
+    let b = second_brain_pipeline::budget::status(&cat, &policy)?;
     if ctx.json {
         let mut v = serde_json::to_value(&s)?;
         if let Some(o) = v.as_object_mut() {
-            let one = |p: &sb_pipeline::budget::PeriodStatus| json!({"spent_usd": p.spent_usd, "cap_usd": p.cap_usd, "resets_at": p.resets_at});
+            let one = |p: &second_brain_pipeline::budget::PeriodStatus| json!({"spent_usd": p.spent_usd, "cap_usd": p.cap_usd, "resets_at": p.resets_at});
             o.insert(
                 "budget".into(),
                 json!({"weekly": one(&b.week), "monthly": one(&b.month)}),
@@ -401,15 +401,15 @@ fn source_text(cat: &Catalog, e: &Entry) -> anyhow::Result<String> {
     {
         let t = raw_text(cat, e, Some(RawRole::Transcript))?;
         if !t.trim().is_empty() {
-            return Ok(sb_google::gemini::clean(&t));
+            return Ok(second_brain_google::gemini::clean(&t));
         }
         let notes = raw_text(cat, e, Some(RawRole::Notes))?;
-        if let Some(p) = sb_google::gemini::parse(&notes)
+        if let Some(p) = second_brain_google::gemini::parse(&notes)
             && let Some(t) = p.transcript
         {
             return Ok(t);
         }
-        return Ok(sb_google::gemini::clean(&notes));
+        return Ok(second_brain_google::gemini::clean(&notes));
     }
     Ok(cat
         .sections(e.id)?

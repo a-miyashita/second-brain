@@ -3,12 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use sb_llm::{NATIVE, Profile};
-use sb_store::{Catalog, Entry, SummaryDecision, SummaryRecord};
 use second_brain_kernel::util::{BODY_HASH_PREFIX, body_hash, summary_input_hash};
 use second_brain_kernel::{
     GeneratorKind, Normalized, PromptKind, SourceKind, SummaryInput, SummaryStatus,
 };
+use second_brain_llm::{NATIVE, Profile};
+use second_brain_store::{Catalog, Entry, SummaryDecision, SummaryRecord};
 
 use crate::error::PipelineError;
 
@@ -91,8 +91,10 @@ impl SummaryPolicy {
                 "summary.budget.monthly_usd",
                 DEFAULT_MONTHLY_CAP_USD,
             )?,
-            budget_timezone: cat
-                .setting_or("summary.budget.timezone", sb_store::settings::os_timezone())?,
+            budget_timezone: cat.setting_or(
+                "summary.budget.timezone",
+                second_brain_store::settings::os_timezone(),
+            )?,
         })
     }
 

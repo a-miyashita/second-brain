@@ -1,5 +1,5 @@
 [package]
-name = "sb-extract"
+name = "second-brain-extract"
 description = "Pure text extraction (text, CSV, HTML, docx, pptx, xlsx, PDF) to Markdown"
 version.workspace = true
 edition.workspace = true

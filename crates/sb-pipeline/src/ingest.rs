@@ -8,13 +8,13 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use regex::Regex;
-use sb_store::{Account, Entry, EntryFilter, StoreError, SyncLock};
 use second_brain_kernel::document::IngestHint;
 use second_brain_kernel::source::{Source, SourceError};
 use second_brain_kernel::{
     AccountKind, AccountStatus, EntryOrigin, FetchOutcome, FetchRequest, FetchedEntry, RawRole,
     RawStatus, RunStatus, Severity, SourceKind,
 };
+use second_brain_store::{Account, Entry, EntryFilter, StoreError, SyncLock};
 use serde::Serialize;
 use serde_json::Value;
 

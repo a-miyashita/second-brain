@@ -1,5 +1,5 @@
 [package]
-name = "sb-store"
+name = "second-brain-store"
 description = "SQLite catalog, raw file store, secrets and the sqlite-fts search backend"
 version.workspace = true
 edition.workspace = true

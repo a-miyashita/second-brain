@@ -8,13 +8,13 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use sb_pipeline::sync::SyncOptions;
-use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
-use sb_slack::SlackSource;
-use sb_store::{Account, Catalog, Home};
 use second_brain_kernel::clock::FixedClock;
 use second_brain_kernel::source::Source;
 use second_brain_kernel::{AccountId, AccountKind, RawStatus, Secret, SourceKind, SummaryStatus};
+use second_brain_pipeline::sync::SyncOptions;
+use second_brain_pipeline::{Pipeline, PipelineError, SourceFactory};
+use second_brain_slack::SlackSource;
+use second_brain_store::{Account, Catalog, Home};
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -231,7 +231,7 @@ async fn incremental_thread_and_day_entries() {
     let home = Home::new(dir.path().join("home"));
     {
         let cat = Catalog::create(&home).unwrap();
-        let mut config = sb_slack::default_config_json();
+        let mut config = second_brain_slack::default_config_json();
         config["full_channels"] = json!(["dev"]);
         config["team_url"] = json!("https://acme.slack.test/");
         cat.add_account(
@@ -415,7 +415,7 @@ fn window_home(slack_state: &Messages) -> (tempfile::TempDir, Home) {
     let dir = tempfile::tempdir().unwrap();
     let home = Home::new(dir.path().join("home"));
     let cat = Catalog::create(&home).unwrap();
-    let mut config = sb_slack::default_config_json();
+    let mut config = second_brain_slack::default_config_json();
     config["full_channels"] = json!(["dev"]);
     config["include_dms"] = json!(false);
     config["team_url"] = json!("https://acme.slack.test/");
@@ -553,7 +553,7 @@ async fn cursor_without_covered_since_is_treated_as_unknown() {
     p.sync(&sync_opts(None, None)).await.unwrap();
     // A cursor written before ADR-0016.
     p.catalog()
-        .commit_batch(&sb_store::CommitBatch {
+        .commit_batch(&second_brain_store::CommitBatch {
             account_id: Some(AccountId::new("acme").unwrap()),
             cursors: vec![second_brain_kernel::CursorUpdate {
                 source_kind: SourceKind::SlackThread,

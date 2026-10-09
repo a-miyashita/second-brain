@@ -5,16 +5,16 @@
 
 use std::sync::Arc;
 
-use sb_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
-use sb_pipeline::ingest::{IngestOptions, IngestStatus};
-use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
-use sb_store::{Account, Catalog, Home};
+use second_brain_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
 use second_brain_kernel::clock::FixedClock;
 use second_brain_kernel::document::IngestSettings;
 use second_brain_kernel::source::Source;
 use second_brain_kernel::{
     AccountId, AccountKind, RawRole, RawStatus, Secret, SectionKind, SourceKind, SummaryStatus,
 };
+use second_brain_pipeline::ingest::{IngestOptions, IngestStatus};
+use second_brain_pipeline::{Pipeline, PipelineError, SourceFactory};
+use second_brain_store::{Account, Catalog, Home};
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -151,7 +151,7 @@ fn setup(server: &MockServer, accounts: &[&str]) -> (tempfile::TempDir, Pipeline
             AccountKind::Google,
             a,
             Some(&format!("{a}@example.test")),
-            &sb_google::default_config_json(&["docs".into()]),
+            &second_brain_google::default_config_json(&["docs".into()]),
         )
         .unwrap();
     }
@@ -386,7 +386,7 @@ async fn gemini_notes_are_a_duplicate_and_dry_run_writes_nothing() {
             created_at: None,
             updated_at: None,
         };
-        cat.upsert_entry(&sb_store::EntryUpdate {
+        cat.upsert_entry(&second_brain_store::EntryUpdate {
             source_ref: sref,
             origin: second_brain_kernel::EntryOrigin::Sync,
             raw: None,

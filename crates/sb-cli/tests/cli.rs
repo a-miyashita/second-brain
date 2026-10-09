@@ -118,7 +118,7 @@ fn import_search_show_list_stats_doctor() {
     let home = d.path().join("h");
     assert!(sb(&home, &["setup", "home"]).status.success());
     {
-        let cat = sb_store::Catalog::open(&sb_store::Home::new(&home)).unwrap();
+        let cat = second_brain_store::Catalog::open(&second_brain_store::Home::new(&home)).unwrap();
         cat.add_account(
             &AccountId::new("work").unwrap(),
             AccountKind::Google,
@@ -214,11 +214,11 @@ fn import_search_show_list_stats_doctor() {
 
     // A deleted raw file is detected and fixed by marking the entry missing.
     let rows = {
-        let cat = sb_store::Catalog::open(&sb_store::Home::new(&home)).unwrap();
+        let cat = second_brain_store::Catalog::open(&second_brain_store::Home::new(&home)).unwrap();
         let e = cat.entry_by_uid(&uid).unwrap().unwrap();
         cat.raw_objects(e.id).unwrap()
     };
-    std::fs::remove_file(sb_store::Home::new(&home).resolve_rel(&rows[0].path)).unwrap();
+    std::fs::remove_file(second_brain_store::Home::new(&home).resolve_rel(&rows[0].path)).unwrap();
     let check = |v: &Value, id: &str| {
         v["checks"]
             .as_array()
@@ -411,10 +411,10 @@ fn budget_settings_are_validated_and_stored() {
 
 #[test]
 fn budget_command_reports_history_and_feeds_stats_and_doctor() {
-    use sb_store::{Catalog, Home, NewUsage, UsageOutcome};
     use second_brain_kernel::budget::{PeriodKind, Tz, period_containing};
     use second_brain_kernel::clock::FixedClock;
     use second_brain_kernel::{Generator, GeneratorKind, Usage};
+    use second_brain_store::{Catalog, Home, NewUsage, UsageOutcome};
     use std::sync::Arc;
 
     let d = tempfile::tempdir().unwrap();

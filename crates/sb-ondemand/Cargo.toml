@@ -1,5 +1,5 @@
 [package]
-name = "sb-ondemand"
+name = "second-brain-ondemand"
 description = "On-demand sources without sync: local.file and web.page"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 second-brain-kernel.workspace = true
-sb-extract.workspace = true
+second-brain-extract.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 directories.workspace = true
@@ -21,8 +21,8 @@ url.workspace = true
 
 [dev-dependencies]
 encoding_rs.workspace = true
-sb-pipeline.workspace = true
-sb-store.workspace = true
+second-brain-pipeline.workspace = true
+second-brain-store.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 wiremock.workspace = true

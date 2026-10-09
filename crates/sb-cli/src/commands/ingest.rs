@@ -2,10 +2,10 @@
 
 use std::time::Instant;
 
-use sb_pipeline::summarize::{Estimate, SummarizeOptions, SummarizeReport, Target};
-use sb_pipeline::sync::SyncOptions;
-use sb_pipeline::{Limits, RunStats, Stop};
 use second_brain_kernel::{RawStatus, RunStatus, SyncMode};
+use second_brain_pipeline::summarize::{Estimate, SummarizeOptions, SummarizeReport, Target};
+use second_brain_pipeline::sync::SyncOptions;
+use second_brain_pipeline::{Limits, RunStats, Stop};
 use serde_json::json;
 
 use crate::Ctx;
@@ -379,11 +379,11 @@ pub async fn resummarize(ctx: &Ctx, a: ResummarizeArgs) -> anyhow::Result<i32> {
 
 /// `sb ingest` (docs/specs/ingest.md).
 pub async fn ingest(ctx: &Ctx, a: IngestArgs) -> anyhow::Result<i32> {
-    use sb_pipeline::ingest::{IngestOptions, IngestStatus};
+    use second_brain_pipeline::ingest::{IngestOptions, IngestStatus};
     let locators: Vec<String> = a
         .locators
         .iter()
-        .flat_map(|l| sb_ondemand::local::expand_wildcards(l))
+        .flat_map(|l| second_brain_ondemand::local::expand_wildcards(l))
         .collect();
     let opts = IngestOptions {
         account: a.account.clone(),

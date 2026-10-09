@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sb_extract::bundle::{BundleInput, DocBundle, build_bundle, sha256_hex};
+use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle, sha256_hex};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
 use second_brain_kernel::source::{Source, SourceError, SyncHost};
 use second_brain_kernel::{
@@ -307,7 +307,7 @@ impl Source for LocalSource {
         extra.insert("size".into(), json!(meta.len()));
         extra.insert(
             "media_type".into(),
-            json!(sb_extract::detect(&bytes, None, Some(&file_name)).as_str()),
+            json!(second_brain_extract::detect(&bytes, None, Some(&file_name)).as_str()),
         );
         if let Some(t) = &mtime_text {
             extra.insert("file_mtime".into(), json!(t));

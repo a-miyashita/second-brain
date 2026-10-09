@@ -6,13 +6,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use sb_ondemand::{LocalSource, WebSource};
-use sb_pipeline::ingest::{IngestOptions, IngestResult, IngestStatus};
-use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
-use sb_store::{Account, Catalog, Home};
 use second_brain_kernel::document::IngestSettings;
 use second_brain_kernel::source::Source;
 use second_brain_kernel::{AccountKind, RawRole, SectionKind, SourceKind, SummaryStatus};
+use second_brain_ondemand::{LocalSource, WebSource};
+use second_brain_pipeline::ingest::{IngestOptions, IngestResult, IngestStatus};
+use second_brain_pipeline::{Pipeline, PipelineError, SourceFactory};
+use second_brain_store::{Account, Catalog, Home};
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -770,13 +770,13 @@ async fn refetch_and_reextract_keep_context_and_the_stored_original() {
     let uid = r[0].entry_uid.clone().unwrap();
     // The file changes on disk; refetch picks it up.
     std::fs::write(&f, format!("{LONG}\nA new paragraph about the budget.\n")).unwrap();
-    let filter = sb_store::EntryFilter {
+    let filter = second_brain_store::EntryFilter {
         entry_uids: vec![uid.clone()],
         ..Default::default()
     };
     let rep = env
         .p
-        .refetch(&filter, &sb_pipeline::Limits::default())
+        .refetch(&filter, &second_brain_pipeline::Limits::default())
         .await
         .unwrap();
     assert_eq!((rep.updated, rep.failed), (1, 0), "{rep:?}");
@@ -802,14 +802,14 @@ async fn refetch_and_reextract_keep_context_and_the_stored_original() {
     std::fs::remove_file(&f).unwrap();
     let rep = env
         .p
-        .reextract(&filter, &sb_pipeline::Limits::default())
+        .reextract(&filter, &second_brain_pipeline::Limits::default())
         .await
         .unwrap();
     assert_eq!((rep.updated, rep.failed), (1, 0), "{rep:?}");
     // refetch cannot find the file: the entry and its text stay.
     let rep = env
         .p
-        .refetch(&filter, &sb_pipeline::Limits::default())
+        .refetch(&filter, &second_brain_pipeline::Limits::default())
         .await
         .unwrap();
     assert_eq!(rep.failed, 1, "{rep:?}");
@@ -827,7 +827,7 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
     {
         // As `sb import` would create it: the natural key, no raw data.
         let cat = env.p.catalog();
-        cat.upsert_entry(&sb_store::EntryUpdate {
+        cat.upsert_entry(&second_brain_store::EntryUpdate {
             source_ref: second_brain_kernel::SourceRef {
                 account_id: second_brain_kernel::AccountId::new("web").unwrap(),
                 source_kind: SourceKind::WebPage,
@@ -840,13 +840,13 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
             raw: None,
             fetch_state: None,
             metadata: Some(json!({"import_ref": "x1"})),
-            normalized: Some(sb_store::NormalizedUpdate {
+            normalized: Some(second_brain_store::NormalizedUpdate {
                 title: "Imported title".into(),
                 source_url: Some(url.clone()),
                 source_created_at: None,
                 source_updated_at: None,
                 sections: vec![],
-                summary: sb_store::SummaryDecision::NoSummary,
+                summary: second_brain_store::SummaryDecision::NoSummary,
             }),
         })
         .unwrap();

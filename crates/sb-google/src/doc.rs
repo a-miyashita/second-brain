@@ -3,7 +3,7 @@
 //! combined source adapter.
 
 use async_trait::async_trait;
-use sb_extract::bundle::{BundleInput, DocBundle, build_bundle};
+use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
 use second_brain_kernel::source::{Source, SourceError, SyncHost};
 use second_brain_kernel::util::parse_ts;

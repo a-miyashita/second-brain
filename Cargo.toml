@@ -12,14 +12,14 @@ authors = ["MIYASHITA, Akihiro"]
 
 [workspace.dependencies]
 second-brain-kernel = { path = "crates/sb-kernel" }
-sb-store = { path = "crates/sb-store" }
-sb-pipeline = { path = "crates/sb-pipeline" }
-sb-llm = { path = "crates/sb-llm" }
-sb-google = { path = "crates/sb-google" }
-sb-slack = { path = "crates/sb-slack" }
-sb-setup = { path = "crates/sb-setup" }
-sb-extract = { path = "crates/sb-extract" }
-sb-ondemand = { path = "crates/sb-ondemand" }
+second-brain-store = { path = "crates/sb-store" }
+second-brain-pipeline = { path = "crates/sb-pipeline" }
+second-brain-llm = { path = "crates/sb-llm" }
+second-brain-google = { path = "crates/sb-google" }
+second-brain-slack = { path = "crates/sb-slack" }
+second-brain-setup = { path = "crates/sb-setup" }
+second-brain-extract = { path = "crates/sb-extract" }
+second-brain-ondemand = { path = "crates/sb-ondemand" }
 
 anyhow = "1"
 calamine = { version = "0.36", default-features = false, features = ["dates"] }

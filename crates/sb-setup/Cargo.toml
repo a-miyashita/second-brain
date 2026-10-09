@@ -1,5 +1,5 @@
 [package]
-name = "sb-setup"
+name = "second-brain-setup"
 description = "Home initialization, scheduler registration, skill install and environment setup for second-brain"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 second-brain-kernel.workspace = true
-sb-store.workspace = true
+second-brain-store.workspace = true
 chrono.workspace = true
 directories.workspace = true
 serde.workspace = true

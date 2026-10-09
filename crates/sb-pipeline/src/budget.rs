@@ -8,10 +8,10 @@ use std::sync::Mutex;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
-use sb_store::{Catalog, ModelSpend, PeriodRow, Spend};
 use second_brain_kernel::budget::{
     Period, PeriodKind, next_start, parse_tz, period_before, period_containing,
 };
+use second_brain_store::{Catalog, ModelSpend, PeriodRow, Spend};
 use serde::Serialize;
 
 use crate::error::PipelineError;
@@ -373,10 +373,10 @@ pub fn previous(p: &Period, tz: Tz) -> Period {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_store::{Home, NewUsage, UsageOutcome};
     use second_brain_kernel::clock::FixedClock;
     use second_brain_kernel::util::parse_ts;
     use second_brain_kernel::{Generator, GeneratorKind, Usage};
+    use second_brain_store::{Home, NewUsage, UsageOutcome};
     use std::sync::Arc;
 
     fn at(s: &str) -> DateTime<Utc> {

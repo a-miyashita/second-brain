@@ -5,16 +5,16 @@
 
 use std::sync::{Arc, Mutex};
 
-use sb_google::{GoogleApi, MeetSource, OAuthClient, TokenProvider};
-use sb_pipeline::sync::SyncOptions;
-use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
-use sb_store::{Account, Catalog, Home};
+use second_brain_google::{GoogleApi, MeetSource, OAuthClient, TokenProvider};
 use second_brain_kernel::clock::FixedClock;
 use second_brain_kernel::source::Source;
 use second_brain_kernel::{
     AccountId, AccountKind, GeneratorKind, RawStatus, Secret, SectionKind, SourceKind,
     SummaryStatus,
 };
+use second_brain_pipeline::sync::SyncOptions;
+use second_brain_pipeline::{Pipeline, PipelineError, SourceFactory};
+use second_brain_store::{Account, Catalog, Home};
 use serde_json::json;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -145,7 +145,7 @@ async fn calendar_strategy_native_summary_and_skip_unchanged() {
             AccountKind::Google,
             "Work",
             Some("alice@example.test"),
-            &sb_google::default_config_json(&["meet".into()]),
+            &second_brain_google::default_config_json(&["meet".into()]),
         )
         .unwrap();
     let p = pipeline(&home, &server);
@@ -272,7 +272,7 @@ fn cursor(p: &Pipeline, key: &str) -> serde_json::Value {
 fn window_home() -> (tempfile::TempDir, Home) {
     let dir = tempfile::tempdir().unwrap();
     let home = Home::new(dir.path().join("home"));
-    let mut config = sb_google::default_config_json(&["meet".into()]);
+    let mut config = second_brain_google::default_config_json(&["meet".into()]);
     config["meet_folder_id"] = json!("F1");
     Catalog::create(&home)
         .unwrap()

@@ -1,3 +1,3 @@
 fn main() {
-    std::process::exit(sb_cli::main());
+    std::process::exit(second_brain::main());
 }

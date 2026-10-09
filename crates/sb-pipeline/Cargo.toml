@@ -1,5 +1,5 @@
 [package]
-name = "sb-pipeline"
+name = "second-brain-pipeline"
 description = "Ingestion and summarization pipeline for second-brain"
 version.workspace = true
 edition.workspace = true
@@ -9,8 +9,8 @@ repository.workspace = true
 
 [dependencies]
 second-brain-kernel.workspace = true
-sb-store.workspace = true
-sb-llm.workspace = true
+second-brain-store.workspace = true
+second-brain-llm.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true

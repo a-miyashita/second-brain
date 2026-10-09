@@ -4,8 +4,8 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::time::Duration;
 
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, Utc};
-use sb_store::EntryFilter;
 use second_brain_kernel::{RawStatus, SectionKind, SourceKind, SummaryStatus};
+use second_brain_store::EntryFilter;
 use serde_json::Value;
 
 use crate::cli::Filters;
