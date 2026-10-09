@@ -108,6 +108,16 @@ CI runs these on Windows, macOS and Linux. The only supported installation is
 - The MCP server exposes write operations (`ingest`) only when
   `mcp.allow_ingest` is true.
 
+## Releases
+
+- A release is a pull request (`chore: release vX.Y.Z`) followed by a `vX.Y.Z` tag that
+  starts the release workflow (ADR-0019). Use the `release` skill
+  (`.claude/skills/release/SKILL.md`) or follow
+  [docs/specs/release.md](docs/specs/release.md).
+- Never edit version numbers or `CHANGELOG.md` headings by hand; use
+  `node scripts/release.mjs`.
+- Never run `cargo publish` locally except for the bootstrap of the first release.
+
 ## Commits
 
 - Use small, focused commits with a conventional prefix (`feat:`, `fix:`, `docs:`,
