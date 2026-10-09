@@ -191,7 +191,9 @@ export async function isPublishedOnCratesIo(name, version) {
     .some((l) => JSON.parse(l).vers === version);
 }
 
-// Orders the workspace packages so that dependencies come first.
+// Orders the workspace packages so that dependencies come first. Dev-dependencies count
+// too: one that has a version stays in the published manifest, so the crates.io index
+// must already have it when the crate is published.
 export function dependencyOrder(metadata) {
   const members = new Map(metadata.packages.map((p) => [p.name, p]));
   const ordered = [];
@@ -202,7 +204,7 @@ export function dependencyOrder(metadata) {
     state.set(name, "visiting");
     const deps = members
       .get(name)
-      .dependencies.filter((d) => members.has(d.name) && d.kind !== "dev")
+      .dependencies.filter((d) => members.has(d.name))
       .map((d) => d.name)
       .sort();
     for (const d of deps) visit(d);

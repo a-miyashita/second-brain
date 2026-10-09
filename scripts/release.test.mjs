@@ -313,12 +313,28 @@ test("indexPath follows the sparse index layout", () => {
   assert.equal(indexPath("Second-Brain-Kernel"), "se/co/second-brain-kernel");
 });
 
-test("dependencyOrder puts dependencies first and ignores dev dependencies", () => {
+test("dependencyOrder puts dependencies first and ignores crates outside the workspace", () => {
   assert.deepEqual(dependencyOrder(META), ["second-brain-kernel", "second-brain-store", "second-brain"]);
+});
+
+test("dependencyOrder counts dev-dependencies on workspace crates", () => {
+  // The versioned dev-dependency stays in the published manifest (this broke the first
+  // publish: google needs pipeline, which is a dev-dependency only).
+  const meta = {
+    packages: [
+      { name: "a-google", dependencies: [{ name: "a-pipeline", kind: "dev" }, { name: "serde" }] },
+      { name: "a-pipeline", dependencies: [{ name: "a-kernel" }] },
+      { name: "a-kernel", dependencies: [] },
+    ],
+  };
+  assert.deepEqual(dependencyOrder(meta), ["a-kernel", "a-pipeline", "a-google"]);
+});
+
+test("dependencyOrder reports a cycle", () => {
   const cyclic = {
     packages: [
       { name: "a", dependencies: [{ name: "b" }] },
-      { name: "b", dependencies: [{ name: "a" }] },
+      { name: "b", dependencies: [{ name: "a", kind: "dev" }] },
     ],
   };
   assert.throws(() => dependencyOrder(cyclic), /cycle/);
