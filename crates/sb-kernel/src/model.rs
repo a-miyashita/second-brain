@@ -485,9 +485,9 @@ mod tests {
 
     #[test]
     fn secret_is_redacted() {
-        let s = Secret::new("xoxp-1234567890");
+        let s = Secret::new("test-token-1234567890");
         assert_eq!(format!("{s:?}"), "Secret(****)");
-        assert_eq!(s.masked(), "xoxp****");
+        assert_eq!(s.masked(), "test****");
         assert_eq!(Secret::new("short").masked(), "****");
     }
 

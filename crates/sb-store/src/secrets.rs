@@ -141,20 +141,28 @@ mod tests {
     fn secrets_round_trip() {
         let (_d, cat) = temp_catalog();
         let scope = SecretScope::parse("account:acme").unwrap();
-        cat.set_secret(&scope, "slack.user_token", &Secret::new("xoxp-aaaaaaaaaa"))
-            .unwrap();
-        cat.set_secret(&scope, "slack.user_token", &Secret::new("xoxp-bbbbbbbbbb"))
-            .unwrap();
+        cat.set_secret(
+            &scope,
+            "slack.user_token",
+            &Secret::new("test-token-aaaaaaaaaa"),
+        )
+        .unwrap();
+        cat.set_secret(
+            &scope,
+            "slack.user_token",
+            &Secret::new("test-token-bbbbbbbbbb"),
+        )
+        .unwrap();
         assert_eq!(
             cat.secret(&scope, "slack.user_token")
                 .unwrap()
                 .unwrap()
                 .expose(),
-            "xoxp-bbbbbbbbbb"
+            "test-token-bbbbbbbbbb"
         );
         let list = cat.list_secrets().unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].masked, "xoxp****");
+        assert_eq!(list[0].masked, "test****");
         assert!(
             cat.resolve_secret_ref("account:acme:slack.user_token")
                 .unwrap()
