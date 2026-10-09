@@ -11,7 +11,7 @@ repository = "https://github.com/a-miyashita/second-brain"
 authors = ["MIYASHITA, Akihiro"]
 
 [workspace.dependencies]
-sb-core = { path = "crates/sb-core" }
+second-brain-kernel = { path = "crates/sb-kernel" }
 sb-store = { path = "crates/sb-store" }
 sb-pipeline = { path = "crates/sb-pipeline" }
 sb-llm = { path = "crates/sb-llm" }

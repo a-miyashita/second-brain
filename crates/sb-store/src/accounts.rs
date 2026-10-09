@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Row, params};
-use sb_core::{AccountCtx, AccountId, AccountKind, AccountStatus};
+use second_brain_kernel::{AccountCtx, AccountId, AccountKind, AccountStatus};
 use serde::Serialize;
 use serde_json::Value;
 

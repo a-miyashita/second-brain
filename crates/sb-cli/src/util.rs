@@ -4,8 +4,8 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::time::Duration;
 
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, Utc};
-use sb_core::{RawStatus, SectionKind, SourceKind, SummaryStatus};
 use sb_store::EntryFilter;
+use second_brain_kernel::{RawStatus, SectionKind, SourceKind, SummaryStatus};
 use serde_json::Value;
 
 use crate::cli::Filters;
@@ -57,7 +57,7 @@ pub fn failure(code: &'static str, msg: impl Into<String>) -> anyhow::Error {
 /// Parse `YYYY-MM-DD` or RFC 3339. With `end_of_day`, a bare date means the
 /// start of the next day (so `--until 2026-09-30` includes that day).
 pub fn parse_date(s: &str, end_of_day: bool) -> anyhow::Result<DateTime<Utc>> {
-    if let Some(t) = sb_core::util::parse_ts(s) {
+    if let Some(t) = second_brain_kernel::util::parse_ts(s) {
         return Ok(t);
     }
     let d = NaiveDate::parse_from_str(s, "%Y-%m-%d")
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn when_accepts_dates_and_ages() {
         let now = parse_date("2026-09-10", false).unwrap();
-        let ts = sb_core::util::ts;
+        let ts = second_brain_kernel::util::ts;
         assert_eq!(ts(parse_when("90d", now).unwrap()), "2026-06-12T00:00:00Z");
         assert_eq!(ts(parse_when("2w", now).unwrap()), "2026-08-27T00:00:00Z");
         assert_eq!(ts(parse_when("0d", now).unwrap()), "2026-09-10T00:00:00Z");
@@ -282,15 +282,15 @@ mod tests {
     #[test]
     fn dates() {
         assert_eq!(
-            sb_core::util::ts(parse_date("2026-09-30", false).unwrap()),
+            second_brain_kernel::util::ts(parse_date("2026-09-30", false).unwrap()),
             "2026-09-30T00:00:00Z"
         );
         assert_eq!(
-            sb_core::util::ts(parse_date("2026-09-30", true).unwrap()),
+            second_brain_kernel::util::ts(parse_date("2026-09-30", true).unwrap()),
             "2026-10-01T00:00:00Z"
         );
         assert_eq!(
-            sb_core::util::ts(parse_date("2026-09-30T12:00:00+09:00", true).unwrap()),
+            second_brain_kernel::util::ts(parse_date("2026-09-30T12:00:00+09:00", true).unwrap()),
             "2026-09-30T03:00:00Z"
         );
         assert!(parse_date("30/09/2026", false).is_err());

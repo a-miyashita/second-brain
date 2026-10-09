@@ -1,5 +1,5 @@
 [package]
-name = "sb-core"
+name = "second-brain-kernel"
 description = "Domain types and traits for second-brain (no I/O)"
 version.workspace = true
 edition.workspace = true

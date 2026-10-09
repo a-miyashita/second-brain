@@ -8,13 +8,13 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use sb_core::clock::FixedClock;
-use sb_core::source::Source;
-use sb_core::{AccountId, AccountKind, RawStatus, Secret, SourceKind, SummaryStatus};
 use sb_pipeline::sync::SyncOptions;
 use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
 use sb_slack::SlackSource;
 use sb_store::{Account, Catalog, Home};
+use second_brain_kernel::clock::FixedClock;
+use second_brain_kernel::source::Source;
+use second_brain_kernel::{AccountId, AccountKind, RawStatus, Secret, SourceKind, SummaryStatus};
 use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
@@ -172,7 +172,7 @@ impl SourceFactory for Factory {
 
 fn pipeline(home: &Home, slack: &MockServer) -> Pipeline {
     let clock = Arc::new(FixedClock::new(
-        sb_core::util::parse_ts("2026-09-10T00:00:00Z").unwrap(),
+        second_brain_kernel::util::parse_ts("2026-09-10T00:00:00Z").unwrap(),
     ));
     let cat = Catalog::open_with_clock(home, clock).unwrap();
     Pipeline::new(cat, Arc::new(Factory(slack.uri())))
@@ -357,7 +357,7 @@ async fn incremental_thread_and_day_entries() {
         .sections(thread.id)
         .unwrap()
         .into_iter()
-        .find(|s| s.kind == sb_core::SectionKind::Details)
+        .find(|s| s.kind == second_brain_kernel::SectionKind::Details)
         .unwrap()
         .text;
     assert_eq!(
@@ -468,7 +468,7 @@ fn history_oldest(reqs: &[Request]) -> Vec<f64> {
 }
 
 fn sync_opts(since_days: Option<i64>, until_days: Option<i64>) -> SyncOptions {
-    let at = |d: i64| sb_core::util::parse_ts(&midnight(d)).unwrap();
+    let at = |d: i64| second_brain_kernel::util::parse_ts(&midnight(d)).unwrap();
     SyncOptions {
         no_summary: true,
         since: since_days.map(at),
@@ -555,7 +555,7 @@ async fn cursor_without_covered_since_is_treated_as_unknown() {
     p.catalog()
         .commit_batch(&sb_store::CommitBatch {
             account_id: Some(AccountId::new("acme").unwrap()),
-            cursors: vec![sb_core::CursorUpdate {
+            cursors: vec![second_brain_kernel::CursorUpdate {
                 source_kind: SourceKind::SlackThread,
                 key: "conv:C1".into(),
                 value: Some(json!({"oldest": format!("{NOW}.000000"), "last_activity": day_ts(5)})),

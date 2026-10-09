@@ -16,7 +16,7 @@ xlsx = ["dep:calamine"]
 pdf = ["dep:pdf-extract"]
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 hex.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

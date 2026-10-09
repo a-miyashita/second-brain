@@ -2,14 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use sb_core::search::SearchBackend;
-use sb_core::source::SourceError;
-use sb_core::{
+use sb_store::fts::SqliteFts;
+use sb_store::{Entry, EntryFilter, StoreError, SyncLock};
+use second_brain_kernel::search::SearchBackend;
+use second_brain_kernel::source::SourceError;
+use second_brain_kernel::{
     EntryOrigin, FetchOutcome, FetchRequest, RawMode, RawRole, RawStatus, RunStatus, Severity,
     SourceKind,
 };
-use sb_store::fts::SqliteFts;
-use sb_store::{Entry, EntryFilter, StoreError, SyncLock};
 use serde::Serialize;
 
 use crate::Pipeline;

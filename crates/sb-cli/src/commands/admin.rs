@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
-use sb_core::{AccountId, AccountKind, AccountStatus, Secret};
 use sb_google::oauth::{self, OAuthClient, Tokens};
 use sb_store::settings::{default_value, is_known_key};
 use sb_store::{Account, Catalog, EntryFilter, SecretScope};
+use second_brain_kernel::{AccountId, AccountKind, AccountStatus, Secret};
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -53,7 +53,7 @@ fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
     }
     if key == "summary.budget.timezone" {
         return match value.as_str() {
-            Some(name) if sb_core::budget::is_valid_tz(name) => Ok(()),
+            Some(name) if second_brain_kernel::budget::is_valid_tz(name) => Ok(()),
             _ => Err(usage(
                 "summary.budget.timezone is an IANA time zone name, like \"Asia/Tokyo\"",
             )),
@@ -455,7 +455,7 @@ fn account_json(cat: &Catalog, a: &Account) -> anyhow::Result<Value> {
     Ok(json!({
         "id": a.id, "kind": a.kind, "label": a.label, "identity": a.identity,
         "status": a.status, "entries": entries,
-        "created_at": sb_core::util::ts(a.created_at),
+        "created_at": second_brain_kernel::util::ts(a.created_at),
     }))
 }
 

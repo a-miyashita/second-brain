@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use sb_core::Secret;
 use sb_setup::schedule::{self, Mechanism, ScheduleSpec, TimeOfDay, Weekday};
 use sb_setup::skills::{self, Target};
 use sb_store::{Catalog, SecretScope};
+use second_brain_kernel::Secret;
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -294,7 +294,7 @@ fn setup_schedule(ctx: &Ctx, a: SetupScheduleArgs) -> anyhow::Result<i32> {
     schedule::register(&spec, mechanism, &user_home, &ctx.home.tmp_dir())?;
     let mut stored = reg.clone();
     stored["binary"] = json!(spec.binary.display().to_string());
-    stored["registered_at"] = json!(sb_core::util::ts(cat.now()));
+    stored["registered_at"] = json!(second_brain_kernel::util::ts(cat.now()));
     cat.set_setting("schedule.registered", &stored)?;
     if ctx.json {
         ctx.out_json(

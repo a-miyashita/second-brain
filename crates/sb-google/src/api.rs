@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use sb_core::source::SourceError;
+use second_brain_kernel::source::SourceError;
 use serde_json::Value;
 
 use crate::oauth::TokenProvider;

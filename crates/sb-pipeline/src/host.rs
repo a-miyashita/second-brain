@@ -7,13 +7,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sb_core::source::{Source, SourceError, SyncHost};
-use sb_core::{
+use sb_store::rawstore;
+use sb_store::{Account, CommitBatch, Entry, EntryUpdate, NormalizedUpdate, StoredRaw};
+use second_brain_kernel::source::{Source, SourceError, SyncHost};
+use second_brain_kernel::{
     CursorUpdate, DiscoveryBatch, EntryOrigin, FetchedEntry, Language, NormalizeCtx,
     NormalizeInput, NormalizeOutcome, QueueItem, RawMode, RawSegment, SourceKind, SourceRef,
 };
-use sb_store::rawstore;
-use sb_store::{Account, CommitBatch, Entry, EntryUpdate, NormalizedUpdate, StoredRaw};
 use serde_json::Value;
 
 use crate::Pipeline;

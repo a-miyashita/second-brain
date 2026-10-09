@@ -3,10 +3,10 @@
 use std::collections::HashSet;
 
 use chrono::Duration as ChronoDuration;
-use sb_core::{
+use sb_store::{Catalog, EntryFilter, SCHEMA_VERSION, perms, rawstore};
+use second_brain_kernel::{
     AccountStatus, RawStatus, RunStatus, RunTrigger, Severity, SourceKind, SummaryStatus,
 };
-use sb_store::{Catalog, EntryFilter, SCHEMA_VERSION, perms, rawstore};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -231,9 +231,9 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
     // db.backup
     let last_backup = cat
         .setting("backup.last_at")?
-        .and_then(|v| v.as_str().and_then(sb_core::util::parse_ts));
+        .and_then(|v| v.as_str().and_then(second_brain_kernel::util::parse_ts));
     match last_backup {
-        Some(t) if cat.now() - t < ChronoDuration::days(30) => r.ok("db.backup", Some(format!("last backup {}", sb_core::util::ts(t)))),
+        Some(t) if cat.now() - t < ChronoDuration::days(30) => r.ok("db.backup", Some(format!("last backup {}", second_brain_kernel::util::ts(t)))),
         _ => r.add(
             "db.backup",
             Status::Info,
@@ -358,7 +358,7 @@ fn check_raw(cat: &Catalog, a: &DoctorArgs, r: &mut Report) -> anyhow::Result<()
             if hashed < 50 && ok {
                 hashed += 1;
                 let bytes = std::fs::read(&p)?;
-                if sb_core::util::sha256_hex(&bytes) != row.sha256 {
+                if second_brain_kernel::util::sha256_hex(&bytes) != row.sha256 {
                     ok = false;
                 }
             }
@@ -687,7 +687,7 @@ fn check_runs(cat: &Catalog, scheduled: bool, r: &mut Report) -> anyhow::Result<
             Status::Error,
             Some(format!(
                 "the last scheduled sync failed at {}: {}",
-                sb_core::util::ts(when),
+                second_brain_kernel::util::ts(when),
                 last.error.clone().unwrap_or_default()
             )),
             Some("sb sync"),
@@ -713,7 +713,10 @@ fn check_runs(cat: &Catalog, scheduled: bool, r: &mut Report) -> anyhow::Result<
         ),
         RunStatus::Ok => r.ok(
             "runs.recent",
-            Some(format!("last scheduled sync {}", sb_core::util::ts(when))),
+            Some(format!(
+                "last scheduled sync {}",
+                second_brain_kernel::util::ts(when)
+            )),
         ),
     }
     Ok(())
@@ -913,8 +916,8 @@ fn issues_json(cat: &Catalog) -> anyhow::Result<Vec<Value>> {
             "account": i.account_id,
             "entry_uid": uid,
             "message": i.message,
-            "first_seen_at": sb_core::util::ts(i.first_seen_at),
-            "last_seen_at": sb_core::util::ts(i.last_seen_at),
+            "first_seen_at": second_brain_kernel::util::ts(i.first_seen_at),
+            "last_seen_at": second_brain_kernel::util::ts(i.last_seen_at),
             "hint": issue_hint(&i.code, i.account_id.as_deref(), uid.as_deref()),
         }));
     }

@@ -6,13 +6,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use sb_core::document::IngestSettings;
-use sb_core::source::Source;
-use sb_core::{AccountKind, RawRole, SectionKind, SourceKind, SummaryStatus};
 use sb_ondemand::{LocalSource, WebSource};
 use sb_pipeline::ingest::{IngestOptions, IngestResult, IngestStatus};
 use sb_pipeline::{Pipeline, PipelineError, SourceFactory};
 use sb_store::{Account, Catalog, Home};
+use second_brain_kernel::document::IngestSettings;
+use second_brain_kernel::source::Source;
+use second_brain_kernel::{AccountKind, RawRole, SectionKind, SourceKind, SummaryStatus};
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -55,13 +55,13 @@ impl Env {
         let home = Home::new(dir.path().join("sbhome"));
         let cat = Catalog::create(&home).unwrap();
         cat.ensure_account(
-            &sb_core::AccountId::new("local").unwrap(),
+            &second_brain_kernel::AccountId::new("local").unwrap(),
             AccountKind::Local,
             "Local files",
         )
         .unwrap();
         cat.ensure_account(
-            &sb_core::AccountId::new("web").unwrap(),
+            &second_brain_kernel::AccountId::new("web").unwrap(),
             AccountKind::Web,
             "Web pages",
         )
@@ -509,12 +509,12 @@ async fn web_page_is_extracted_and_identity_ignores_tracking_parameters() {
     assert_eq!(e.metadata["http_etag"], "\"v1\"");
     assert_eq!(
         e.source_created_at,
-        sb_core::util::parse_ts("2026-09-01T00:00:00Z"),
+        second_brain_kernel::util::parse_ts("2026-09-01T00:00:00Z"),
         "the page's own publication date"
     );
     assert_eq!(
         e.source_updated_at,
-        sb_core::util::parse_ts("2026-09-01T00:30:00Z"),
+        second_brain_kernel::util::parse_ts("2026-09-01T00:30:00Z"),
         "Last-Modified"
     );
     let details = cat
@@ -815,7 +815,7 @@ async fn refetch_and_reextract_keep_context_and_the_stored_original() {
     assert_eq!(rep.failed, 1, "{rep:?}");
     let cat = env.p.catalog();
     let e = cat.entry_by_uid(&uid).unwrap().unwrap();
-    assert_eq!(e.raw_status, sb_core::RawStatus::Present);
+    assert_eq!(e.raw_status, second_brain_kernel::RawStatus::Present);
     assert_eq!(e.title, "My title");
 }
 
@@ -828,15 +828,15 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
         // As `sb import` would create it: the natural key, no raw data.
         let cat = env.p.catalog();
         cat.upsert_entry(&sb_store::EntryUpdate {
-            source_ref: sb_core::SourceRef {
-                account_id: sb_core::AccountId::new("web").unwrap(),
+            source_ref: second_brain_kernel::SourceRef {
+                account_id: second_brain_kernel::AccountId::new("web").unwrap(),
                 source_kind: SourceKind::WebPage,
                 source_id: url.clone(),
                 source_url: Some(url.clone()),
                 created_at: None,
                 updated_at: None,
             },
-            origin: sb_core::EntryOrigin::Import,
+            origin: second_brain_kernel::EntryOrigin::Import,
             raw: None,
             fetch_state: None,
             metadata: Some(json!({"import_ref": "x1"})),
@@ -854,7 +854,7 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
             .entry_by_key("web", SourceKind::WebPage, &url)
             .unwrap()
             .unwrap();
-        cat.set_raw_status(e.id, sb_core::RawStatus::Missing)
+        cat.set_raw_status(e.id, second_brain_kernel::RawStatus::Missing)
             .unwrap();
     }
     let r = env.ingest(&[&url], &opts()).await;
@@ -864,7 +864,7 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
         .entry_by_key("web", SourceKind::WebPage, &url)
         .unwrap()
         .unwrap();
-    assert_eq!(e.raw_status, sb_core::RawStatus::Present);
+    assert_eq!(e.raw_status, second_brain_kernel::RawStatus::Present);
     assert_eq!(
         e.metadata["import_ref"], "x1",
         "the import reference survives"
@@ -951,8 +951,8 @@ async fn a_symlinked_credential_directory_is_still_denied() {
 async fn a_configured_proxy_blocks_web_fetches_unless_private_addresses_are_allowed() {
     let source = |allow| {
         WebSource::new(
-            sb_core::AccountCtx {
-                id: sb_core::AccountId::new("web").unwrap(),
+            second_brain_kernel::AccountCtx {
+                id: second_brain_kernel::AccountId::new("web").unwrap(),
                 kind: AccountKind::Web,
                 label: "Web".into(),
                 identity: None,
@@ -967,42 +967,46 @@ async fn a_configured_proxy_blocks_web_fetches_unless_private_addresses_are_allo
         .with_proxy_env(true)
     };
     struct NoHost;
-    impl sb_core::source::SyncHost for NoHost {
+    impl second_brain_kernel::source::SyncHost for NoHost {
         fn cursor(
             &self,
             _: SourceKind,
             _: &str,
-        ) -> Result<Option<serde_json::Value>, sb_core::source::SourceError> {
+        ) -> Result<Option<serde_json::Value>, second_brain_kernel::source::SourceError> {
             Ok(None)
         }
         fn cursors(
             &self,
             _: SourceKind,
             _: &str,
-        ) -> Result<Vec<(String, serde_json::Value)>, sb_core::source::SourceError> {
+        ) -> Result<Vec<(String, serde_json::Value)>, second_brain_kernel::source::SourceError>
+        {
             Ok(vec![])
         }
         fn fetch_state(
             &self,
             _: SourceKind,
             _: &str,
-        ) -> Result<Option<serde_json::Value>, sb_core::source::SourceError> {
+        ) -> Result<Option<serde_json::Value>, second_brain_kernel::source::SourceError> {
             Ok(None)
         }
         fn entry_exists(
             &self,
             _: SourceKind,
             _: &str,
-        ) -> Result<bool, sb_core::source::SourceError> {
+        ) -> Result<bool, second_brain_kernel::source::SourceError> {
             Ok(false)
         }
-        fn commit(&self, _: sb_core::DiscoveryBatch) -> Result<(), sb_core::source::SourceError> {
+        fn commit(
+            &self,
+            _: second_brain_kernel::DiscoveryBatch,
+        ) -> Result<(), second_brain_kernel::source::SourceError> {
             Ok(())
         }
         fn cache_get(
             &self,
             _: &str,
-        ) -> Result<Option<serde_json::Value>, sb_core::source::SourceError> {
+        ) -> Result<Option<serde_json::Value>, second_brain_kernel::source::SourceError> {
             Ok(None)
         }
         fn cache_put(
@@ -1010,7 +1014,7 @@ async fn a_configured_proxy_blocks_web_fetches_unless_private_addresses_are_allo
             _: &str,
             _: &serde_json::Value,
             _: Duration,
-        ) -> Result<(), sb_core::source::SourceError> {
+        ) -> Result<(), second_brain_kernel::source::SourceError> {
             Ok(())
         }
         fn is_cancelled(&self) -> bool {
@@ -1020,7 +1024,7 @@ async fn a_configured_proxy_blocks_web_fetches_unless_private_addresses_are_allo
             chrono::Utc::now()
         }
     }
-    let req = sb_core::FetchRequest {
+    let req = second_brain_kernel::FetchRequest {
         source_kind: SourceKind::WebPage,
         source_id: "https://example.com/".into(),
         fetch_state: None,

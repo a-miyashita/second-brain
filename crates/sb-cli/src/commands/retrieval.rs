@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use sb_core::search::{SearchMode, SearchQuery};
-use sb_core::{Language, RawRole, SectionKind, SectionOrigin, SourceKind};
 use sb_store::{Catalog, Entry, EntryFilter};
+use second_brain_kernel::search::{SearchMode, SearchQuery};
+use second_brain_kernel::{Language, RawRole, SectionKind, SectionOrigin, SourceKind};
 use serde_json::{Value, json};
 
 use crate::Ctx;
@@ -50,7 +50,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
     let accounts = a
         .accounts
         .iter()
-        .map(|s| sb_core::AccountId::new(s.clone()).map_err(|e| usage(e.to_string())))
+        .map(|s| second_brain_kernel::AccountId::new(s.clone()).map_err(|e| usage(e.to_string())))
         .collect::<anyhow::Result<Vec<_>>>()?;
     let q = SearchQuery {
         terms: a.terms.clone(),
@@ -90,7 +90,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
                     "title": e.title,
                     "source_kind": e.source_kind,
                     "account": account_json(&labels, &e.account_id),
-                    "date": sb_core::util::ts(e.date()),
+                    "date": second_brain_kernel::util::ts(e.date()),
                     "section": h.section,
                     "snippet": h.snippet,
                     "score": h.score,
@@ -106,7 +106,7 @@ pub fn search(ctx: &Ctx, a: SearchArgs) -> anyhow::Result<i32> {
         ctx.out_json(
             "sb.search/v1",
             json!({"query": {"terms": q.terms, "section": section, "source": q.source_kinds, "account": a.accounts,
-                              "since": q.since.map(sb_core::util::ts), "until": q.until.map(sb_core::util::ts),
+                              "since": q.since.map(second_brain_kernel::util::ts), "until": q.until.map(second_brain_kernel::util::ts),
                               "limit": q.effective_limit()},
                    "hits": hits}),
         );
@@ -191,17 +191,17 @@ pub fn show(ctx: &Ctx, a: ShowArgs) -> anyhow::Result<i32> {
             "source_kind": e.source_kind,
             "source_id": e.source_id,
             "account": account_json(&labels, &e.account_id),
-            "date": sb_core::util::ts(e.date()),
-            "source_created_at": e.source_created_at.map(sb_core::util::ts),
-            "source_updated_at": e.source_updated_at.map(sb_core::util::ts),
-            "ingested_at": sb_core::util::ts(e.ingested_at),
+            "date": second_brain_kernel::util::ts(e.date()),
+            "source_created_at": e.source_created_at.map(second_brain_kernel::util::ts),
+            "source_updated_at": e.source_updated_at.map(second_brain_kernel::util::ts),
+            "ingested_at": second_brain_kernel::util::ts(e.ingested_at),
             "raw_status": e.raw_status,
             "summary_status": e.summary_status,
             "cite_url": cite_url(&cat, &e)?,
             "summary": summary.as_ref().map(|s| json!({
                 "generator_kind": s.generator_kind, "provider": s.provider, "model": s.model,
                 "profile": s.profile, "prompt_version": s.prompt_version,
-                "generated_at": sb_core::util::ts(s.generated_at)})),
+                "generated_at": second_brain_kernel::util::ts(s.generated_at)})),
             "sections": sections.iter().map(|s| json!({"kind": s.kind, "origin": s.origin, "text": s.text})).collect::<Vec<_>>(),
         });
         if a.meta {
@@ -280,7 +280,7 @@ fn entry_row(cat: &Catalog, labels: &HashMap<String, String>, e: &Entry) -> anyh
         "title": e.title,
         "source_kind": e.source_kind,
         "account": account_json(labels, &e.account_id),
-        "date": sb_core::util::ts(e.date()),
+        "date": second_brain_kernel::util::ts(e.date()),
         "raw_status": e.raw_status,
         "summary_status": e.summary_status,
         "cite_url": cite_url(cat, e)?,
@@ -396,7 +396,9 @@ pub fn stats(ctx: &Ctx) -> anyhow::Result<i32> {
 
 /// The source text to review next to the summary.
 fn source_text(cat: &Catalog, e: &Entry) -> anyhow::Result<String> {
-    if e.source_kind == SourceKind::GoogleMeet && e.raw_status == sb_core::RawStatus::Present {
+    if e.source_kind == SourceKind::GoogleMeet
+        && e.raw_status == second_brain_kernel::RawStatus::Present
+    {
         let t = raw_text(cat, e, Some(RawRole::Transcript))?;
         if !t.trim().is_empty() {
             return Ok(sb_google::gemini::clean(&t));
@@ -451,7 +453,7 @@ pub fn review(ctx: &Ctx, a: ReviewArgs) -> anyhow::Result<i32> {
             .map(|(e, g, shown, total)| {
                 Ok(json!({
                     "entry_uid": e.entry_uid, "title": e.title, "source_kind": e.source_kind,
-                    "date": sb_core::util::ts(e.date()), "cite_url": cite_url(&cat, e)?,
+                    "date": second_brain_kernel::util::ts(e.date()), "cite_url": cite_url(&cat, e)?,
                     "summary": cat.summary(e.id)?.map(|s| json!({"provider": s.provider, "model": s.model})),
                     "generated": g.iter().map(|s| json!({"kind": s.kind, "text": s.text})).collect::<Vec<_>>(),
                     "source_text": shown,

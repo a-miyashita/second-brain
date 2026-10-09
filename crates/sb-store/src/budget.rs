@@ -7,9 +7,9 @@
 
 use chrono::{DateTime, NaiveDate, Utc};
 use rusqlite::{Connection, params};
-use sb_core::budget::{Period, PeriodKind};
-use sb_core::util::{parse_ts, ts};
-use sb_core::{Generator, Usage};
+use second_brain_kernel::budget::{Period, PeriodKind};
+use second_brain_kernel::util::{parse_ts, ts};
+use second_brain_kernel::{Generator, Usage};
 use serde::Serialize;
 
 use crate::catalog::{Catalog, OptionalExt, opt_ts, parse_col, req_ts};
@@ -252,9 +252,9 @@ mod tests {
     use super::*;
     use crate::catalog::test_util::temp_catalog;
     use chrono_tz::Tz;
-    use sb_core::GeneratorKind;
-    use sb_core::budget::period_containing;
-    use sb_core::clock::FixedClock;
+    use second_brain_kernel::GeneratorKind;
+    use second_brain_kernel::budget::period_containing;
+    use second_brain_kernel::clock::FixedClock;
     use serde_json::json;
     use std::sync::Arc;
 
@@ -432,7 +432,7 @@ mod tests {
         let mut p = period_containing(PeriodKind::Week, at("2026-10-07T00:00:00Z"), Tz::UTC);
         for _ in 0..5 {
             cat.upsert_period(&p, Some(2.0)).unwrap();
-            p = sb_core::budget::period_before(&p, Tz::UTC);
+            p = second_brain_kernel::budget::period_before(&p, Tz::UTC);
         }
         cat.upsert_period(
             &period_containing(PeriodKind::Month, at("2026-10-07T00:00:00Z"), Tz::UTC),

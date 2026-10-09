@@ -8,7 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 sb-extract.workspace = true
 async-trait.workspace = true
 chrono.workspace = true

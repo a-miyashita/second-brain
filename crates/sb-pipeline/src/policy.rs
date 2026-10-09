@@ -3,10 +3,12 @@
 
 use std::collections::BTreeMap;
 
-use sb_core::util::{BODY_HASH_PREFIX, body_hash, summary_input_hash};
-use sb_core::{GeneratorKind, Normalized, PromptKind, SourceKind, SummaryInput, SummaryStatus};
 use sb_llm::{NATIVE, Profile};
 use sb_store::{Catalog, Entry, SummaryDecision, SummaryRecord};
+use second_brain_kernel::util::{BODY_HASH_PREFIX, body_hash, summary_input_hash};
+use second_brain_kernel::{
+    GeneratorKind, Normalized, PromptKind, SourceKind, SummaryInput, SummaryStatus,
+};
 
 use crate::error::PipelineError;
 
@@ -188,7 +190,7 @@ impl SummaryPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sb_core::{Generator, PromptKind};
+    use second_brain_kernel::{Generator, PromptKind};
     use serde_json::json;
 
     fn policy() -> SummaryPolicy {
@@ -317,7 +319,7 @@ mod tests {
             source_updated_at: None,
             ingested_at: now,
             updated_at: now,
-            raw_status: sb_core::RawStatus::Present,
+            raw_status: second_brain_kernel::RawStatus::Present,
             raw_hash: None,
             summary_status: if done {
                 SummaryStatus::Done
@@ -328,7 +330,7 @@ mod tests {
             summary_error: None,
             fetch_state: None,
             metadata: json!({}),
-            origin: sb_core::EntryOrigin::Sync,
+            origin: second_brain_kernel::EntryOrigin::Sync,
         }
     }
 

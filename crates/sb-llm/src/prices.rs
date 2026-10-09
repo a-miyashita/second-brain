@@ -2,7 +2,7 @@
 //! `--max-cost`. Prices are USD per million tokens and can be overridden with
 //! the setting `llm.prices` (`{"<model>": {"input": 1.0, "output": 5.0}}`).
 
-use sb_core::Usage;
+use second_brain_kernel::Usage;
 use serde_json::Value;
 
 /// A model price in USD per million tokens.

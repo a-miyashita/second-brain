@@ -7,15 +7,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures::StreamExt;
-use sb_core::summarizer::{LlmError, Summarizer};
-use sb_core::{
-    EntryOrigin, GeneratorKind, NormalizeOutcome, RawStatus, Severity, SummaryInput, SummaryStatus,
-    Usage,
-};
 use sb_llm::prices::{ESTIMATED_OUTPUT_TOKENS, Price, estimate_tokens, price_for, usage_cost};
 use sb_llm::prompts::split_chunks;
 use sb_llm::{BuildOptions, Built, NATIVE};
 use sb_store::{Entry, EntryFilter, NewUsage, SummaryCommit, SummaryDecision, UsageOutcome};
+use second_brain_kernel::summarizer::{LlmError, Summarizer};
+use second_brain_kernel::{
+    EntryOrigin, GeneratorKind, NormalizeOutcome, RawStatus, Severity, SummaryInput, SummaryStatus,
+    Usage,
+};
 use serde::Serialize;
 
 use crate::Pipeline;
@@ -335,7 +335,7 @@ impl Pipeline {
                         .unwrap_or("");
                     nu.summary = SummaryDecision::Native {
                         generator,
-                        input_hash: sb_core::util::summary_input_hash(NATIVE, "", body),
+                        input_hash: second_brain_kernel::util::summary_input_hash(NATIVE, "", body),
                     };
                 }
                 self.catalog().upsert_entry(&u)?;
@@ -383,7 +383,8 @@ impl Pipeline {
                 let model = profile.map(|p| p.model_name()).unwrap_or_default();
                 let price = price_for(&model, policy.prices.as_ref());
                 let cli = profile.is_some_and(|p| {
-                    p.cli_binary().is_some() || p.kind == sb_core::GeneratorKind::LocalLlm
+                    p.cli_binary().is_some()
+                        || p.kind == second_brain_kernel::GeneratorKind::LocalLlm
                 });
                 for e in entries {
                     let Some(input) = self.rebuild_input(&hosts, e)? else {

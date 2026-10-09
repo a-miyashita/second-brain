@@ -1,7 +1,7 @@
 //! Secrets in the catalog (ADR-0003). Values are never logged or printed.
 
 use rusqlite::params;
-use sb_core::{AccountId, Secret};
+use second_brain_kernel::{AccountId, Secret};
 
 use crate::catalog::{Catalog, OptionalExt};
 use crate::error::Result;

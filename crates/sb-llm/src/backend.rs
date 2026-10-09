@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use reqwest::StatusCode;
-use sb_core::summarizer::LlmError;
-use sb_core::{Secret, Usage};
+use second_brain_kernel::summarizer::LlmError;
+use second_brain_kernel::{Secret, Usage};
 use serde_json::{Value, json};
 
 /// A message role.

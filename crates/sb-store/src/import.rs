@@ -2,8 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;
-use sb_core::util::ts;
-use sb_core::{Generator, SectionDraft, SectionOrigin, SourceRef};
+use second_brain_kernel::util::ts;
+use second_brain_kernel::{Generator, SectionDraft, SectionOrigin, SourceRef};
 use serde_json::Value;
 
 use crate::catalog::{Catalog, OptionalExt};
@@ -119,7 +119,7 @@ impl Catalog {
             tx.execute("DELETE FROM summaries WHERE entry_id = ?1", [entry_id])?;
             if summary_status == "done" {
                 let g = w.summary.as_ref().map(|(g, _)| g.clone()).unwrap_or(Generator {
-                    kind: sb_core::GeneratorKind::Unknown,
+                    kind: second_brain_kernel::GeneratorKind::Unknown,
                     provider: "unknown".into(),
                     model: "unknown".into(),
                     prompt_version: None,
@@ -139,7 +139,7 @@ impl Catalog {
                         g.kind.as_str(),
                         g.provider,
                         g.model,
-                        if g.kind == sb_core::GeneratorKind::SourceNative { None } else { g.prompt_version },
+                        if g.kind == second_brain_kernel::GeneratorKind::SourceNative { None } else { g.prompt_version },
                         generated_at
                     ],
                 )?;

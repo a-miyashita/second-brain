@@ -2,10 +2,10 @@
 
 use std::time::Instant;
 
-use sb_core::{RawStatus, RunStatus, SyncMode};
 use sb_pipeline::summarize::{Estimate, SummarizeOptions, SummarizeReport, Target};
 use sb_pipeline::sync::SyncOptions;
 use sb_pipeline::{Limits, RunStats, Stop};
+use second_brain_kernel::{RawStatus, RunStatus, SyncMode};
 use serde_json::json;
 
 use crate::Ctx;

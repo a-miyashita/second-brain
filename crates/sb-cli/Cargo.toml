@@ -17,7 +17,7 @@ name = "sb"
 path = "src/bin/sb.rs"
 
 [dependencies]
-sb-core.workspace = true
+second-brain-kernel.workspace = true
 sb-store.workspace = true
 sb-pipeline.workspace = true
 sb-llm.workspace = true

@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;
-use sb_core::{RunStatus, RunTrigger, Severity};
+use second_brain_kernel::{RunStatus, RunTrigger, Severity};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -118,7 +118,7 @@ impl Catalog {
             "UPDATE runs SET status = 'interrupted', finished_at = IFNULL(finished_at, started_at),
                error = IFNULL(error, 'process ended without finishing the run')
              WHERE status = 'running' AND started_at < ?1 AND substr(command, 1, length(?2)) = ?2",
-            params![sb_core::util::ts(older_than), command_prefix],
+            params![second_brain_kernel::util::ts(older_than), command_prefix],
         )?;
         Ok(n as u64)
     }

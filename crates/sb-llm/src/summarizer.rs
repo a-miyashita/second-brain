@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use sb_core::summarizer::{LlmError, Summarizer};
-use sb_core::{Generator, GeneratorKind, SummaryInput, SummaryOutput, Usage};
+use second_brain_kernel::summarizer::{LlmError, Summarizer};
+use second_brain_kernel::{Generator, GeneratorKind, SummaryInput, SummaryOutput, Usage};
 
 use crate::backend::{Backend, CompletionRequest, Role};
 use crate::prompts;
@@ -164,7 +164,7 @@ impl Summarizer for LlmSummarizer {
 mod tests {
     use super::*;
     use crate::backend::Completion;
-    use sb_core::{PromptKind, SourceKind};
+    use second_brain_kernel::{PromptKind, SourceKind};
     use std::sync::Mutex;
 
     /// Replays canned answers and records requests.

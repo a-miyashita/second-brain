@@ -4,7 +4,7 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
-use sb_core::{SectionDraft, SectionKind, SectionOrigin};
+use second_brain_kernel::{SectionDraft, SectionKind, SectionOrigin};
 use serde::Serialize;
 
 macro_rules! re {

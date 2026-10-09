@@ -1,7 +1,7 @@
 //! `sb setup home`: directories, database, permissions and pseudo-accounts.
 
-use sb_core::{AccountId, AccountKind};
 use sb_store::{Catalog, Home};
+use second_brain_kernel::{AccountId, AccountKind};
 
 use crate::error::{Result, SetupError};
 

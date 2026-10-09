@@ -2049,7 +2049,6 @@ dependencies = [
  "fs4",
  "open",
  "rpassword",
- "sb-core",
  "sb-google",
  "sb-llm",
  "sb-ondemand",
@@ -2057,6 +2056,7 @@ dependencies = [
  "sb-setup",
  "sb-slack",
  "sb-store",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "tempfile",
@@ -2066,21 +2066,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "which",
-]
-
-[[package]]
-name = "sb-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "chrono-tz",
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "unicode-normalization",
 ]
 
 [[package]]
@@ -2097,8 +2082,8 @@ dependencies = [
  "pdf-extract",
  "quick-xml 0.42.0",
  "regex",
- "sb-core",
  "scraper",
+ "second-brain-kernel",
  "serde_json",
  "sha2",
  "thiserror",
@@ -2115,10 +2100,10 @@ dependencies = [
  "rand 0.9.5",
  "regex",
  "reqwest",
- "sb-core",
  "sb-extract",
  "sb-pipeline",
  "sb-store",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "sha2",
@@ -2137,7 +2122,7 @@ dependencies = [
  "async-trait",
  "directories",
  "reqwest",
- "sb-core",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "tempfile",
@@ -2158,10 +2143,10 @@ dependencies = [
  "directories",
  "encoding_rs",
  "reqwest",
- "sb-core",
  "sb-extract",
  "sb-pipeline",
  "sb-store",
+ "second-brain-kernel",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2179,9 +2164,9 @@ dependencies = [
  "chrono-tz",
  "futures",
  "regex",
- "sb-core",
  "sb-llm",
  "sb-store",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "tempfile",
@@ -2199,8 +2184,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "directories",
- "sb-core",
  "sb-store",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "tempfile",
@@ -2218,9 +2203,9 @@ dependencies = [
  "chrono-tz",
  "regex",
  "reqwest",
- "sb-core",
  "sb-pipeline",
  "sb-store",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "tempfile",
@@ -2243,7 +2228,7 @@ dependencies = [
  "iana-time-zone",
  "rand 0.9.5",
  "rusqlite",
- "sb-core",
+ "second-brain-kernel",
  "serde",
  "serde_json",
  "sys-locale",
@@ -2272,6 +2257,21 @@ dependencies = [
  "precomputed-hash",
  "selectors",
  "tendril",
+]
+
+[[package]]
+name = "second-brain-kernel"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "unicode-normalization",
 ]
 
 [[package]]

@@ -7,8 +7,8 @@
 
 use std::collections::BTreeMap;
 
-use sb_core::RawStatus;
-use sb_core::util::body_hash;
+use second_brain_kernel::RawStatus;
+use second_brain_kernel::util::body_hash;
 use serde::Serialize;
 
 use crate::policy::SummaryPolicy;

@@ -1,9 +1,9 @@
 //! `sb budget`: summarization spend against the weekly and monthly budget
 //! (ADR-0013, summarization.md).
 
-use sb_core::budget::{Tz, parse_tz};
 use sb_pipeline::budget::{self, BudgetReport, PeriodStatus};
 use sb_pipeline::policy::SummaryPolicy;
+use second_brain_kernel::budget::{Tz, parse_tz};
 
 use crate::Ctx;
 use crate::cli::BudgetArgs;

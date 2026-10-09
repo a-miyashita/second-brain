@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
-use sb_core::document::IngestSettings;
-use sb_core::source::Source;
-use sb_core::{AccountKind, Secret};
 use sb_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
 use sb_ondemand::{LocalSource, WebSource};
 use sb_pipeline::{PipelineError, SourceFactory};
 use sb_slack::SlackSource;
 use sb_store::{Account, Catalog, SecretScope};
+use second_brain_kernel::document::IngestSettings;
+use second_brain_kernel::source::Source;
+use second_brain_kernel::{AccountKind, Secret};
 
 /// The CLI's source factory.
 pub struct Factory;

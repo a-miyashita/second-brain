@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::{Command, Output};
 
-use sb_core::{AccountId, AccountKind};
+use second_brain_kernel::{AccountId, AccountKind};
 use serde_json::{Value, json};
 
 fn sb(home: &Path, args: &[&str]) -> Output {
@@ -411,10 +411,10 @@ fn budget_settings_are_validated_and_stored() {
 
 #[test]
 fn budget_command_reports_history_and_feeds_stats_and_doctor() {
-    use sb_core::budget::{PeriodKind, Tz, period_containing};
-    use sb_core::clock::FixedClock;
-    use sb_core::{Generator, GeneratorKind, Usage};
     use sb_store::{Catalog, Home, NewUsage, UsageOutcome};
+    use second_brain_kernel::budget::{PeriodKind, Tz, period_containing};
+    use second_brain_kernel::clock::FixedClock;
+    use second_brain_kernel::{Generator, GeneratorKind, Usage};
     use std::sync::Arc;
 
     let d = tempfile::tempdir().unwrap();

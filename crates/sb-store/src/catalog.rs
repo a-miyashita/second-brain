@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction};
-use sb_core::clock::{Clock, SystemClock};
-use sb_core::util::{parse_ts, ts};
+use second_brain_kernel::clock::{Clock, SystemClock};
+use second_brain_kernel::util::{parse_ts, ts};
 
 use crate::error::{Result, StoreError};
 use crate::home::Home;

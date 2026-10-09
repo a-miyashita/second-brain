@@ -6,8 +6,8 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use sb_core::Usage;
-use sb_core::summarizer::LlmError;
+use second_brain_kernel::Usage;
+use second_brain_kernel::summarizer::LlmError;
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 

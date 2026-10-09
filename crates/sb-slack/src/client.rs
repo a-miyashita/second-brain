@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use sb_core::Secret;
-use sb_core::source::SourceError;
+use second_brain_kernel::Secret;
+use second_brain_kernel::source::SourceError;
 use serde_json::Value;
 
 /// Default API base.

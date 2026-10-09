@@ -5,13 +5,13 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use sb_core::coverage::{DEFAULT_INITIAL_DAYS, DEFAULT_OVERLAP_SECS};
-use sb_core::source::{Source, SourceError};
-use sb_core::{
+use sb_store::{Account, EntryFilter, QueueRow, StoreError, SyncLock};
+use second_brain_kernel::coverage::{DEFAULT_INITIAL_DAYS, DEFAULT_OVERLAP_SECS};
+use second_brain_kernel::source::{Source, SourceError};
+use second_brain_kernel::{
     AccountStatus, EntryOrigin, FetchOutcome, FetchRequest, RunStatus, Severity, SourceKind,
     SyncMode, SyncOptions as SourceSyncOptions,
 };
-use sb_store::{Account, EntryFilter, QueueRow, StoreError, SyncLock};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -264,7 +264,7 @@ impl Pipeline {
             let cat = self.catalog();
             match res {
                 Ok(stop) => {
-                    let now = serde_json::json!(sb_core::util::ts(cat.now()));
+                    let now = serde_json::json!(second_brain_kernel::util::ts(cat.now()));
                     cat.cache_put(
                         account.id.as_str(),
                         "auth.last_ok",
