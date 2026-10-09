@@ -11,15 +11,15 @@ repository = "https://github.com/a-miyashita/second-brain"
 authors = ["MIYASHITA, Akihiro"]
 
 [workspace.dependencies]
-second-brain-kernel = { path = "crates/sb-kernel" }
-second-brain-store = { path = "crates/sb-store" }
-second-brain-pipeline = { path = "crates/sb-pipeline" }
-second-brain-llm = { path = "crates/sb-llm" }
-second-brain-google = { path = "crates/sb-google" }
-second-brain-slack = { path = "crates/sb-slack" }
-second-brain-setup = { path = "crates/sb-setup" }
-second-brain-extract = { path = "crates/sb-extract" }
-second-brain-ondemand = { path = "crates/sb-ondemand" }
+second-brain-kernel = { path = "crates/sb-kernel", version = "=0.1.0" }
+second-brain-store = { path = "crates/sb-store", version = "=0.1.0" }
+second-brain-pipeline = { path = "crates/sb-pipeline", version = "=0.1.0" }
+second-brain-llm = { path = "crates/sb-llm", version = "=0.1.0" }
+second-brain-google = { path = "crates/sb-google", version = "=0.1.0" }
+second-brain-slack = { path = "crates/sb-slack", version = "=0.1.0" }
+second-brain-setup = { path = "crates/sb-setup", version = "=0.1.0" }
+second-brain-extract = { path = "crates/sb-extract", version = "=0.1.0" }
+second-brain-ondemand = { path = "crates/sb-ondemand", version = "=0.1.0" }
 
 anyhow = "1"
 calamine = { version = "0.36", default-features = false, features = ["dates"] }
