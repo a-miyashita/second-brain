@@ -55,7 +55,7 @@ early, so real imported data is available for testing search.
 | 1 | Workspace and CI done. `dist-workspace.toml` is written; the release workflow still has to be generated with `dist generate` |
 | 2–9 | Done, with the tests described below (mock HTTP servers, stub executables, resume and incremental tests) |
 | 10–13 | Done (`sb refetch`/`reextract`, `sb auth`/`account`/`config`, `sb doctor`, `sb setup` and the wizard) |
-| 14 | Done (`assets/skills/second-brain/`) |
+| 14 | Done (`crates/sb-setup/assets/skills/second-brain/`) |
 | 15 | Done (README guides) |
 | Phase 2: `sb ingest` | Done: `google.doc`, `web.page`, `local.file`, `sb-extract` (ADR-0014, [ingest.md](ingest.md)). Spike S6 resolved for everything except real-world PDFs, see [extract.md](extract.md) |
 

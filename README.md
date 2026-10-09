@@ -63,7 +63,7 @@ crates/sb-extract   text extraction from documents
 crates/sb-ondemand  sources that need no sync: web pages and local files
 crates/sb-setup     setup, scheduler registration, skill install
 crates/sb-cli       the binaries `second-brain` and `sb`
-assets/             embedded agent skill, Slack app manifest
+assets/             Slack app manifest (the agent skill is in crates/sb-setup/assets/)
 docs/               ADRs and specs
 ```
 

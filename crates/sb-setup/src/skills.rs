@@ -9,15 +9,15 @@ use crate::error::{Result, SetupError};
 pub const FILES: &[(&str, &str)] = &[
     (
         "SKILL.md",
-        include_str!("../../../assets/skills/second-brain/SKILL.md"),
+        include_str!("../assets/skills/second-brain/SKILL.md"),
     ),
     (
         "references/search-guide.md",
-        include_str!("../../../assets/skills/second-brain/references/search-guide.md"),
+        include_str!("../assets/skills/second-brain/references/search-guide.md"),
     ),
     (
         "references/ingest-guide.md",
-        include_str!("../../../assets/skills/second-brain/references/ingest-guide.md"),
+        include_str!("../assets/skills/second-brain/references/ingest-guide.md"),
     ),
 ];
 

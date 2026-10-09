@@ -2,7 +2,7 @@
 
 Guidelines for coding agents and contributors working **on this repository**. This is
 not the guide for agents that *use* second-brain as a knowledge base; that guide is
-the skill in `assets/skills/second-brain/`.
+the skill in `crates/sb-setup/assets/skills/second-brain/`.
 
 ## Project in one paragraph
 
@@ -48,7 +48,7 @@ crates/sb-extract   document text extraction
 crates/sb-mcp       MCP server
 crates/sb-setup     setup, scheduler registration, skill install
 crates/sb-cli       binaries `second-brain` and `sb`
-assets/             embedded skill files, Slack app manifest
+assets/             Slack app manifest (the skill files are in crates/sb-setup/assets/)
 ```
 
 Dependency direction: `sb-core` ← sources / llm / store ← `sb-pipeline` ← `sb-cli` /
