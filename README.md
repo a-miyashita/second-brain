@@ -44,7 +44,8 @@ Without `SECOND_BRAIN_HOME`, the tool uses a default directory for your OS. Sync
 and `ingest` need real Slack or Google accounts. Use a test account or a temporary
 home when you try them.
 
-To install the binaries from your working copy:
+To install the binaries from your working copy (users install with
+`cargo install second-brain --locked`; see [release.md](docs/specs/release.md)):
 
 ```sh
 cargo install --path crates/sb-cli --locked   # installs second-brain and sb
@@ -53,7 +54,7 @@ cargo install --path crates/sb-cli --locked   # installs second-brain and sb
 ## Repository layout
 
 ```text
-crates/sb-core      domain types and traits (no I/O)
+crates/sb-kernel    domain types and traits (no I/O)
 crates/sb-store     SQLite catalog, raw file store, secrets, FTS5 search backend
 crates/sb-pipeline  ingestion and summarization pipeline
 crates/sb-llm       summarizers (LLM APIs and LLM CLIs)
@@ -67,7 +68,7 @@ assets/             Slack app manifest (the agent skill is in crates/sb-setup/as
 docs/               ADRs and specs
 ```
 
-The dependency direction is: `sb-core` ← sources, `sb-llm` and `sb-store` ←
+The dependency direction is: `sb-kernel` ← sources, `sb-llm` and `sb-store` ←
 `sb-pipeline` ← `sb-cli`. Library crates never print to stdout.
 
 ## How the data flows

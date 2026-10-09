@@ -139,7 +139,12 @@ add an `export` line to the file of your shell.
    $ sb setup skills --remove --target all
    ```
 
-3. Delete the programs `second-brain` and `sb`.
+3. Delete the programs `second-brain` and `sb`:
+
+   ```sh
+   $ cargo uninstall second-brain
+   ```
+
 4. To delete your data, delete the home directory.
 
 **Warning:** If you delete the home directory, you lose all entries, summaries and

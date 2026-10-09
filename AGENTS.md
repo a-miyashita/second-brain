@@ -38,7 +38,7 @@ second-brain is a Rust CLI (`second-brain`, alias `sb`) that:
 See [docs/specs/architecture.md](docs/specs/architecture.md). In short:
 
 ```text
-crates/sb-core      domain types and traits (no I/O)
+crates/sb-kernel    domain types and traits (no I/O)
 crates/sb-store     SQLite catalog, raw file store, secrets, sqlite-fts backend
 crates/sb-pipeline  ingestion / summarization pipeline
 crates/sb-llm       summarizers
@@ -51,7 +51,7 @@ crates/sb-cli       binaries `second-brain` and `sb`
 assets/             Slack app manifest (the skill files are in crates/sb-setup/assets/)
 ```
 
-Dependency direction: `sb-core` ← sources / llm / store ← `sb-pipeline` ← `sb-cli` /
+Dependency direction: `sb-kernel` ← sources / llm / store ← `sb-pipeline` ← `sb-cli` /
 `sb-mcp`. Library crates never print to stdout.
 
 ## Build and test
@@ -62,7 +62,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-CI runs these on Windows, macOS and Linux. Release builds use cargo-dist.
+CI runs these on Windows, macOS and Linux. The only supported installation is
+`cargo install second-brain` (ADR-0018). Releases are made by tagging; see
+[docs/specs/release.md](docs/specs/release.md).
 
 ## Coding conventions
 

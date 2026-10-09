@@ -1,20 +1,17 @@
 # Setup, installation and scheduling
 
-Related ADR: 0009.
+Related ADRs: 0009, 0018.
 
 ## Installation (end user)
 
 ```sh
-# macOS / Linux
-curl -LsSf https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.sh | sh
-# Windows (PowerShell)
-irm https://github.com/a-miyashita/second-brain/releases/latest/download/second-brain-installer.ps1 | iex
-# Homebrew
-brew install a-miyashita/tap/second-brain
+cargo install second-brain --locked
 ```
 
-The installer places `second-brain` and `sb` in the bin directory from ADR-0009 and
-adds that directory to the user `PATH`. Then the user runs:
+Cargo places `second-brain` and `sb` in its bin directory (`~/.cargo/bin`), which
+rustup puts on the user `PATH` (ADR-0018, [release.md](release.md)). Scheduled jobs
+embed the path of the running executable, so they work wherever Cargo installed it.
+Then the user runs:
 
 ```sh
 second-brain setup

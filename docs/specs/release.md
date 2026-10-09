@@ -212,6 +212,8 @@ Trusted publishing needs the crates to exist, so the first release is partly man
 7. Push the tag `v0.1.0`. The workflow finds all crates published, skips publishing
    (still waiting for the approval), runs the smoke test and creates the GitHub
    Release. This also tests the workflow end to end.
+8. Remove the "first release is not published yet" note from
+   `manuals/en/installation.md`, in a follow-up pull request.
 
 ### When something fails
 
