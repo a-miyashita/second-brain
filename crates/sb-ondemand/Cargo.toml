@@ -1,11 +1,12 @@
 [package]
 name = "second-brain-ondemand"
-description = "On-demand sources without sync: local.file and web.page"
+description = "On-demand sources without sync: local.file and web.page (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
 second-brain-kernel.workspace = true

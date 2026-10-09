@@ -1,6 +1,10 @@
 [package]
 name = "second-brain"
 description = "second-brain: a personal knowledge base for AI agents"
+readme = "README.md"
+keywords = ["knowledge-base", "cli", "slack", "llm", "ai-agents"]
+categories = ["command-line-utilities"]
+documentation = "https://github.com/a-miyashita/second-brain/tree/main/manuals/en"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

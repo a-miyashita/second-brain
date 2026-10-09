@@ -1,11 +1,12 @@
 [package]
 name = "second-brain-extract"
-description = "Pure text extraction (text, CSV, HTML, docx, pptx, xlsx, PDF) to Markdown"
+description = "Pure text extraction (text, CSV, HTML, docx, pptx, xlsx, PDF) to Markdown (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [features]
 default = ["html", "docx", "pptx", "xlsx", "pdf"]

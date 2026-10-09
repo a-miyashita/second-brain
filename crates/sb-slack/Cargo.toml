@@ -1,11 +1,12 @@
 [package]
 name = "second-brain-slack"
-description = "Slack source for second-brain (slack.thread, slack.day)"
+description = "Slack source for second-brain (slack.thread, slack.day) (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
 second-brain-kernel.workspace = true

@@ -9,6 +9,7 @@ rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/a-miyashita/second-brain"
 authors = ["MIYASHITA, Akihiro"]
+readme = "crates/INTERNAL.md"
 
 [workspace.dependencies]
 second-brain-kernel = { path = "crates/sb-kernel", version = "=0.1.0" }

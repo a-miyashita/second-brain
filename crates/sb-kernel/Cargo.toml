@@ -1,11 +1,12 @@
 [package]
 name = "second-brain-kernel"
-description = "Domain types and traits for second-brain (no I/O)"
+description = "Domain types and traits for second-brain (no I/O) (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
 async-trait.workspace = true

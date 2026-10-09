@@ -54,6 +54,9 @@ stability promise. Its `description` and `readme` say so.
   - `second-brain` sets `keywords` (at most 5) and `categories`
     (`command-line-utilities`).
   - Internal crates share one short README text that points to `second-brain`.
+    They inherit it from `workspace.package.readme` (`crates/INTERNAL.md`).
+  - Every crate directory holds a copy of the root `LICENSE`, so the package contains
+    the license text. `release.mjs check` verifies that the copies are identical.
 - Internal dependencies are declared once in `[workspace.dependencies]`:
 
   ```toml

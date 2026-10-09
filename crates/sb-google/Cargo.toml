@@ -1,11 +1,12 @@
 [package]
 name = "second-brain-google"
-description = "Google OAuth (PKCE loopback), Drive/Calendar clients and the google.meet source"
+description = "Google OAuth (PKCE loopback), Drive/Calendar clients and the google.meet source (internal crate of second-brain, no API stability)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [dependencies]
 second-brain-kernel.workspace = true
