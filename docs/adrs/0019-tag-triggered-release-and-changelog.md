@@ -1,6 +1,6 @@
 # ADR-0019: Tag-triggered release, changelog and release skill
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-09
 
 ## Context

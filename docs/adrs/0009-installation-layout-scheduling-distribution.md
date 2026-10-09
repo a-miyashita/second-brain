@@ -124,3 +124,12 @@ killed process is marked `interrupted` by the next run.
 The `setup llm` row of the command table no longer includes a "Foundry Local wizard"
 (ADR-0015). `setup llm` chooses and tests summarizer profiles, with the `local`
 preset for any OpenAI-compatible server.
+
+### 2026-10-09: distribution superseded by ADR-0018
+
+The **Distribution** section (cargo-dist, GitHub Releases artifacts, shell and
+PowerShell installers, Homebrew) and the **Binaries** location table are superseded
+by [ADR-0018](0018-crates-io-distribution-via-cargo-install.md): for now the only
+supported installation is `cargo install second-brain`, and Cargo decides where the
+binaries go. The rest of this ADR (data directory, setup, environment variables,
+scheduling) is unchanged.

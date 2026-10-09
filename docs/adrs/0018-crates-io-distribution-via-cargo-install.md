@@ -1,6 +1,6 @@
 # ADR-0018: Distribute through crates.io with `cargo install` only
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-09
 
 ## Context
