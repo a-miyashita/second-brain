@@ -87,7 +87,7 @@ trigger, so the release workflow can reuse it.
 | Job | Command | Purpose |
 |---|---|---|
 | `package` | `cargo publish --workspace --dry-run --locked` on stable | Every crate packages and builds from its own tarball |
-| `release-script` | `node --test scripts/` and `node scripts/release.mjs check` | The release script works, and the working tree is consistent (versions, pins) |
+| `release-script` | `node --test scripts/release.test.mjs` (Linux, Windows) and `node scripts/release.mjs check` (Linux) | The release script works, and the working tree is consistent (versions, pins, license copies, lock file) |
 
 The `msrv` job (Rust 1.88) stays. `ci.yml` never publishes.
 
@@ -125,17 +125,17 @@ Example (illustrative; the version, command names and schema are made up):
 ## `scripts/release.mjs`
 
 Node.js (ESM), no dependencies, tests in `scripts/release.test.mjs` run with
-`node --test`. It reads the manifests with plain text processing (the layout of
+`node --test scripts/release.test.mjs`. It reads the manifests with plain text processing (the layout of
 `Cargo.toml` is fixed by the manifest rules above) and asks Cargo for the crate list
 and dependency order (`cargo metadata --no-deps --format-version 1`).
 
 | Command | Behavior | Exit code |
 |---|---|---|
 | `bump <version>` | Validates SemVer. Requires a non-empty `## Unreleased`. Sets `workspace.package.version` and every internal pin. Runs `cargo update --workspace`. Renames `## Unreleased` to `## <version> - <UTC date>` and inserts an empty `## Unreleased` | 0, or 1 with a message |
-| `check` | Working-tree checks: version syntax; all internal pins equal the workspace version; every internal crate inherits the version; `Cargo.lock` is current (`cargo metadata --locked`) | 0 / 1 |
-| `check --tag vX.Y.Z` | The above, plus: tag equals `v` + version; the changelog section exists, is dated and non-empty; `HEAD` is the tagged commit and is an ancestor of `origin/main`; the version is greater than every earlier `v*` tag | 0 / 1 |
+| `check` | Working-tree checks: version syntax; all internal pins equal the workspace version; every crate inherits the version; every crate holds a copy of the root `LICENSE`; `Cargo.lock` is current (`cargo update --workspace --locked`) | 0 / 1 |
+| `check --tag vX.Y.Z` | The above, plus: tag equals `v` + version; the changelog section exists, is dated and non-empty; `HEAD` is on `origin/main` (an ancestor of it) and the tag, if it exists, points to `HEAD`; the version is greater than every earlier `v*` tag | 0 / 1 |
 | `notes <version>` | Prints the body of the changelog section (without its heading) | 0 / 1 |
-| `publish [--dry-run]` | For each crate in dependency order: query the crates.io index; skip if `name@version` exists; else `cargo publish -p <name> --locked`. `--dry-run` runs `cargo publish --dry-run` for the crates and queries only | 0 / 1 |
+| `publish [--dry-run]` | For each crate in dependency order (from `cargo metadata`): query the crates.io sparse index; skip if `name@version` exists; else `cargo publish -p <name> --locked` (Cargo waits until the crate is in the index). `--dry-run` reports which crates are already published and runs one `cargo publish --workspace --dry-run --locked` | 0 / 1 |
 | `version` | Prints the workspace version (for the workflow and the skill) | 0 |
 
 Messages go to stderr; machine-readable output (`notes`, `version`) goes to stdout.

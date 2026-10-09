@@ -52,3 +52,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo publish --workspace --dry-run --locked
+
+  release-script:
+    # The release helper (ADR-0019) and the consistency of versions and pins.
+    name: release-script (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test scripts/release.test.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        if: runner.os == 'Linux'
+      - run: node scripts/release.mjs check
+        if: runner.os == 'Linux'
