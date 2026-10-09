@@ -51,4 +51,3 @@ Specs describe how things work and may be edited as the design evolves.
 | [extract.md](specs/extract.md) | `sb-extract`: formats, encodings, limits, library choice |
 | [mvp-plan.md](specs/mvp-plan.md) | Spikes, phases, work items, testing strategy |
 | [release.md](specs/release.md) | Installation, crate names, manifest rules, CI checks, release workflow, `release.mjs`, release skill |
-| [release-plan.md](specs/release-plan.md) | Temporary implementation plan for ADR-0018 and ADR-0019 (delete when done) |
