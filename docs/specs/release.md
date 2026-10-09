@@ -135,7 +135,7 @@ and dependency order (`cargo metadata --no-deps --format-version 1`).
 | `check` | Working-tree checks: version syntax; all internal pins equal the workspace version; every crate inherits the version; every crate holds a copy of the root `LICENSE`; `Cargo.lock` is current (`cargo update --workspace --locked`) | 0 / 1 |
 | `check --tag vX.Y.Z` | The above, plus: tag equals `v` + version; the changelog section exists, is dated and non-empty; `HEAD` is on `origin/main` (an ancestor of it) and the tag, if it exists, points to `HEAD`; the version is greater than every earlier `v*` tag | 0 / 1 |
 | `notes <version>` | Prints the body of the changelog section (without its heading) | 0 / 1 |
-| `publish [--dry-run]` | For each crate in dependency order (from `cargo metadata`): query the crates.io sparse index; skip if `name@version` exists; else `cargo publish -p <name> --locked` (Cargo waits until the crate is in the index). `--dry-run` reports which crates are already published and runs one `cargo publish --workspace --dry-run --locked` | 0 / 1 |
+| `publish [--dry-run]` | For each crate in dependency order (from `cargo metadata`, dev-dependencies on workspace crates included, because a versioned dev-dependency stays in the published manifest): query the crates.io sparse index; skip if `name@version` exists; else `cargo publish -p <name> --locked` (Cargo waits until the crate is in the index). `--dry-run` reports which crates are already published and runs one `cargo publish --workspace --dry-run --locked` | 0 / 1 |
 | `version` | Prints the workspace version (for the workflow and the skill) | 0 |
 
 Messages go to stderr; machine-readable output (`notes`, `version`) goes to stdout.
