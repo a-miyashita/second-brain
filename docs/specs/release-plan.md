@@ -63,6 +63,10 @@ Publishing `v0.1.0` is a separate step after this plan, run by the maintainer wi
   covers `verify`, `test` and the dry run. The `publish`, `smoke` and
   `github-release` jobs are exercised for the first time by the `v0.1.0` tag, with
   all crates already published (bootstrap). If `github-release` fails there, re-run it.
+- **The `package` dry run after a publish.** The `test` job of a release run repeats
+  `cargo publish --workspace --dry-run`. With the crates already on crates.io (the
+  bootstrap, or a re-run) Cargo may warn or fail. Check this during the `v0.1.0`
+  bootstrap; if it fails, skip the `package` job when called from `release.yml`.
 - **Trusted publishing with a private repository.** Unverified. Decide before the
   bootstrap (release.md, "First release").
 - **crates.io index delay.** `smoke` retries `cargo install` for a few minutes.
