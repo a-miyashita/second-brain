@@ -11,10 +11,24 @@ Settings change how the tool works. All settings have defaults.
 | `sb config set <key> <value>` | Changes a setting. The tool reads the value as JSON. If the value is not valid JSON, the tool reads it as text |
 | `sb config unset <key>` | Removes your value. The default applies again |
 | `sb config set-secret <name>` | Saves a secret, such as an API key. The command asks for the value at a hidden prompt |
-| `sb config edit` | Opens all settings as TOML in your editor (`$EDITOR`) |
-| `sb config edit --account <id>` | Opens the settings of one account |
+| `sb config` or `sb config edit` | Opens the settings screen |
+| `sb config edit --account <id>` | Opens the settings of one account in the settings screen |
+| `sb config edit --editor` | Opens all settings as TOML in your editor (`$EDITOR`). Add `--account <id>` for one account |
 
 The tool checks a value when you save it. It rejects a value that is not valid.
+
+### The settings screen
+
+`sb config` opens the settings screen. It is the same screen as `sb setup`, on the
+Settings section. Select a setting and press Enter to change it:
+
+- a yes/no setting switches at once;
+- a setting with fixed values, such as `display.language`, shows a list;
+- a list, such as `ingest.local.deny`, takes values separated by commas;
+- other settings take the value as text or JSON.
+
+Press `x` to go back to the default. Grey values are defaults. The Secrets section
+shows the stored secrets, masked, and can add, replace or delete one.
 
 Example:
 
@@ -76,7 +90,9 @@ $ sb config set ingest.local.deny '["**/private/**"]'
 
 ## Account settings
 
-Each account has its own settings. Open them with `sb config edit --account <id>`.
+Each account has its own settings. Open them with `sb config edit --account <id>`, or
+select the account in the Accounts section of `sb setup` and press Enter. In the
+account settings, `x` removes a value so that the default applies.
 [Slack account](slack-account.md) describes the Slack settings.
 
 For a Google account, these settings are available:

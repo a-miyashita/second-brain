@@ -1,6 +1,6 @@
 # Setup, installation and scheduling
 
-Related ADRs: 0009, 0018.
+Related ADRs: 0009, 0018, 0020.
 
 ## Installation (end user)
 
@@ -17,30 +17,64 @@ Then the user runs:
 second-brain setup
 ```
 
-## `sb setup` wizard flow
+## `sb setup` screen
 
-1. **home**
-   - Show the resolved home directory and allow changing it.
-   - Create the directories and DB, and apply permissions.
-   - Create the pseudo-accounts `local` and `web`.
-   - If the home is non-default, offer `setup env`.
-2. **account**: loop "Add a Google account / Slack account / done". For Slack, print
-   the manifest path and the app-creation steps.
-3. **llm**
-   - Choose the default profile: Anthropic API, OpenAI API, Gemini API, Claude Code
-     CLI, Copilot CLI, local (any OpenAI-compatible server; not recommended below Haiku-class quality, ADR-0015), or none.
-   - Test it.
-4. **schedule**: confirm the daily and weekly times, and register the jobs.
-5. **skills**: detect which agent CLIs are installed and offer to install the skill
-   for each.
-6. **first sync**:
-   - Show the initial window and let the user change it (`sync.initial_days`, default
-     30; ADR-0016). It applies to every source.
-   - Offer `sb sync --estimate`, then `sb sync`.
-   - Print the way to go further back later: `sb sync --since 90d` fetches only
-     what is older than what is already covered.
+`sb setup` opens a terminal UI (ADR-0020, `crates/sb-cli/src/tui/`). It first runs
+the `home` step (idempotent), then shows a column of sections and the rows of the
+selected one. Sections can be visited in any order and done again; a mark shows
+which ones are complete.
 
-Every step is idempotent. `--yes` accepts the defaults for non-interactive use.
+| # | Section | Rows and actions |
+|---|---|---|
+| 1 | Home | The home directory, whether it is the default; for a custom home, persist `SECOND_BRAIN_HOME` (`setup env`, without the confirmation prompt) |
+| 2 | Accounts | Google and Slack accounts (id, kind, status, identity). Enter edits the account config, `x` disables or enables. Add a Google account (id, client JSON path or `global`, features, label) or a Slack workspace (id, masked token, label) |
+| 3 | Summarizer | Profiles (`llm.profiles.*`), the default marked `*`. Enter makes one the default, `x` removes it (and the default, if it was). Add: pick a preset (as `setup llm`), then name, model, base URL (local only), the API key if the preset needs one that is not stored (masked), make default, test call |
+| 4 | Schedule | Daily time, weekly deep day and time, systemd timers (Linux), the registered state; register or remove the jobs |
+| 5 | Agent skills | Per target: installed version against the embedded one, and whether the agent CLI is on `PATH`. Enter installs or updates, `x` removes |
+| 6 | First sync | `sync.initial_days`; estimate (`sb sync --estimate`); run `sb sync` |
+| 7 | Settings | Every setting of `sb config list`, defaults in grey (below) |
+| 8 | Secrets | Stored secrets, masked; replace, delete or add one (global or per account) |
+
+Keys: ↑/↓ (or `j`/`k`) move, Tab / Shift+Tab, ←/→ or `1`–`8` change the section,
+Enter runs the row's action, `x` / Delete its second action, `r` reloads, `q` /
+Esc / Ctrl+C quit. Forms: Tab/↑/↓ move between fields, Space toggles, Enter goes
+to the next field or submits; a one-field form submits on Enter; Esc cancels. A
+value that fails validation keeps the form open with the error in the status line.
+Removals ask for confirmation.
+
+Adding a Google account, the estimate and `sb sync` run outside the screen: the
+terminal is restored, the command runs with its usual output, and Enter returns to
+the screen. `sb sync` ends the screen and returns its exit code; a Ctrl+C during a
+job ends it with exit code 130. Adding a Slack account also runs outside, so the
+token check and its warnings are visible. The other actions run inside and report
+one line.
+
+Every action is idempotent. Without a terminal on stdin and stdout, or with
+`--json`, `sb setup` is a usage error (exit 64).
+
+### `sb setup --yes`
+
+Runs the steps that have defaults, without the screen: `home`, `env` for a custom
+home, `schedule` with the default times, and `skills` for each agent CLI found on
+`PATH`. Accounts and the summarizer are skipped; use `sb account add` and
+`sb setup llm --preset ...`.
+
+### Settings section and `sb config`
+
+`sb config` (no subcommand) and `sb config edit` open the same screen on the
+Settings section; `sb config edit --account <id>` opens that account's config.
+
+- Values are edited by shape: booleans toggle on Enter; `display.language`,
+  `summary.language`, `notify.min_severity` and `summary.profile.*` pick from a
+  list; lists of strings are comma-separated (or a JSON array, for items with a
+  comma); strings are taken as typed; other values are JSON.
+- Every write goes through the validation of `sb config set`. `x` unsets a value
+  (back to the default); a key without a default asks first.
+- `backup.last_at`, `skills.installed` and `schedule.registered` are shown read-only.
+- The account config lists the source's default keys (grey when not stored) and any
+  stored extra keys. `scopes` is read-only. `x` removes a stored key, so the default
+  applies (for example the legacy keys of `config.legacy_keys`). Each change is
+  checked against the source's config type before it is written.
 
 ## Scheduled job definitions
 

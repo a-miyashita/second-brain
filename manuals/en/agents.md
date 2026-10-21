@@ -31,7 +31,8 @@ $ sb setup skills --target claude
 | `codex` | OpenAI Codex CLI | `~/.codex/skills/second-brain/` |
 | `all` | All of the above | |
 
-The setup wizard also offers to install the skill for each agent that it finds.
+The Agent skills section of `sb setup` shows each agent, whether it is on your
+computer, and the installed version. Press Enter to install or update the skill.
 
 To remove the skill:
 

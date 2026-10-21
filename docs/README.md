@@ -27,6 +27,7 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0017](adrs/0017-cli-support-and-stable-regeneration.md) | Richer CLI support — resolved model provenance, body-only regeneration, Codex and Antigravity providers |
 | [0018](adrs/0018-crates-io-distribution-via-cargo-install.md) | Distribute through crates.io with `cargo install` only; crate renaming (`second-brain-*`, `core` → `kernel`) |
 | [0019](adrs/0019-tag-triggered-release-and-changelog.md) | Tag-triggered release workflow, `CHANGELOG.md` and the release skill |
+| [0020](adrs/0020-terminal-ui-for-setup-and-settings.md) | Terminal UI (ratatui) for `sb setup` and `sb config`; command mode kept |
 
 ## Specs (`specs/`)
 
@@ -44,7 +45,7 @@ Specs describe how things work and may be edited as the design evolves.
 | [source-google-meet.md](specs/source-google-meet.md) | Meet discovery strategies and Gemini notes parsing |
 | [import-format.md](specs/import-format.md) | Import bundle format (`second-brain-import/v1`) |
 | [doctor.md](specs/doctor.md) | Health checks and issues |
-| [setup-and-scheduling.md](specs/setup-and-scheduling.md) | Installer, setup wizard, scheduler registration |
+| [setup-and-scheduling.md](specs/setup-and-scheduling.md) | Installer, setup screen, scheduler registration |
 | [agent-integration.md](specs/agent-integration.md) | Skill and MCP server |
 | [ingest.md](specs/ingest.md) | `sb ingest`: locators, flow, statuses, settings, JSON, security |
 | [source-documents.md](specs/source-documents.md) | `google.doc`, `web.page` and `local.file` sources |

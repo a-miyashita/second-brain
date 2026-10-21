@@ -16,18 +16,20 @@ This chapter lists all commands. Add `--help` to a command to see its options.
 
 | Command | Purpose |
 |---|---|
-| `sb setup` | Run the setup wizard |
+| `sb setup` | Open the setup screen |
+| `sb setup --yes` | Do the setup steps that have defaults, without the screen |
 | `sb setup home` | Create the home directory and the database |
 | `sb setup llm` | Create or change a summarizer profile |
 | `sb setup schedule` | Register or remove the daily sync |
 | `sb setup skills` | Install or remove the agent skills |
 | `sb setup env` | Save `SECOND_BRAIN_HOME` for scheduled jobs and agents |
+| `sb config` | Open the settings screen |
 | `sb config list` | Show all settings |
 | `sb config get <key>` | Show one setting |
 | `sb config set <key> <value>` | Change a setting |
 | `sb config unset <key>` | Remove your value of a setting |
 | `sb config set-secret <name>` | Save a secret at a hidden prompt |
-| `sb config edit [--account <id>]` | Edit the settings in your editor |
+| `sb config edit [--account <id>] [--editor]` | Edit the settings in the settings screen, or in your editor with `--editor` |
 
 ## Accounts
 

@@ -44,7 +44,7 @@ second-brain/
 │   ├── sb-mcp/               # MCP server (rmcp), phase 2
 │   ├── sb-setup/             # home init, scheduler registration, skill install,
 │   │                         # MCP client config, env setup
-│   └── sb-cli/               # clap CLI; bins `second-brain` and `sb`
+│   └── sb-cli/               # clap CLI and terminal UI; bins `second-brain` and `sb`
 ├── assets/
 │   └── slack-app-manifest.yaml
 ├── docs/ (adrs/, specs/)
