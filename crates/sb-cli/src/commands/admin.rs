@@ -9,18 +9,18 @@ use second_brain_store::{Account, Catalog, EntryFilter, SecretScope};
 use serde_json::{Value, json};
 
 use crate::Ctx;
-use crate::cli::{AccountAdd, AccountCmd, AuthCmd, ConfigCmd};
+use crate::cli::{AccountAdd, AccountCmd, AuthCmd, ConfigArgs, ConfigCmd};
 use crate::factory::{GOOGLE_CLIENT, GOOGLE_REFRESH, SLACK_TOKEN, google_client, google_tokens};
 use crate::util::{self, exit, failure, usage};
 
 // ---------- config ----------
 
 /// Parse a CLI value: JSON if it parses, else a string.
-fn parse_value(s: &str) -> Value {
+pub(crate) fn parse_value(s: &str) -> Value {
     serde_json::from_str(s).unwrap_or_else(|_| Value::String(s.to_string()))
 }
 
-fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
+pub(crate) fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
     if !is_known_key(key) {
         return Err(usage(format!(
             "unknown setting {key:?} (see `sb config list`)"
@@ -139,7 +139,38 @@ fn json_to_toml(v: &Value) -> anyhow::Result<toml::Value> {
     toml::Value::try_from(v).map_err(|e| failure("config.toml", e.to_string()))
 }
 
-pub fn config(ctx: &Ctx, c: ConfigCmd) -> anyhow::Result<i32> {
+/// Check an account's `config` against its source's schema.
+pub(crate) fn validate_account_config(kind: AccountKind, v: &Value) -> anyhow::Result<()> {
+    match kind {
+        AccountKind::Slack => {
+            serde_json::from_value::<second_brain_slack::SlackConfig>(v.clone())
+                .map_err(|e| usage(format!("invalid Slack config: {e}")))?;
+        }
+        AccountKind::Google => {
+            serde_json::from_value::<second_brain_google::meet::MeetConfig>(v.clone())
+                .map_err(|e| usage(format!("invalid Google config: {e}")))?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub async fn config(ctx: &Ctx, c: ConfigArgs) -> anyhow::Result<i32> {
+    use crate::tui::Start;
+    let c = match c.cmd {
+        None => return crate::tui::run(ctx, Start::Settings).await,
+        Some(ConfigCmd::Edit {
+            account,
+            editor: false,
+        }) => {
+            let start = match account {
+                Some(a) => Start::Account(a),
+                None => Start::Settings,
+            };
+            return crate::tui::run(ctx, start).await;
+        }
+        Some(c) => c,
+    };
     let cat = ctx.catalog()?;
     match c {
         ConfigCmd::List => {
@@ -226,7 +257,7 @@ pub fn config(ctx: &Ctx, c: ConfigCmd) -> anyhow::Result<i32> {
                 eprintln!("Stored {name} ({}).", scope.as_key());
             }
         }
-        ConfigCmd::Edit { account } => match account {
+        ConfigCmd::Edit { account, .. } => match account {
             Some(a) => {
                 let acc = cat
                     .account_by_str(&a)?
@@ -236,17 +267,7 @@ pub fn config(ctx: &Ctx, c: ConfigCmd) -> anyhow::Result<i32> {
                 let parsed: toml::Value =
                     toml::from_str(&edited).map_err(|e| usage(format!("invalid TOML: {e}")))?;
                 let v = serde_json::to_value(parsed)?;
-                match acc.kind {
-                    AccountKind::Slack => {
-                        serde_json::from_value::<second_brain_slack::SlackConfig>(v.clone())
-                            .map_err(|e| usage(format!("invalid Slack config: {e}")))?;
-                    }
-                    AccountKind::Google => {
-                        serde_json::from_value::<second_brain_google::meet::MeetConfig>(v.clone())
-                            .map_err(|e| usage(format!("invalid Google config: {e}")))?;
-                    }
-                    _ => {}
-                }
+                validate_account_config(acc.kind, &v)?;
                 cat.update_account(&acc.id, None, None, Some(&v))?;
                 eprintln!("Updated the config of {a}.");
             }

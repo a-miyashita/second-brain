@@ -3,6 +3,7 @@
 mod cli;
 mod commands;
 mod factory;
+mod tui;
 mod util;
 
 use std::path::PathBuf;
@@ -299,7 +300,7 @@ async fn run(ctx: &Ctx, cmd: Command) -> anyhow::Result<i32> {
     use commands::*;
     match cmd {
         Command::Setup(s) => setup::run(ctx, s).await,
-        Command::Config(c) => admin::config(ctx, c),
+        Command::Config(c) => admin::config(ctx, c).await,
         Command::Account(a) => admin::account(ctx, a).await,
         Command::Auth(a) => admin::auth(ctx, a).await,
         Command::Sync(a) => ingest::sync(ctx, a).await,
