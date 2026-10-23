@@ -6,6 +6,8 @@ release is prepared; see `docs/specs/release.md`.
 
 ## Unreleased
 
+## 0.2.0 - 2026-10-23
+
 ### Added
 
 - `sb config` without a subcommand opens a settings screen in the terminal
