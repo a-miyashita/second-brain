@@ -1,6 +1,6 @@
 # CLI specification
 
-Related ADRs: 0001, 0009, 0010, 0014, 0015.
+Related ADRs: 0001, 0009, 0010, 0014, 0015, 0020.
 
 The binary is `second-brain`, with alias `sb`. Examples use `sb`.
 
@@ -21,16 +21,18 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 
 | Command | Phase | Description |
 |---|---|---|
-| `sb setup [--yes]` | M | Interactive wizard running the steps below in order |
+| `sb setup` | M | Setup screen (terminal UI) covering the steps below, accounts, settings and secrets ([setup-and-scheduling.md](setup-and-scheduling.md), ADR-0020). Needs a terminal |
+| `sb setup --yes` | M | Non-interactive: `home`, `env` (custom home), `schedule` with defaults, `skills` for agents found |
 | `sb setup home` | M | Create home directory, DB, permissions, pseudo-accounts |
 | `sb setup llm` | M | Create or edit summarizer profiles, test them |
 | `sb setup schedule [--time HH:MM] [--deep-day DAY --deep-time HH:MM] [--systemd] [--remove]` | M | Register or remove scheduled jobs |
 | `sb setup skills --target copilot\|claude\|codex\|all [--remove]` | M | Install agent skill files |
 | `sb setup mcp --client <name> [--apply]` | 2 | Print or apply MCP client config |
 | `sb setup env` | M | Persist `SECOND_BRAIN_HOME` when a non-default home is used |
+| `sb config` | M | Settings screen (terminal UI). Needs a terminal |
 | `sb config list\|get <key>\|set <key> <value>\|unset <key>` | M | Global settings; secrets masked |
 | `sb config set-secret <name> [--account <id>]` | M | Store a secret read from a hidden prompt or stdin |
-| `sb config edit [--account <id>]` | M | Open settings or an account's config as TOML in `$EDITOR`, validate, write back |
+| `sb config edit [--account <id>] [--editor]` | M | Open the settings, or the account's config, in the settings screen. `--editor`: as TOML in `$EDITOR`, validate, write back |
 
 ### Accounts and authentication
 

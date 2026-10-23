@@ -1,8 +1,10 @@
-//! `sb setup` wizard and steps (docs/specs/setup-and-scheduling.md).
+//! `sb setup` steps and the non-interactive `--yes` run
+//! (docs/specs/setup-and-scheduling.md). The setup screen is in `crate::tui`.
 
 use std::path::PathBuf;
 
 use second_brain_kernel::Secret;
+use second_brain_setup::llm::Preset;
 use second_brain_setup::schedule::{self, Mechanism, ScheduleSpec, TimeOfDay, Weekday};
 use second_brain_setup::skills::{self, Target};
 use second_brain_store::{Catalog, SecretScope};
@@ -79,7 +81,11 @@ pub fn schedule_spec_from_settings(
 
 pub async fn run(ctx: &Ctx, cmd: SetupCmd) -> anyhow::Result<i32> {
     match cmd.step {
-        None => wizard(ctx, cmd.yes).await,
+        None if ctx.json => Err(usage(
+            "the setup screen is interactive; run the steps (`sb setup home`, ...) for JSON output",
+        )),
+        None if cmd.yes => defaults(ctx),
+        None => crate::tui::run(ctx, crate::tui::Start::Setup).await,
         Some(SetupStep::Home) => setup_home(ctx),
         Some(SetupStep::Llm(a)) => setup_llm(ctx, a, cmd.yes).await,
         Some(SetupStep::Schedule(a)) => setup_schedule(ctx, a),
@@ -105,6 +111,101 @@ fn setup_home(ctx: &Ctx) -> anyhow::Result<i32> {
         }
     }
     Ok(exit::OK)
+}
+
+/// The profile JSON of `preset`. `model: Some("")` removes the model (provider
+/// default); `None` keeps the preset's.
+pub(crate) fn preset_profile(
+    preset: &Preset,
+    model: Option<&str>,
+    base_url: Option<&str>,
+) -> Value {
+    let mut profile = preset.profile.clone();
+    match model {
+        Some("") => {
+            if let Some(o) = profile.as_object_mut() {
+                o.remove("model");
+            }
+        }
+        Some(m) => profile["model"] = json!(m),
+        None => {}
+    }
+    if let Some(u) = base_url {
+        profile["base_url"] = json!(u);
+    }
+    profile
+}
+
+/// The outcome of saving a summarizer profile.
+pub(crate) struct LlmReport {
+    pub name: String,
+    pub profile: Value,
+    /// `null` when the test was skipped, else `{"ok", ...}`.
+    pub test: Value,
+    pub warnings: Vec<String>,
+}
+
+/// Validate and store profile `name`, optionally make it the default and test it.
+pub(crate) async fn save_llm(
+    ctx: &Ctx,
+    cat: &Catalog,
+    name: &str,
+    preset: &Preset,
+    profile: Value,
+    make_default: bool,
+    test: bool,
+) -> anyhow::Result<LlmReport> {
+    let mut warnings = Vec::new();
+    if let Some(bin) = preset.binary
+        && second_brain_llm::resolve_program(bin).is_none()
+    {
+        warnings.push(format!("`{bin}` was not found on PATH"));
+    }
+    let p =
+        second_brain_llm::Profile::from_value(name, &profile).map_err(|e| usage(e.to_string()))?;
+    if let Some(secret) = preset.secret
+        && cat.secret_or_env(&SecretScope::Global, secret)?.is_none()
+    {
+        warnings.push(format!(
+            "no {secret}; set it with `sb config set-secret {secret}`"
+        ));
+    }
+    cat.set_setting(&format!("llm.profiles.{name}"), &profile)?;
+    if make_default {
+        cat.set_setting("summary.profile.default", &json!(name))?;
+    }
+    let mut result = Value::Null;
+    if test {
+        let secret = match p.secret_ref() {
+            Some(r) => cat.resolve_secret_ref(&r)?,
+            None => None,
+        };
+        let started = std::time::Instant::now();
+        let r = async {
+            let built = second_brain_llm::build(
+                name,
+                &p,
+                &second_brain_llm::BuildOptions {
+                    language: "auto".into(),
+                    scratch_dir: ctx.home.tmp_dir(),
+                    secret,
+                },
+            )?;
+            built.prepare().await?;
+            built.test_call().await
+        }
+        .await;
+        result = match &r {
+            Ok(t) => json!({"ok": true, "reply": t, "ms": started.elapsed().as_millis() as u64}),
+            Err(e) => json!({"ok": false, "error": e.to_string()}),
+        };
+    }
+    Ok(LlmReport {
+        name: name.to_string(),
+        profile,
+        test: result,
+        warnings,
+    })
 }
 
 async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32> {
@@ -136,9 +237,9 @@ async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32>
         }
     };
     let name = a.name.clone().unwrap_or_else(|| preset.key.to_string());
-    let mut profile = preset.profile.clone();
     let interactive = util::interactive() && !yes;
-    let default_model = profile
+    let default_model = preset
+        .profile
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or("")
@@ -148,137 +249,153 @@ async fn setup_llm(ctx: &Ctx, a: SetupLlmArgs, yes: bool) -> anyhow::Result<i32>
         (None, true) => util::ask("Model (empty = provider default)", Some(&default_model))?,
         (None, false) => default_model,
     };
-    if model.is_empty() {
-        if let Some(o) = profile.as_object_mut() {
-            o.remove("model");
-        }
-    } else {
-        profile["model"] = json!(model);
-    }
-    if preset.key == "local" {
-        let default_url = profile["base_url"].as_str().unwrap_or("").to_string();
-        let url = match (&a.base_url, interactive) {
+    let base_url = if preset.key == "local" {
+        let default_url = preset.profile["base_url"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        Some(match (&a.base_url, interactive) {
             (Some(u), _) => u.clone(),
             (None, true) => util::ask(
                 "Base URL of the OpenAI-compatible server",
                 Some(&default_url),
             )?,
             (None, false) => default_url,
-        };
-        profile["base_url"] = json!(url);
-    } else if let Some(u) = &a.base_url {
-        profile["base_url"] = json!(u);
-    }
-    if let Some(bin) = preset.binary
-        && second_brain_llm::resolve_program(bin).is_none()
-    {
-        eprintln!("warning: `{bin}` was not found on PATH");
-    }
-    let p =
-        second_brain_llm::Profile::from_value(&name, &profile).map_err(|e| usage(e.to_string()))?;
-    if let Some(secret) = preset.secret
+        })
+    } else {
+        a.base_url.clone()
+    };
+    let profile = preset_profile(&preset, Some(&model), base_url.as_deref());
+    if interactive
+        && let Some(secret) = preset.secret
         && cat.secret_or_env(&SecretScope::Global, secret)?.is_none()
     {
-        if interactive {
-            let v = util::read_secret(&format!("API key ({secret})"))?;
-            cat.set_secret(&SecretScope::Global, secret, &Secret::new(v))?;
-        } else {
-            eprintln!("warning: no {secret}; set it with `sb config set-secret {secret}`");
-        }
+        let v = util::read_secret(&format!("API key ({secret})"))?;
+        cat.set_secret(&SecretScope::Global, secret, &Secret::new(v))?;
     }
-    cat.set_setting(&format!("llm.profiles.{name}"), &profile)?;
-    if !a.no_default {
-        cat.set_setting("summary.profile.default", &json!(name))?;
-    }
-    let mut test = Value::Null;
-    if !a.no_test {
-        let secret = match p.secret_ref() {
-            Some(r) => cat.resolve_secret_ref(&r)?,
-            None => None,
-        };
-        let started = std::time::Instant::now();
-        let result = async {
-            let built = second_brain_llm::build(
-                &name,
-                &p,
-                &second_brain_llm::BuildOptions {
-                    language: "auto".into(),
-                    scratch_dir: ctx.home.tmp_dir(),
-                    secret,
-                },
-            )?;
-            built.prepare().await?;
-            built.test_call().await
-        }
-        .await;
-        test = match &result {
-            Ok(t) => json!({"ok": true, "reply": t, "ms": started.elapsed().as_millis() as u64}),
-            Err(e) => json!({"ok": false, "error": e.to_string()}),
-        };
-        if !ctx.json {
-            match result {
-                Ok(_) => eprintln!("Test call OK ({:.1}s).", started.elapsed().as_secs_f64()),
-                Err(e) => eprintln!("Test call failed: {e}"),
-            }
-        }
-    }
+    let r = save_llm(
+        ctx,
+        &cat,
+        &name,
+        &preset,
+        profile,
+        !a.no_default,
+        !a.no_test,
+    )
+    .await?;
     if ctx.json {
         ctx.out_json(
             "sb.setup/v1",
-            json!({"step": "llm", "profile": name, "config": profile, "test": test}),
+            json!({"step": "llm", "profile": r.name, "config": r.profile, "test": r.test}),
         );
     } else {
+        for w in &r.warnings {
+            eprintln!("warning: {w}");
+        }
+        if let Some(line) = test_message(&r.test) {
+            eprintln!("{line}");
+        }
         eprintln!(
             "Saved profile {name}{}.",
             if a.no_default { "" } else { " as the default" }
         );
     }
-    Ok(if test.get("ok") == Some(&json!(false)) {
+    Ok(if r.test.get("ok") == Some(&json!(false)) {
         exit::PROBLEMS
     } else {
         exit::OK
     })
 }
 
-fn setup_schedule(ctx: &Ctx, a: SetupScheduleArgs) -> anyhow::Result<i32> {
-    let cat = ctx.catalog()?;
-    let user_home = skills::user_home()?;
-    let reg = json!({
-        "mechanism": Mechanism::for_os(a.systemd),
-        "time": a.time, "deep_day": a.deep_day, "deep_time": a.deep_time,
-    });
+/// One line describing a test call result, or `None` when it was skipped.
+pub(crate) fn test_message(test: &Value) -> Option<String> {
+    match test.get("ok").and_then(Value::as_bool)? {
+        true => Some(format!(
+            "Test call OK ({:.1}s).",
+            test["ms"].as_u64().unwrap_or(0) as f64 / 1000.0
+        )),
+        false => Some(format!(
+            "Test call failed: {}",
+            test["error"].as_str().unwrap_or("")
+        )),
+    }
+}
+
+/// The mechanism of the registered jobs (`schedule.registered`), if any.
+fn registered_mechanism(cat: &Catalog) -> anyhow::Result<Option<Mechanism>> {
+    Ok(cat.setting("schedule.registered")?.and_then(|r| {
+        serde_json::from_value::<Mechanism>(r.get("mechanism").cloned().unwrap_or(Value::Null)).ok()
+    }))
+}
+
+fn check_schedule_args(a: &SetupScheduleArgs) -> anyhow::Result<()> {
     TimeOfDay::parse(&a.time).ok_or_else(|| usage(format!("invalid --time {:?}", a.time)))?;
     TimeOfDay::parse(&a.deep_time)
         .ok_or_else(|| usage(format!("invalid --deep-time {:?}", a.deep_time)))?;
     Weekday::parse(&a.deep_day)
         .ok_or_else(|| usage(format!("invalid --deep-day {:?}", a.deep_day)))?;
-    let (spec, mechanism) = schedule_spec_from_settings(ctx, &cat, &reg)?;
+    Ok(())
+}
+
+/// Register (or, with `a.remove`, remove) the scheduled jobs. Returns the
+/// `sb.setup/v1` report and a message. `a.dry_run` is not handled here.
+pub(crate) fn apply_schedule(
+    ctx: &Ctx,
+    cat: &Catalog,
+    a: &SetupScheduleArgs,
+) -> anyhow::Result<(Value, String)> {
+    let user_home = skills::user_home()?;
+    let reg = json!({
+        "mechanism": Mechanism::for_os(a.systemd),
+        "time": a.time, "deep_day": a.deep_day, "deep_time": a.deep_time,
+    });
+    check_schedule_args(a)?;
+    let (spec, mechanism) = schedule_spec_from_settings(ctx, cat, &reg)?;
     if a.remove {
-        let registered = cat
-            .setting("schedule.registered")?
-            .and_then(|r| {
-                serde_json::from_value::<Mechanism>(
-                    r.get("mechanism").cloned().unwrap_or(Value::Null),
-                )
-                .ok()
-            })
-            .unwrap_or(mechanism);
-        if !a.dry_run {
-            schedule::unregister(registered, &user_home)?;
-            cat.unset_setting("schedule.registered")?;
-        }
-        if ctx.json {
-            ctx.out_json(
-                "sb.setup/v1",
-                json!({"step": "schedule", "removed": true, "mechanism": registered}),
-            );
-        } else {
-            eprintln!("Removed the scheduled jobs ({registered:?}).");
-        }
-        return Ok(exit::OK);
+        let registered = registered_mechanism(cat)?.unwrap_or(mechanism);
+        schedule::unregister(registered, &user_home)?;
+        cat.unset_setting("schedule.registered")?;
+        return Ok((
+            json!({"step": "schedule", "removed": true, "mechanism": registered}),
+            format!("Removed the scheduled jobs ({registered:?})."),
+        ));
     }
-    let rendered = schedule::render_all(&spec, mechanism);
+    schedule::register(&spec, mechanism, &user_home, &ctx.home.tmp_dir())?;
+    let mut stored = reg.clone();
+    stored["binary"] = json!(spec.binary.display().to_string());
+    stored["registered_at"] = json!(second_brain_kernel::util::ts(cat.now()));
+    cat.set_setting("schedule.registered", &stored)?;
+    Ok((
+        json!({"step": "schedule", "mechanism": mechanism, "registered": stored}),
+        format!(
+            "Registered daily sync at {} and deep sync on {} at {} ({mechanism:?}).",
+            a.time, a.deep_day, a.deep_time
+        ),
+    ))
+}
+
+fn setup_schedule(ctx: &Ctx, a: SetupScheduleArgs) -> anyhow::Result<i32> {
+    let cat = ctx.catalog()?;
     if a.dry_run {
+        check_schedule_args(&a)?;
+        let reg = json!({
+            "mechanism": Mechanism::for_os(a.systemd),
+            "time": a.time, "deep_day": a.deep_day, "deep_time": a.deep_time,
+        });
+        let (spec, mechanism) = schedule_spec_from_settings(ctx, &cat, &reg)?;
+        if a.remove {
+            let registered = registered_mechanism(&cat)?.unwrap_or(mechanism);
+            if ctx.json {
+                ctx.out_json(
+                    "sb.setup/v1",
+                    json!({"step": "schedule", "removed": true, "mechanism": registered}),
+                );
+            } else {
+                eprintln!("Would remove the scheduled jobs ({registered:?}).");
+            }
+            return Ok(exit::OK);
+        }
+        let rendered = schedule::render_all(&spec, mechanism);
         if ctx.json {
             ctx.out_json(
                 "sb.setup/v1",
@@ -292,37 +409,31 @@ fn setup_schedule(ctx: &Ctx, a: SetupScheduleArgs) -> anyhow::Result<i32> {
         }
         return Ok(exit::OK);
     }
-    schedule::register(&spec, mechanism, &user_home, &ctx.home.tmp_dir())?;
-    let mut stored = reg.clone();
-    stored["binary"] = json!(spec.binary.display().to_string());
-    stored["registered_at"] = json!(second_brain_kernel::util::ts(cat.now()));
-    cat.set_setting("schedule.registered", &stored)?;
+    let (report, message) = apply_schedule(ctx, &cat, &a)?;
     if ctx.json {
-        ctx.out_json(
-            "sb.setup/v1",
-            json!({"step": "schedule", "mechanism": mechanism, "registered": stored}),
-        );
+        ctx.out_json("sb.setup/v1", report);
     } else {
-        eprintln!(
-            "Registered daily sync at {} and deep sync on {} at {} ({mechanism:?}).",
-            a.time, a.deep_day, a.deep_time
-        );
+        eprintln!("{message}");
     }
     Ok(exit::OK)
 }
 
-fn setup_skills(ctx: &Ctx, a: SetupSkillsArgs) -> anyhow::Result<i32> {
-    let targets = Target::parse(&a.target)
-        .ok_or_else(|| usage("--target is copilot, claude, codex or all"))?;
+/// Install (or remove) the skill for `targets` and record the installed set.
+/// Returns one `{"target", "path"}` or `{"target", "removed"}` per change.
+pub(crate) fn apply_skills(
+    ctx: &Ctx,
+    targets: &[Target],
+    remove: bool,
+) -> anyhow::Result<Vec<Value>> {
     let user_home = skills::user_home()?;
     let mut done = Vec::new();
     for t in targets {
-        if a.remove {
-            if skills::remove(t, &user_home)? {
+        if remove {
+            if skills::remove(*t, &user_home)? {
                 done.push(json!({"target": t.name(), "removed": true}));
             }
         } else {
-            let dir = skills::install(t, &user_home)?;
+            let dir = skills::install(*t, &user_home)?;
             done.push(json!({"target": t.name(), "path": dir.display().to_string()}));
         }
     }
@@ -334,6 +445,25 @@ fn setup_skills(ctx: &Ctx, a: SetupSkillsArgs) -> anyhow::Result<i32> {
             .collect();
         cat.set_setting("skills.installed", &json!(installed))?;
     }
+    Ok(done)
+}
+
+/// A line describing one result of [`apply_skills`].
+pub(crate) fn skills_message(d: &Value) -> String {
+    let target = d["target"].as_str().unwrap_or("");
+    match d.get("path") {
+        Some(p) => format!(
+            "Installed the skill for {target} at {}",
+            p.as_str().unwrap_or("")
+        ),
+        None => format!("Removed the skill for {target}"),
+    }
+}
+
+fn setup_skills(ctx: &Ctx, a: SetupSkillsArgs) -> anyhow::Result<i32> {
+    let targets = Target::parse(&a.target)
+        .ok_or_else(|| usage("--target is copilot, claude, codex or all"))?;
+    let done = apply_skills(ctx, &targets, a.remove)?;
     if ctx.json {
         ctx.out_json(
             "sb.setup/v1",
@@ -341,20 +471,27 @@ fn setup_skills(ctx: &Ctx, a: SetupSkillsArgs) -> anyhow::Result<i32> {
         );
     } else {
         for d in &done {
-            match d.get("path") {
-                Some(p) => eprintln!(
-                    "Installed the skill for {} at {}",
-                    d["target"].as_str().unwrap_or(""),
-                    p.as_str().unwrap_or("")
-                ),
-                None => eprintln!(
-                    "Removed the skill for {}",
-                    d["target"].as_str().unwrap_or("")
-                ),
-            }
+            eprintln!("{}", skills_message(d));
         }
     }
     Ok(exit::OK)
+}
+
+/// Persist `SECOND_BRAIN_HOME` for a non-default home without asking: the
+/// Windows user environment, or the shell rc file. Returns a message.
+pub(crate) fn persist_env(ctx: &Ctx) -> anyhow::Result<String> {
+    let home = ctx.home.root();
+    if cfg!(windows) {
+        second_brain_setup::env::set_windows_user_env(home)?;
+        return Ok("Set SECOND_BRAIN_HOME for your user. Open a new terminal to use it.".into());
+    }
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    let (rc, line) = second_brain_setup::env::shell_rc(&skills::user_home()?, &shell, home);
+    second_brain_setup::env::write_rc(&rc, &line)?;
+    Ok(format!(
+        "Added to {}. Open a new shell to use it.",
+        rc.display()
+    ))
 }
 
 fn setup_env(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
@@ -368,14 +505,14 @@ fn setup_env(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
         return Ok(exit::OK);
     }
     if cfg!(windows) {
-        second_brain_setup::env::set_windows_user_env(home)?;
+        let message = persist_env(ctx)?;
         if ctx.json {
             ctx.out_json(
                 "sb.setup/v1",
                 json!({"step": "env", "set": "HKCU\\Environment\\SECOND_BRAIN_HOME"}),
             );
         } else {
-            eprintln!("Set SECOND_BRAIN_HOME for your user. Open a new terminal to use it.");
+            eprintln!("{message}");
         }
         return Ok(exit::OK);
     }
@@ -400,208 +537,43 @@ fn setup_env(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
     Ok(exit::OK)
 }
 
-async fn wizard(ctx: &Ctx, yes: bool) -> anyhow::Result<i32> {
-    if ctx.json {
-        return Err(usage(
-            "the setup wizard is interactive; run the steps (`sb setup home`, ...) for JSON output",
-        ));
-    }
-    let interactive = util::interactive() && !yes;
-    eprintln!("== 1/6 Home: {}", ctx.home.root().display());
+/// `sb setup --yes`: the steps that have defaults, without the setup screen.
+fn defaults(ctx: &Ctx) -> anyhow::Result<i32> {
+    eprintln!("== Home: {}", ctx.home.root().display());
     setup_home(ctx)?;
-    if !ctx.home.is_default()
-        && (yes
-            || (interactive && util::confirm("Persist SECOND_BRAIN_HOME (sb setup env)?", true)?))
-    {
-        setup_env(ctx, yes)?;
+    if !ctx.home.is_default() {
+        setup_env(ctx, true)?;
     }
-
-    eprintln!("\n== 2/6 Accounts");
-    if interactive {
-        loop {
-            let i = util::choose(
-                "Add an account:",
-                &[
-                    "Google account (Meet notes)".into(),
-                    "Slack workspace".into(),
-                    "Done".into(),
-                ],
-                2,
-            )?;
-            let r = match i {
-                0 => {
-                    eprintln!(
-                        "You need an OAuth client of type \"Desktop app\" (see the README guide)."
-                    );
-                    let id = util::ask("Account ID (e.g. work-google)", None)?;
-                    let file = util::ask("Path to the client JSON (or `global`)", None)?;
-                    super::admin::account(
-                        ctx,
-                        crate::cli::AccountCmd::Add(crate::cli::AccountAdd::Google {
-                            id,
-                            client_secret: file,
-                            label: None,
-                            features: vec!["meet".into()],
-                            no_browser: false,
-                        }),
-                    )
-                    .await
-                }
-                1 => {
-                    eprintln!(
-                        "Create a Slack app from assets/slack-app-manifest.yaml, install it, and copy the User OAuth Token."
-                    );
-                    let id = util::ask("Account ID (e.g. acme-slack)", None)?;
-                    super::admin::account(
-                        ctx,
-                        crate::cli::AccountCmd::Add(crate::cli::AccountAdd::Slack {
-                            id,
-                            token: None,
-                            label: None,
-                        }),
-                    )
-                    .await
-                }
-                _ => break,
-            };
-            if let Err(e) = r {
-                eprintln!("error: {e:#}");
-            }
-        }
-    } else {
-        eprintln!("Skipped (non-interactive). Use `sb account add google|slack`.");
-    }
-
-    eprintln!("\n== 3/6 Summarizer");
-    if interactive {
-        if let Err(e) = setup_llm(
-            ctx,
-            SetupLlmArgs {
-                preset: None,
-                name: None,
-                model: None,
-                base_url: None,
-                no_default: false,
-                no_test: false,
-            },
-            false,
-        )
-        .await
-        {
-            eprintln!("error: {e:#}");
-        }
-    } else {
-        eprintln!("Skipped (non-interactive). Use `sb setup llm --preset ...`.");
-    }
-
-    eprintln!("\n== 4/6 Schedule");
-    let mut sched = SetupScheduleArgs {
-        time: "19:30".into(),
-        deep_day: "mon".into(),
-        deep_time: "18:30".into(),
-        systemd: false,
-        remove: false,
-        dry_run: false,
-    };
-    if interactive {
-        sched.time = util::ask("Daily sync time", Some("19:30"))?;
-        sched.deep_day = util::ask("Weekly deep sync day", Some("mon"))?;
-        sched.deep_time = util::ask("Weekly deep sync time", Some("18:30"))?;
-    }
-    if (yes || (interactive && util::confirm("Register the scheduled jobs?", true)?))
-        && let Err(e) = setup_schedule(ctx, sched)
-    {
+    eprintln!("== Accounts: skipped. Use `sb account add google|slack`.");
+    eprintln!("== Summarizer: skipped. Use `sb setup llm --preset ...`.");
+    eprintln!("== Schedule");
+    if let Err(e) = setup_schedule(
+        ctx,
+        SetupScheduleArgs {
+            time: "19:30".into(),
+            deep_day: "mon".into(),
+            deep_time: "18:30".into(),
+            systemd: false,
+            remove: false,
+            dry_run: false,
+        },
+    ) {
         eprintln!("error: {e:#}");
     }
-
-    eprintln!("\n== 5/6 Agent skills");
-    for t in Target::ALL {
-        if !t.is_installed_agent() {
-            continue;
-        }
-        if yes
-            || (interactive
-                && util::confirm(
-                    &format!("Install the skill for {} ({})?", t.name(), t.binary()),
-                    true,
-                )?)
-        {
-            setup_skills(
-                ctx,
-                SetupSkillsArgs {
-                    target: t.name().into(),
-                    remove: false,
-                },
-            )?;
-        }
+    eprintln!("== Agent skills");
+    let found: Vec<Target> = Target::ALL
+        .into_iter()
+        .filter(|t| t.is_installed_agent())
+        .collect();
+    for d in apply_skills(ctx, &found, false)? {
+        eprintln!("{}", skills_message(&d));
     }
-
-    eprintln!("\n== 6/6 First sync");
-    {
-        // The first window applies to every source (ADR-0016).
-        let cat = ctx.catalog()?;
-        let current: u64 = cat.setting_or("sync.initial_days", 30u64)?;
-        if interactive {
-            let answer = util::ask(
-                "How many days back should the first sync reach (Slack, Meet)?",
-                Some(&current.to_string()),
-            )?;
-            let days: u64 = answer
-                .trim()
-                .parse()
-                .ok()
-                .filter(|d| *d > 0)
-                .ok_or_else(|| util::usage("the number of days is a positive whole number"))?;
-            if days != current {
-                cat.set_setting("sync.initial_days", &json!(days))?;
-            }
-            eprintln!("The first sync reaches back {days} days.");
-        } else {
-            eprintln!("The first sync reaches back {current} days (sync.initial_days).");
-        }
-        eprintln!(
-            "To go further back later: `sb sync --since 90d` fetches only what is older than what is already synced."
-        );
-    }
-    if interactive && util::confirm("Estimate the first sync now (`sb sync --estimate`)?", true)? {
-        let code = super::ingest::sync(
-            ctx,
-            crate::cli::SyncArgs {
-                accounts: vec![],
-                sources: vec![],
-                deep: false,
-                since: None,
-                until: None,
-                no_summary: false,
-                limits: Default::default(),
-                dry_run: false,
-                estimate: true,
-            },
-        )
-        .await?;
-        if code == exit::OK
-            && util::confirm(
-                "Run `sb sync` now? (It can be stopped with Ctrl+C and resumed later.)",
-                false,
-            )?
-        {
-            return super::ingest::sync(
-                ctx,
-                crate::cli::SyncArgs {
-                    accounts: vec![],
-                    sources: vec![],
-                    deep: false,
-                    since: None,
-                    until: None,
-                    no_summary: false,
-                    limits: Default::default(),
-                    dry_run: false,
-                    estimate: false,
-                },
-            )
-            .await;
-        }
-    }
+    let cat = ctx.catalog()?;
+    let days: u64 = cat.setting_or("sync.initial_days", 30u64)?;
+    eprintln!("== First sync: reaches back {days} days (sync.initial_days).");
+    eprintln!(
+        "To go further back later: `sb sync --since 90d` fetches only what is older than what is already synced."
+    );
     eprintln!("\nSetup finished. `sb doctor` shows what still needs attention.");
     Ok(exit::OK)
 }

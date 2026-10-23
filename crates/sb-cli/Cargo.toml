@@ -34,6 +34,7 @@ chrono.workspace = true
 clap.workspace = true
 fs4.workspace = true
 open.workspace = true
+ratatui.workspace = true
 rpassword.workspace = true
 serde.workspace = true
 serde_json.workspace = true

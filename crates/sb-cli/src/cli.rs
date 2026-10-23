@@ -36,11 +36,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Interactive setup wizard, or one setup step.
+    /// Setup screen (terminal UI), or one setup step.
     Setup(SetupCmd),
-    /// Global settings and secrets.
-    #[command(subcommand)]
-    Config(ConfigCmd),
+    /// Global settings and secrets; without a subcommand, the settings screen.
+    Config(ConfigArgs),
     /// Manage accounts.
     #[command(subcommand)]
     Account(AccountCmd),
@@ -86,7 +85,7 @@ pub enum Command {
 
 #[derive(Debug, Args)]
 pub struct SetupCmd {
-    /// Accept defaults (non-interactive).
+    /// Accept defaults without the setup screen (non-interactive).
     #[arg(long, global = true)]
     pub yes: bool,
     #[command(subcommand)]
@@ -159,6 +158,12 @@ pub struct SetupSkillsArgs {
 
 // ---------- config ----------
 
+#[derive(Debug, Args)]
+pub struct ConfigArgs {
+    #[command(subcommand)]
+    pub cmd: Option<ConfigCmd>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum ConfigCmd {
     /// List settings (secrets masked).
@@ -180,10 +185,13 @@ pub enum ConfigCmd {
         #[arg(long)]
         account: Option<String>,
     },
-    /// Edit settings or an account's config as TOML in $EDITOR.
+    /// Edit settings or an account's config in the settings screen.
     Edit {
         #[arg(long)]
         account: Option<String>,
+        /// Edit as TOML in $EDITOR instead of the settings screen.
+        #[arg(long)]
+        editor: bool,
     },
 }
 

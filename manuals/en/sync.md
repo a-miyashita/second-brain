@@ -85,8 +85,8 @@ $ sb config set sync.initial_days 60
 
 ## Run a sync every day
 
-The setup wizard registers the daily sync. To register it again, or to change the
-times, run:
+The Schedule section of `sb setup` registers the daily sync. You can change the times
+there, or run:
 
 ```sh
 $ sb setup schedule --time 19:30 --deep-day mon --deep-time 18:30

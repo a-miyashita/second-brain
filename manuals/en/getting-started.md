@@ -13,7 +13,7 @@ You need:
 An LLM account is optional. Without one, the tool still collects and searches your
 data. The entries wait for a summary. See [Summaries and cost](summaries.md).
 
-## Run the setup wizard
+## Run the setup screen
 
 Run this command:
 
@@ -21,35 +21,57 @@ Run this command:
 $ sb setup
 ```
 
-The wizard asks questions and does these steps in this order:
+The command opens the setup screen in your terminal. The left column lists the
+sections. The right side shows the selected section. Do the sections in this order
+the first time:
 
-1. **Home directory.** The wizard creates the home directory and the database. It
-   sets the file permissions so that only you can read them.
-2. **Accounts.** The wizard asks you to add a Google account or a Slack workspace.
-   You can add more than one. You can also skip this step and add accounts later.
-3. **Summarizer.** The wizard asks you to choose a summarizer and tests it.
-4. **Schedule.** The wizard asks for three values: the time of the daily sync (default
-   19:30), the day of the weekly deep sync (default Monday) and its time (default
-   18:30). Then it registers the jobs.
-5. **Skills.** The wizard finds the AI agents on your computer. For each agent, it
-   asks if it must install the skill.
-6. **First sync.** The wizard asks how many days back the first sync must reach
-   (default 30). It offers to show the cost estimate. Then it offers to run the
-   first sync.
+1. **Home.** The command creates the home directory and the database before the
+   screen opens. It sets the file permissions so that only you can read them.
+2. **Accounts.** Add a Google account or a Slack workspace. You can add more than
+   one, or add accounts later.
+3. **Summarizer.** Choose a summarizer. The screen can test it for you.
+4. **Schedule.** Check the time of the daily sync (default 19:30), the day of the
+   weekly deep sync (default Monday) and its time (default 18:30). Then register the
+   jobs.
+5. **Agent skills.** Install the skill for the AI agents that you use.
+6. **First sync.** Choose how many days back the first sync reads (default 30). You
+   can see the cost estimate, and run the first sync.
 
-You can run each step alone:
+A mark (✓) in the left column shows the sections that are done. You can go back to
+any section later: run `sb setup` again.
+
+Use these keys:
+
+| Key | Action |
+|---|---|
+| ↑ ↓ | Select a row |
+| Tab, or 1 to 8 | Go to another section |
+| Enter | Do the action of the row (the bottom line names it) |
+| x | Do the second action of the row, for example remove or disable |
+| Esc | Close a form. In the main screen: quit |
+| q | Quit |
+
+In a form, Tab and the arrow keys move between the fields, Space switches a yes/no
+field, and Enter goes to the next field. Enter on the last button saves. If a value
+is not valid, the form stays open and shows the error.
+
+When you add a Google account, the screen pauses. The browser opens for the Google
+consent, and the terminal shows its messages. Press Enter to go back to the screen.
+
+You can also run each step alone, without the screen:
 
 ```sh
 $ sb setup home
-$ sb setup llm
+$ sb setup llm --preset anthropic
 $ sb setup schedule
 $ sb setup skills
 $ sb setup env
 ```
 
-To accept all defaults without questions, add `--yes`. With `--yes`, the wizard does
-not add accounts and does not choose a summarizer. Use `sb account add` and
-`sb setup llm` for these steps.
+To accept all defaults without the screen, run `sb setup --yes`. With `--yes`, the
+command does not add accounts and does not choose a summarizer. Use `sb account add`
+and `sb setup llm` for these steps. The screen needs a terminal: in a script, use
+`--yes` or the steps.
 
 **Note:** Before you add a Google account or a Slack workspace, you must prepare
 credentials. See [Google account](google-account.md) and

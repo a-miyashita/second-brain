@@ -63,11 +63,14 @@ shell history.
 
 ## Choose the channels
 
-Open the account settings in your editor:
+Open the account settings:
 
 ```sh
 $ sb config edit --account acme-slack
 ```
+
+Select a setting and press Enter. Type a list of channels separated by commas, for
+example `general, dev`. To use your editor instead, add `--editor`.
 
 These are the main settings:
 

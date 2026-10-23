@@ -72,6 +72,31 @@ fn uninitialized_home_and_usage_errors() {
 }
 
 #[test]
+fn screens_need_a_terminal() {
+    // `output()` pipes stdout, so the setup and settings screens refuse to open.
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("h");
+    for args in [
+        &["setup"][..],
+        &["config"],
+        &["config", "edit"],
+        &["config", "edit", "--account", "local"],
+    ] {
+        let o = sb(&home, &[args, &["--json"]].concat());
+        assert_eq!(o.status.code(), Some(64), "{args:?}");
+        assert_eq!(json_of(&o)["error"]["code"], "usage", "{args:?}");
+        let o = sb(&home, args);
+        assert_eq!(o.status.code(), Some(64), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains("needs a terminal"),
+            "{args:?}"
+        );
+    }
+    // The setup screen is not opened, so the home is not created either.
+    assert!(!home.exists());
+}
+
+#[test]
 fn sync_range_options_are_validated() {
     let d = tempfile::tempdir().unwrap();
     let home = d.path().join("h");
