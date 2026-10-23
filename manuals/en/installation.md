@@ -26,9 +26,6 @@ first build takes a few minutes. Cargo puts the programs in `~/.cargo/bin` (on
 Windows, `%USERPROFILE%\.cargo\bin`). The Rust installer adds this folder to your
 `PATH`. Open a new terminal after the installation.
 
-**Note:** The first release is not published yet. Until it is, build the tool from
-source (see "Build from source" below).
-
 ## Update the tool
 
 Run the same command with `--force`:
