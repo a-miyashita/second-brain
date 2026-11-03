@@ -86,13 +86,16 @@ fn declared_cells(xml: &str) -> Option<u64> {
 
 /// A sparse sheet with a huge declared range would be materialized in full by the
 /// reader, so the declared sizes are checked first.
+///
+/// Every `.xml` member is inspected, not only `xl/worksheets/`: the reader follows
+/// the package relationships, so a sheet can live at any path.
 fn check_dimensions(
     a: &mut crate::zipx::Archive<'_>,
     limits: &ExtractLimits,
 ) -> Result<(), ExtractError> {
     let mut total = 0u64;
     for name in a.names() {
-        if !(name.starts_with("xl/worksheets/") && name.ends_with(".xml")) {
+        if !name.to_ascii_lowercase().ends_with(".xml") {
             continue;
         }
         if let Some(bytes) = a.read(&name)? {
