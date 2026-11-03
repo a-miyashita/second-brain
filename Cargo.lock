@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2447,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-extract"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "calamine",
  "chardetng",
@@ -2469,7 +2469,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-google"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2494,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-kernel"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2509,7 +2509,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-llm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "directories",
@@ -2528,7 +2528,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-ondemand"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2549,7 +2549,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-pipeline"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2572,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-setup"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "directories",
@@ -2588,7 +2588,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-slack"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2611,7 +2611,7 @@ dependencies = [
 
 [[package]]
 name = "second-brain-store"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "chrono-tz",

@@ -6,6 +6,21 @@ release is prepared; see `docs/specs/release.md`.
 
 ## Unreleased
 
+## 0.2.1 - 2026-11-03
+
+### Fixed
+
+- Reading `.xlsx` files now checks the declared cell range of every XML part in the
+  file, not only those under `xl/worksheets/`, so a crafted workbook cannot skip the
+  check and make extraction use too much memory.
+- The `xlsx` feature of `second-brain-extract` now builds on its own.
+
+### Security
+
+- Updated `zip` to 9.3 and `calamine` to 0.38 (CVE-2026-115905, zip cloaking). The
+  advisory affects `ZipStreamReader`, which second-brain does not use, so it is
+  probably not exploitable here; the update is a precaution.
+
 ## 0.2.0 - 2026-10-23
 
 ### Added
