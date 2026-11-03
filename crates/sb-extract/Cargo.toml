@@ -13,7 +13,7 @@ default = ["html", "docx", "pptx", "xlsx", "pdf"]
 html = ["dep:scraper", "dep:ego-tree"]
 docx = ["dep:zip", "dep:quick-xml"]
 pptx = ["dep:zip", "dep:quick-xml"]
-xlsx = ["dep:calamine"]
+xlsx = ["dep:calamine", "dep:zip", "dep:quick-xml"]
 pdf = ["dep:pdf-extract"]
 
 [dependencies]

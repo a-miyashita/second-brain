@@ -282,3 +282,17 @@ fn xlsx_with_a_huge_declared_range_is_refused_before_it_is_read() {
     let r = run(&bytes, "big.xlsx");
     assert!(matches!(r, Err(ExtractError::TooLarge(_))), "{r:?}");
 }
+
+#[test]
+fn xlsx_huge_declared_range_is_refused_at_a_non_standard_sheet_path() {
+    let ct = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>"#;
+    let wb = r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#;
+    let sheet = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:XFD1048576"/><sheetData/></worksheet>"#;
+    let bytes = zip_of(&[
+        ("[Content_Types].xml", ct),
+        ("xl/workbook.xml", wb),
+        ("other/sheet1.xml", sheet),
+    ]);
+    let r = run(&bytes, "big.xlsx");
+    assert!(matches!(r, Err(ExtractError::TooLarge(_))), "{r:?}");
+}

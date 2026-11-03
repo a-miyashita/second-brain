@@ -43,7 +43,13 @@ impl<'a> Archive<'a> {
     }
 
     pub fn names(&self) -> Vec<String> {
-        self.z.file_names().map(str::to_string).collect()
+        // Names that cannot be decoded are skipped; they cannot match a
+        // well-known OOXML part name anyway.
+        self.z
+            .file_names()
+            .filter_map(Result::ok)
+            .map(|n| n.into_owned())
+            .collect()
     }
 
     /// Read one member; `None` if it does not exist. The declared size is not

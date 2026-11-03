@@ -21,7 +21,7 @@ mod pptx;
 mod text;
 #[cfg(feature = "xlsx")]
 mod xlsx;
-#[cfg(any(feature = "docx", feature = "pptx"))]
+#[cfg(any(feature = "docx", feature = "pptx", feature = "xlsx"))]
 mod zipx;
 
 /// Name and version recorded in the entry metadata.

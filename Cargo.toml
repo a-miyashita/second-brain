@@ -23,7 +23,7 @@ second-brain-extract = { path = "crates/sb-extract", version = "=0.2.0" }
 second-brain-ondemand = { path = "crates/sb-ondemand", version = "=0.2.0" }
 
 anyhow = "1"
-calamine = { version = "0.36", default-features = false, features = ["dates"] }
+calamine = { version = "0.38", default-features = false, features = ["dates"] }
 chardetng = "1"
 csv = "1"
 ego-tree = "0.11"
@@ -31,7 +31,7 @@ encoding_rs = "0.8"
 pdf-extract = "0.12"
 quick-xml = "0.42"
 scraper = "0.27"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9.3", default-features = false, features = ["deflate"] }
 async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
