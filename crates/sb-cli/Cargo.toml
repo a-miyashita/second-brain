@@ -26,6 +26,7 @@ second-brain-store.workspace = true
 second-brain-pipeline.workspace = true
 second-brain-llm.workspace = true
 second-brain-google.workspace = true
+second-brain-microsoft.workspace = true
 second-brain-slack.workspace = true
 second-brain-setup.workspace = true
 second-brain-ondemand.workspace = true

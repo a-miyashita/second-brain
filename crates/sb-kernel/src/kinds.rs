@@ -71,6 +71,7 @@ str_enum! {
     /// Kind of account (ADR-0007).
     pub enum AccountKind ("account kind") {
         Google => "google",
+        Microsoft => "microsoft",
         Slack => "slack",
         Imap => "imap",
         Local => "local",
@@ -85,6 +86,7 @@ str_enum! {
         SlackDay => "slack.day",
         GoogleMeet => "google.meet",
         GoogleDoc => "google.doc",
+        MicrosoftFile => "microsoft.file",
         MailMessage => "mail.message",
         MailThread => "mail.thread",
         WebPage => "web.page",
@@ -98,6 +100,7 @@ impl SourceKind {
         match self {
             SourceKind::SlackThread | SourceKind::SlackDay => AccountKind::Slack,
             SourceKind::GoogleMeet | SourceKind::GoogleDoc => AccountKind::Google,
+            SourceKind::MicrosoftFile => AccountKind::Microsoft,
             SourceKind::MailMessage | SourceKind::MailThread => AccountKind::Imap,
             SourceKind::WebPage => AccountKind::Web,
             SourceKind::LocalFile => AccountKind::Local,

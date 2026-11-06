@@ -4,13 +4,18 @@ use std::time::Duration;
 
 use second_brain_google::oauth::{self, OAuthClient, Tokens};
 use second_brain_kernel::{AccountId, AccountKind, AccountStatus, Secret};
+use second_brain_microsoft::oauth as ms_oauth;
+use second_brain_microsoft::{Identity, MicrosoftClient, MicrosoftConfig};
 use second_brain_store::settings::{default_value, is_known_key};
 use second_brain_store::{Account, Catalog, EntryFilter, SecretScope};
 use serde_json::{Value, json};
 
 use crate::Ctx;
 use crate::cli::{AccountAdd, AccountCmd, AuthCmd, ConfigArgs, ConfigCmd};
-use crate::factory::{GOOGLE_CLIENT, GOOGLE_REFRESH, SLACK_TOKEN, google_client, google_tokens};
+use crate::factory::{
+    GOOGLE_CLIENT, GOOGLE_REFRESH, MICROSOFT_REFRESH, SLACK_TOKEN, google_client, google_tokens,
+    microsoft_tokens,
+};
 use crate::util::{self, exit, failure, usage};
 
 // ---------- config ----------
@@ -149,6 +154,11 @@ pub(crate) fn validate_account_config(kind: AccountKind, v: &Value) -> anyhow::R
         AccountKind::Google => {
             serde_json::from_value::<second_brain_google::meet::MeetConfig>(v.clone())
                 .map_err(|e| usage(format!("invalid Google config: {e}")))?;
+        }
+        AccountKind::Microsoft => {
+            MicrosoftConfig::from_value(v)
+                .and_then(|c| c.client().map(|_| ()))
+                .map_err(|e| usage(format!("invalid Microsoft config: {e}")))?;
         }
         _ => {}
     }
@@ -323,23 +333,32 @@ pub(crate) async fn google_consent(
 ) -> anyhow::Result<Tokens> {
     let scopes = oauth::scopes_for(features, false);
     let pending = oauth::begin(client, &scopes, login_hint).await?;
+    announce_consent(&pending.url, "Google consent", no_browser);
+    Ok(pending.finish(Duration::from_secs(300)).await?)
+}
+
+/// Run the Microsoft sign-in and return the tokens.
+pub(crate) async fn microsoft_consent(
+    client: &MicrosoftClient,
+    no_browser: bool,
+) -> anyhow::Result<ms_oauth::Tokens> {
+    let pending = ms_oauth::begin(client, None).await?;
+    announce_consent(&pending.url, "Microsoft sign-in", no_browser);
+    Ok(pending.finish(Duration::from_secs(300)).await?)
+}
+
+/// Open the browser on the consent URL, or print it when there is no display.
+fn announce_consent(url: &str, what: &str, no_browser: bool) {
     let headless = no_browser
         || (cfg!(target_os = "linux")
             && std::env::var_os("DISPLAY").is_none()
             && std::env::var_os("WAYLAND_DISPLAY").is_none());
-    if headless || open::that(&pending.url).is_err() {
-        eprintln!(
-            "Open this URL in a browser on this machine and approve access:\n\n{}\n",
-            pending.url
-        );
+    if headless || open::that(url).is_err() {
+        eprintln!("Open this URL in a browser on this machine and approve access:\n\n{url}\n");
     } else {
-        eprintln!(
-            "Opened the browser for Google consent. If nothing happened, open:\n\n{}\n",
-            pending.url
-        );
+        eprintln!("Opened the browser for {what}. If nothing happened, open:\n\n{url}\n");
     }
     eprintln!("Waiting for the redirect (up to 5 minutes)...");
-    Ok(pending.finish(Duration::from_secs(300)).await?)
 }
 
 async fn add_google(
@@ -405,6 +424,61 @@ async fn add_google(
         );
     } else {
         eprintln!("Added Google account {id} ({email}).");
+    }
+    Ok(exit::OK)
+}
+
+async fn add_microsoft(
+    ctx: &Ctx,
+    id: &str,
+    client_id: &str,
+    tenant: &str,
+    label: Option<String>,
+    no_browser: bool,
+) -> anyhow::Result<i32> {
+    let cat = ctx.catalog()?;
+    let aid = new_account_id(&cat, id)?;
+    let mut config = MicrosoftConfig::new(client_id, tenant);
+    let client = config.client().map_err(|e| usage(e.to_string()))?;
+    let tokens = microsoft_consent(&client, no_browser).await?;
+    let refresh = tokens.refresh_token.clone().ok_or_else(|| {
+        failure(
+            "auth.no_refresh_token",
+            "Microsoft returned no refresh token; check that the application allows offline_access",
+        )
+    })?;
+    let identity = Identity::from_tokens(&tokens).ok_or_else(|| {
+        failure(
+            "auth.no_identity",
+            "the ID token has no tenant and object ID; check the openid and profile permissions",
+        )
+    })?;
+    if !tokens
+        .scopes
+        .iter()
+        .any(|s| s.rsplit('/').next() == Some("Files.Read.All"))
+    {
+        eprintln!(
+            "warning: Files.Read.All was not granted; ask an administrator to approve it for the application"
+        );
+    }
+    config.scopes = tokens.scopes.clone();
+    let name = identity.username.clone().unwrap_or_else(|| id.to_string());
+    cat.add_account(
+        &aid,
+        AccountKind::Microsoft,
+        &label.unwrap_or_else(|| name.clone()),
+        Some(&identity.id()),
+        &config.to_value(),
+    )?;
+    cat.set_secret(&SecretScope::Account(aid), MICROSOFT_REFRESH, &refresh)?;
+    if ctx.json {
+        ctx.out_json(
+            "sb.account/v1",
+            json!({"added": id, "kind": "microsoft", "identity": identity.id()}),
+        );
+    } else {
+        eprintln!("Added Microsoft account {id} ({name}, {}).", identity.id());
     }
     Ok(exit::OK)
 }
@@ -489,6 +563,13 @@ pub async fn account(ctx: &Ctx, c: AccountCmd) -> anyhow::Result<i32> {
             features,
             no_browser,
         }) => add_google(ctx, &id, &client_secret, label, features, no_browser).await,
+        AccountCmd::Add(AccountAdd::Microsoft {
+            id,
+            client_id,
+            tenant,
+            label,
+            no_browser,
+        }) => add_microsoft(ctx, &id, &client_id, &tenant, label, no_browser).await,
         AccountCmd::Add(AccountAdd::Slack { id, token, label }) => {
             add_slack(ctx, &id, token, label).await
         }
@@ -504,7 +585,7 @@ pub async fn account(ctx: &Ctx, c: AccountCmd) -> anyhow::Result<i32> {
             } else {
                 for r in &rows {
                     println!(
-                        "{:<16} {:<7} {:<13} {:>7} entries  {}",
+                        "{:<16} {:<9} {:<13} {:>7} entries  {}",
                         r["id"].as_str().unwrap_or(""),
                         r["kind"].as_str().unwrap_or(""),
                         r["status"].as_str().unwrap_or(""),
@@ -618,6 +699,15 @@ pub(crate) async fn online_check(
                 Err(e) => Err(e.to_string()),
             }))
         }
+        AccountKind::Microsoft => {
+            let Some(t) = microsoft_tokens(cat, a)? else {
+                return Ok(Some(Err("no stored refresh token".into())));
+            };
+            Ok(Some(match t.access_token().await {
+                Ok(_) => Ok("token refresh OK".into()),
+                Err(e) => Err(e.to_string()),
+            }))
+        }
         AccountKind::Slack => {
             let Some(token) =
                 cat.secret_or_env(&SecretScope::Account(a.id.clone()), SLACK_TOKEN)?
@@ -679,7 +769,7 @@ pub async fn auth(ctx: &Ctx, c: AuthCmd) -> anyhow::Result<i32> {
                         .map(|o| format!("  [{}]", o["message"].as_str().unwrap_or("")))
                         .unwrap_or_default();
                     println!(
-                        "{:<16} {:<7} {:<13} {}  last ok: {}{}",
+                        "{:<16} {:<9} {:<13} {}  last ok: {}{}",
                         r["id"].as_str().unwrap_or(""),
                         r["kind"].as_str().unwrap_or(""),
                         r["status"].as_str().unwrap_or(""),
@@ -748,6 +838,45 @@ pub async fn auth(ctx: &Ctx, c: AuthCmd) -> anyhow::Result<i32> {
                     config["scopes"] = json!(tokens.scopes);
                     cat.update_account(&a.id, None, Some(&email), Some(&config))?;
                     email
+                }
+                AccountKind::Microsoft => {
+                    let mut config = MicrosoftConfig::from_value(&a.config)
+                        .map_err(|e| usage(format!("invalid Microsoft config: {e}")))?;
+                    let client = config.client().map_err(|e| usage(e.to_string()))?;
+                    let tokens = microsoft_consent(&client, no_browser).await?;
+                    let identity = Identity::from_tokens(&tokens).ok_or_else(|| {
+                        failure(
+                            "auth.no_identity",
+                            "the ID token has no tenant and object ID",
+                        )
+                    })?;
+                    if a.identity.as_deref().is_some_and(|i| i != identity.id())
+                        && !allow_identity_change
+                    {
+                        return Err(failure(
+                            "auth.identity_changed",
+                            format!(
+                                "signed in as {}, but the account is {}; use --allow-identity-change",
+                                identity.id(),
+                                a.identity.clone().unwrap_or_default()
+                            ),
+                        ));
+                    }
+                    let refresh = tokens.refresh_token.clone().ok_or_else(|| {
+                        failure(
+                            "auth.no_refresh_token",
+                            "Microsoft returned no refresh token",
+                        )
+                    })?;
+                    cat.set_secret(&scope, MICROSOFT_REFRESH, &refresh)?;
+                    config.scopes = tokens.scopes.clone();
+                    cat.update_account(
+                        &a.id,
+                        None,
+                        Some(&identity.id()),
+                        Some(&config.to_value()),
+                    )?;
+                    identity.id()
                 }
                 AccountKind::Slack => {
                     let token = Secret::new(util::read_secret("New Slack user token (xoxp-...)")?);

@@ -1,5 +1,5 @@
-//! `sb ingest`: single-item ingest of Google Docs, web pages and local files
-//! (docs/specs/ingest.md, ADR-0014).
+//! `sb ingest`: single-item ingest of Google Docs, SharePoint and OneDrive files,
+//! web pages and local files (docs/specs/ingest.md, ADR-0014, ADR-0021).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use regex::Regex;
 use second_brain_kernel::document::IngestHint;
-use second_brain_kernel::source::{Source, SourceError};
+use second_brain_kernel::source::{Located, Source, SourceError};
 use second_brain_kernel::{
     AccountKind, AccountStatus, EntryOrigin, FetchOutcome, FetchRequest, FetchedEntry, RawRole,
     RawStatus, RunStatus, Severity, SourceKind,
@@ -48,6 +48,8 @@ pub struct IngestOptions {
 pub enum Locator {
     /// A Google Docs, Sheets, Slides or Drive file, by Drive file ID.
     Google(String),
+    /// A SharePoint or OneDrive URL, as given. The key is known only to Graph.
+    Microsoft(String),
     /// An `http(s)` URL.
     Web(String),
     /// A file path (as given; the source canonicalizes it).
@@ -58,6 +60,7 @@ impl Locator {
     pub fn source_kind(&self) -> SourceKind {
         match self {
             Locator::Google(_) => SourceKind::GoogleDoc,
+            Locator::Microsoft(_) => SourceKind::MicrosoftFile,
             Locator::Web(_) => SourceKind::WebPage,
             Locator::Local(_) => SourceKind::LocalFile,
         }
@@ -94,6 +97,9 @@ pub fn classify(locator: &str) -> Result<Locator, String> {
                     return Ok(Locator::Google(id));
                 }
             }
+            if is_microsoft_host(&host) {
+                return Ok(Locator::Microsoft(s.to_string()));
+            }
             if host.ends_with(".slack.com") && u.path().starts_with("/archives") {
                 return Err("Slack content is ingested by `sb sync`".into());
             }
@@ -101,6 +107,12 @@ pub fn classify(locator: &str) -> Result<Locator, String> {
         }
         other => Err(format!("unsupported scheme `{other}:`")),
     }
+}
+
+/// SharePoint Online and OneDrive hosts. Sovereign clouds (`.sharepoint.cn`, ...)
+/// and SharePoint Server are not routed here.
+fn is_microsoft_host(host: &str) -> bool {
+    host.ends_with(".sharepoint.com") || host == "onedrive.live.com" || host == "1drv.ms"
 }
 
 fn google_file_id(u: &url::Url) -> Option<String> {
@@ -282,9 +294,9 @@ impl Pipeline {
         }
         if let Some(a) = &opts.account {
             let acc = self.account(a)?;
-            if acc.kind != AccountKind::Google {
+            if !matches!(acc.kind, AccountKind::Google | AccountKind::Microsoft) {
                 return Err(PipelineError::Invalid(format!(
-                    "{a} is not a Google account"
+                    "{a} is not a Google or Microsoft account"
                 )));
             }
         }
@@ -446,6 +458,7 @@ impl Pipeline {
             let usable = match a.kind {
                 AccountKind::Web | AccountKind::Local => a.status != AccountStatus::Disabled,
                 AccountKind::Google => a.status == AccountStatus::Active && has_drive(&a),
+                AccountKind::Microsoft => a.status == AccountStatus::Active,
                 _ => false,
             };
             if !usable {
@@ -488,9 +501,39 @@ impl Pipeline {
         match &w.locator {
             Locator::Web(_) => Ok(vec!["web".into()]),
             Locator::Local(_) => Ok(vec!["local".into()]),
+            Locator::Microsoft(_) => {
+                if let Some(a) = &opts.account {
+                    return match hosts.get(a) {
+                        Some(h) if h.account.kind != AccountKind::Microsoft => {
+                            Err(format!("{a} is not a Microsoft account"))
+                        }
+                        _ => Ok(vec![a.clone()]),
+                    };
+                }
+                // The key is known only after asking Graph, so accounts are probed in
+                // order of creation.
+                let mut rest: Vec<(&String, DateTime<Utc>)> = hosts
+                    .iter()
+                    .filter(|(_, h)| h.account.kind == AccountKind::Microsoft)
+                    .map(|(k, h)| (k, h.account.created_at))
+                    .collect();
+                rest.sort_by_key(|(k, t)| (*t, (*k).clone()));
+                if rest.is_empty() {
+                    return Err(
+                        "no usable Microsoft account (add one with `sb account add microsoft`)"
+                            .into(),
+                    );
+                }
+                Ok(rest.into_iter().map(|(k, _)| k.clone()).collect())
+            }
             Locator::Google(id) => {
                 if let Some(a) = &opts.account {
-                    return Ok(vec![a.clone()]);
+                    return match hosts.get(a) {
+                        Some(h) if h.account.kind != AccountKind::Google => {
+                            Err(format!("{a} is not a Google account"))
+                        }
+                        _ => Ok(vec![a.clone()]),
+                    };
                 }
                 let mut out: Vec<String> = Vec::new();
                 if let Ok(existing) = self
@@ -558,15 +601,42 @@ impl Pipeline {
                 continue;
             };
             let source: Arc<dyn Source> = host.source.clone();
-            let Some(sref) = source
-                .resolve(&w.raw)
-                .or_else(|| source.resolve(&locator_text(&w.locator)))
-            else {
-                return Err(match w.locator {
-                    Locator::Local(_) => "file not found or not readable".to_string(),
-                    Locator::Web(_) => "not a valid web address".to_string(),
-                    Locator::Google(_) => format!("{account}: cannot resolve the locator"),
-                });
+            let sref = if let Locator::Microsoft(url) = &w.locator {
+                // Ask Graph for the key (drive and item ID) first.
+                match source.locate(url).await {
+                    Ok(Located::Found(r)) => r,
+                    Ok(Located::NotFound(why)) => {
+                        notes.push(format!("{account}: {why}"));
+                        continue;
+                    }
+                    Ok(Located::NotApplicable(why)) => {
+                        return Ok(Phase::Done(
+                            w.idx,
+                            IngestResult::new(&w.raw, IngestStatus::NotApplicable, Some(why)),
+                        ));
+                    }
+                    Err(e @ SourceError::Auth(_)) => {
+                        notes.push(format!(
+                            "{account}: {}",
+                            self.needs_reauth(host, &account, &e)
+                        ));
+                        continue;
+                    }
+                    Err(SourceError::Cancelled) => return Err("interrupted".into()),
+                    Err(e) => return Err(format!("{account}: {e}")),
+                }
+            } else {
+                let Some(sref) = source
+                    .resolve(&w.raw)
+                    .or_else(|| source.resolve(&locator_text(&w.locator)))
+                else {
+                    return Err(match w.locator {
+                        Locator::Local(_) => "file not found or not readable".to_string(),
+                        Locator::Web(_) => "not a valid web address".to_string(),
+                        _ => format!("{account}: cannot resolve the locator"),
+                    });
+                };
+                sref
             };
             if sref.source_kind != kind {
                 notes.push(format!("{account}: wrong source kind"));
@@ -626,28 +696,36 @@ impl Pipeline {
                     ));
                 }
                 Ok(FetchOutcome::NotFound(why)) => {
-                    if matches!(w.locator, Locator::Google(_)) {
+                    if matches!(w.locator, Locator::Google(_) | Locator::Microsoft(_)) {
                         notes.push(format!("{account}: {why}"));
                     } else {
                         return Err(why);
                     }
                 }
                 Err(e @ SourceError::Auth(_)) => {
-                    let msg = format!("{e}; run `sb auth login {account}`");
-                    let cat = self.catalog();
-                    let _ = cat.set_account_status(&host.account.id, AccountStatus::NeedsReauth);
-                    let _ =
-                        cat.open_issue(e.issue_code(), Severity::Error, Some(&account), None, &msg);
-                    notes.push(format!("{account}: {msg}"));
+                    notes.push(format!(
+                        "{account}: {}",
+                        self.needs_reauth(host, &account, &e)
+                    ));
                 }
                 Err(SourceError::Cancelled) => return Err("interrupted".into()),
-                Err(e) if matches!(w.locator, Locator::Google(_)) => {
+                Err(e) if matches!(w.locator, Locator::Google(_) | Locator::Microsoft(_)) => {
                     return Err(format!("{account}: {e}"));
                 }
                 Err(e) => return Err(e.to_string()),
             }
         }
         Err(notes.join("; "))
+    }
+
+    /// Mark an account as needing re-authentication and open the issue. Returns the
+    /// message for the user.
+    fn needs_reauth(&self, host: &Host<'_>, account: &str, e: &SourceError) -> String {
+        let msg = format!("{e}; run `sb auth login {account}`");
+        let cat = self.catalog();
+        let _ = cat.set_account_status(&host.account.id, AccountStatus::NeedsReauth);
+        let _ = cat.open_issue(e.issue_code(), Severity::Error, Some(account), None, &msg);
+        msg
     }
 
     /// The stored fetch state to send, and whether the fetch must be full.
@@ -827,6 +905,21 @@ impl Pipeline {
                         r
                     }
                 }
+                Locator::Microsoft(_) => {
+                    // The key is known only to Graph, so a dry run cannot tell
+                    // whether the entry exists; it checks only that an account could read it.
+                    if !cat_accounts.iter().any(|a| {
+                        a.kind == AccountKind::Microsoft
+                            && a.status == AccountStatus::Active
+                            && opts.account.as_deref().is_none_or(|x| a.id.as_str() == x)
+                    }) {
+                        IngestResult::failed(&w.raw, "no usable Microsoft account")
+                    } else {
+                        let mut r = IngestResult::new(&w.raw, IngestStatus::WouldCreate, None);
+                        r.source_kind = Some(kind.to_string());
+                        r
+                    }
+                }
                 other => {
                     let account = if matches!(other, Locator::Web(_)) {
                         "web"
@@ -888,7 +981,7 @@ impl Pipeline {
 fn locator_text(l: &Locator) -> String {
     match l {
         Locator::Google(id) => format!("https://docs.google.com/document/d/{id}/edit"),
-        Locator::Web(u) => u.clone(),
+        Locator::Microsoft(u) | Locator::Web(u) => u.clone(),
         Locator::Local(p) => p.to_string_lossy().into_owned(),
     }
 }
@@ -918,6 +1011,29 @@ fn overrides_differ(e: &Entry, hint: &IngestHint) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn microsoft_hosts() {
+        for u in [
+            "https://contoso.sharepoint.com/:w:/s/team/EabcDEF?e=xyz",
+            "https://contoso-my.sharepoint.com/personal/a_contoso_com/Documents/a.docx",
+            "https://CONTOSO.SharePoint.com/sites/x/Shared%20Documents/a.pdf",
+            "https://onedrive.live.com/redir?resid=1!2&authkey=!3",
+            "https://1drv.ms/w/s!Abc",
+        ] {
+            assert_eq!(classify(u), Ok(Locator::Microsoft(u.to_string())), "{u}");
+        }
+        // Look-alikes, sovereign clouds and other Microsoft sites stay web pages.
+        for u in [
+            "https://sharepoint.com.example.org/a",
+            "https://notsharepoint.com/a",
+            "https://contoso.sharepoint.cn/sites/x",
+            "https://contoso.sharepoint.us/sites/x",
+            "https://learn.microsoft.com/a",
+        ] {
+            assert!(matches!(classify(u), Ok(Locator::Web(_))), "{u}");
+        }
+    }
 
     #[test]
     fn classification() {

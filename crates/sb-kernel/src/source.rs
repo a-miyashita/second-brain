@@ -62,6 +62,17 @@ impl SourceError {
     }
 }
 
+/// The outcome of `Source::locate`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Located {
+    /// The item and its natural key.
+    Found(SourceRef),
+    /// The item does not exist for this account, or the account cannot read it.
+    NotFound(String),
+    /// The locator is not something to make an entry from (a folder, ...).
+    NotApplicable(String),
+}
+
 /// Services the pipeline offers to sources during sync and fetch. All reads and
 /// writes are scoped to the source's account.
 pub trait SyncHost: Send + Sync {
@@ -101,6 +112,16 @@ pub trait Source: Send + Sync {
     /// Map a URL or path to a natural key, for single-item ingest.
     fn resolve(&self, _locator: &str) -> Option<SourceRef> {
         None
+    }
+
+    /// Like `resolve`, but may ask the service. Needed when the natural key is
+    /// only known to the service (a SharePoint file is keyed by drive and item
+    /// ID, not by its URL). The default is `resolve`.
+    async fn locate(&self, locator: &str) -> Result<Located, SourceError> {
+        Ok(match self.resolve(locator) {
+            Some(r) => Located::Found(r),
+            None => Located::NotFound("cannot resolve the locator".into()),
+        })
     }
 
     /// A reason this source refuses an item, decided without side effects, so that
