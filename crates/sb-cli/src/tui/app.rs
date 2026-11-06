@@ -260,6 +260,7 @@ impl AccountEditor {
                     .unwrap_or_default();
                 second_brain_google::default_config_json(&features)
             }
+            AccountKind::Microsoft => json!({"client_id": "", "tenant": "organizations"}),
             _ => json!({}),
         };
         let mut rows = Vec::new();
@@ -554,7 +555,12 @@ impl App {
             accounts: cat
                 .accounts()?
                 .into_iter()
-                .filter(|a| matches!(a.kind, AccountKind::Google | AccountKind::Slack))
+                .filter(|a| {
+                    matches!(
+                        a.kind,
+                        AccountKind::Google | AccountKind::Microsoft | AccountKind::Slack
+                    )
+                })
                 .collect(),
             default_profile: cat
                 .setting("summary.profile.default")?

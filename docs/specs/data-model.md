@@ -27,9 +27,9 @@ Per-account settings live in `accounts.config`, not here.
 | Column | Type | Notes |
 |---|---|---|
 | `id` | TEXT PK | user-chosen slug, immutable |
-| `kind` | TEXT | `google`, `slack`, `imap`, `local`, `web` |
+| `kind` | TEXT | `google`, `microsoft`, `slack`, `imap`, `local`, `web` |
 | `label` | TEXT | display name |
-| `identity` | TEXT | e.g. `alice@example.com`, `T0123:U0456` |
+| `identity` | TEXT | e.g. `alice@example.com`, `T0123:U0456` (Slack), `<tid>:<oid>` (Microsoft) |
 | `config` | TEXT (JSON) | source settings, e.g. Slack `full_channels` |
 | `status` | TEXT | `active`, `disabled`, `needs_reauth` |
 | `created_at`, `updated_at` | TEXT | |
@@ -41,7 +41,7 @@ The `local` and `web` pseudo-accounts are created by `sb setup home`.
 | Column | Type | Notes |
 |---|---|---|
 | `scope` | TEXT | `account:<id>` or `global` |
-| `name` | TEXT | e.g. `google.refresh_token`, `google.oauth_client`, `slack.user_token`, `anthropic.api_key` |
+| `name` | TEXT | e.g. `google.refresh_token`, `google.oauth_client`, `microsoft.refresh_token`, `slack.user_token`, `anthropic.api_key` |
 | `value` | TEXT | never logged or printed unmasked |
 | `expires_at` | TEXT NULL | |
 | `updated_at` | TEXT | |
@@ -82,7 +82,7 @@ Indexes: `(source_kind, source_created_at)`, `(account_id)`, `(summary_status)`,
 |---|---|---|
 | `id` | INTEGER PK | |
 | `entry_id` | FK → entries ON DELETE CASCADE | |
-| `role` | TEXT | `primary`, `notes`, `transcript`, `attachment`, `extracted_text`. For `google.doc`, `web.page` and `local.file` the raw data is the `extracted_text` object; `primary` (the original bytes) exists only with `--keep-original` (ADR-0014) |
+| `role` | TEXT | `primary`, `notes`, `transcript`, `attachment`, `extracted_text`. For `google.doc`, `microsoft.file`, `web.page` and `local.file` the raw data is the `extracted_text` object; `primary` (the original bytes) exists only with `--keep-original` (ADR-0014) |
 | `seq` | INTEGER | segment number, 0-based. Appending sources add segments; a replace writes only 0 |
 | `path` | TEXT | relative to `$SECOND_BRAIN_HOME` |
 | `media_type` | TEXT | |
@@ -250,10 +250,11 @@ keeps backends swappable.
 | `transcript_url`, `calendar_url`, `recurring` | google.meet |
 | `channel_id`, `channel_name`, `channel_kind` (`channel`, `private`, `dm`, `group_dm`), `thread_ts`, `message_count` | slack.* |
 | `drive_file_id`, `mime_type`, `owners`, `drive_modified_time`, `export_format` | google.doc |
+| `drive_id`, `item_id`, `drive_type`, `mime_type`, `file_name`, `owners`, `ms_modified_time`, `ms_etag` | microsoft.file |
 | `fetched_url`, `final_url`, `canonical_url`, `site_name`, `content_type`, `http_last_modified`, `http_etag` | web.page |
 | `path`, `file_name`, `size`, `media_type`, `file_mtime` | local.file |
-| `context`, `title_override`, `date_override` | google.doc, web.page, local.file: values given to `sb ingest`, stored with the fetch metadata |
-| `extractor`, `doc_title`, `doc_created`, `doc_modified`, `text_truncated`, `page_count`, `sheet_names`, `slide_count`, `extract_warnings`, `original_sha256`, `original_size` | google.doc, web.page, local.file: written at fetch time with the extraction (extract.md) |
+| `context`, `title_override`, `date_override` | google.doc, microsoft.file, web.page, local.file: values given to `sb ingest`, stored with the fetch metadata |
+| `extractor`, `doc_title`, `doc_created`, `doc_modified`, `text_truncated`, `page_count`, `sheet_names`, `slide_count`, `extract_warnings`, `original_sha256`, `original_size` | google.doc, microsoft.file, web.page, local.file: written at fetch time with the extraction (extract.md) |
 | `import_ref` | imported entries: the entry's identifier in the exporting tool |
 
 ## Invariants

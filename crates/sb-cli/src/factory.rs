@@ -6,6 +6,9 @@ use second_brain_google::{GoogleApi, GoogleSource, OAuthClient, TokenProvider};
 use second_brain_kernel::document::IngestSettings;
 use second_brain_kernel::source::Source;
 use second_brain_kernel::{AccountKind, Secret};
+use second_brain_microsoft::{
+    GraphApi, MicrosoftConfig, MicrosoftSource, RefreshSink, TokenProvider as MicrosoftTokens,
+};
 use second_brain_ondemand::{LocalSource, WebSource};
 use second_brain_pipeline::{PipelineError, SourceFactory};
 use second_brain_slack::SlackSource;
@@ -17,6 +20,7 @@ pub struct Factory;
 pub const SLACK_TOKEN: &str = "slack.user_token";
 pub const GOOGLE_CLIENT: &str = "google.oauth_client";
 pub const GOOGLE_REFRESH: &str = "google.refresh_token";
+pub const MICROSOFT_REFRESH: &str = "microsoft.refresh_token";
 
 /// The Google OAuth client of an account (account scope, then global).
 pub fn google_client(
@@ -45,6 +49,31 @@ pub fn google_tokens(
     let refresh: Option<Secret> =
         cat.secret(&SecretScope::Account(account.id.clone()), GOOGLE_REFRESH)?;
     Ok(refresh.map(|r| Arc::new(TokenProvider::new(client, r))))
+}
+
+/// Token provider of a Microsoft account, if credentials are stored.
+///
+/// Entra rotates refresh tokens, so the provider gets a sink that writes each new one
+/// to the catalog (through its own connection; the catalog is in WAL mode with a busy
+/// timeout) before the access token is used.
+pub fn microsoft_tokens(
+    cat: &Catalog,
+    account: &Account,
+) -> Result<Option<Arc<MicrosoftTokens>>, PipelineError> {
+    let client = MicrosoftConfig::from_value(&account.config)
+        .and_then(|c| c.client())
+        .map_err(|e| PipelineError::Invalid(e.to_string()))?;
+    let scope = SecretScope::Account(account.id.clone());
+    let Some(refresh) = cat.secret(&scope, MICROSOFT_REFRESH)? else {
+        return Ok(None);
+    };
+    let home = cat.home().clone();
+    let sink: RefreshSink = Arc::new(move |token: &Secret| {
+        let cat = Catalog::open_no_migrate(&home).map_err(|e| e.to_string())?;
+        cat.set_secret(&scope, MICROSOFT_REFRESH, token)
+            .map_err(|e| e.to_string())
+    });
+    Ok(Some(Arc::new(MicrosoftTokens::new(client, refresh, sink))))
 }
 
 /// The `ingest.*` settings.
@@ -92,6 +121,17 @@ impl SourceFactory for Factory {
                     api,
                     ingest_settings(cat)?,
                 )?)))
+            }
+            AccountKind::Microsoft => {
+                let api = match microsoft_tokens(cat, account)? {
+                    Some(t) => Some(GraphApi::new(t)?),
+                    None => None,
+                };
+                Ok(Some(Arc::new(MicrosoftSource::new(
+                    account.ctx(),
+                    api,
+                    ingest_settings(cat)?,
+                ))))
             }
             AccountKind::Local => Ok(Some(Arc::new(LocalSource::new(
                 account.ctx(),

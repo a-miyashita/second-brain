@@ -19,8 +19,8 @@ The tool works on Windows, macOS and Linux.
 | Term | Meaning |
 |---|---|
 | Entry | One item in the knowledge base. An entry can be a Slack thread, a meeting, a document or a web page |
-| Source | The place where an entry comes from. Examples: Slack, Google Meet, Google Docs, web pages, local files |
-| Source kind | The type of an entry, such as `slack.thread`, `slack.day`, `google.meet`, `google.doc`, `web.page` or `local.file` |
+| Source | The place where an entry comes from. Examples: Slack, Google Meet, Google Docs, SharePoint and OneDrive files, web pages, local files |
+| Source kind | The type of an entry, such as `slack.thread`, `slack.day`, `google.meet`, `google.doc`, `microsoft.file`, `web.page` or `local.file` |
 | Account | A connection to a service. You can have more than one account. For example, you can connect two Slack workspaces |
 | Sync | The action that collects new data from your accounts |
 | Summary | A short text that describes an entry |
@@ -49,7 +49,7 @@ A document often has no decisions and no action items. This is normal.
 ## How the data flows
 
 ```text
-Slack, Google Meet, Google Docs, web pages, files
+Slack, Google Meet, Google Docs, SharePoint/OneDrive, web pages, files
         │  sync or ingest
         ▼
 raw data (files on your computer)
@@ -82,7 +82,7 @@ To use a different folder, set the environment variable `SECOND_BRAIN_HOME`. You
 also add the option `--home <folder>` to any command.
 
 **Warning:** The database in the home directory contains your passwords and tokens.
-These are the Google refresh tokens, the Slack token and the API keys. Only your
+These are the Google and Microsoft refresh tokens, the Slack token and the API keys. Only your
 operating system user can read the folder. Do not share a copy of it. Keep backups
 private.
 
@@ -91,5 +91,5 @@ private.
 - It does not send your data to any third party. The only exception is the
   summarizer that you choose. If you choose an LLM API, the tool sends the text of an
   entry to that service to get a summary.
-- It does not change your data in Slack or Google. It only reads.
+- It does not change your data in Slack, Google or Microsoft 365. It only reads.
 - It does not read Slack content that you cannot read yourself.

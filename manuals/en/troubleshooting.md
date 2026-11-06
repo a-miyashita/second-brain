@@ -88,7 +88,7 @@ App**. See [Slack account](slack-account.md).
 | The meeting had no Gemini notes | The tool reads only notes that Gemini wrote |
 | The notes are not in your calendar events or in your "Meet Recordings" folder | Open the notes in Google Drive, copy the link, and run `sb ingest <link>` |
 | The meeting is older than the first sync | Run `sb sync --since 90d` |
-| The Google login ended | Run `sb auth login <id>` |
+| The Google or Microsoft login ended | Run `sb auth login <id>` |
 
 ## `sb ingest` fails
 

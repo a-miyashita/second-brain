@@ -15,10 +15,11 @@ manual uses `sb`.
 | [Installation](installation.md) | How to install the tool |
 | [Getting started](getting-started.md) | How to set up the tool and find your first entry |
 | [Google account](google-account.md) | How to connect Google Meet notes and Google Docs |
+| [Microsoft account](microsoft-account.md) | How to connect SharePoint and OneDrive |
 | [Slack account](slack-account.md) | How to connect a Slack workspace |
 | [Syncing](sync.md) | How to collect new data, and how to run it every day |
 | [Searching](search.md) | How to find and read entries |
-| [Adding documents](ingest.md) | How to add a Google Doc, a web page or a file |
+| [Adding documents](ingest.md) | How to add a Google Doc, a SharePoint or OneDrive file, a web page or a file |
 | [Importing data](import.md) | How to import data from an import bundle |
 | [Summaries and cost](summaries.md) | How to choose a summarizer, and how to limit its cost |
 | [AI agents](agents.md) | How to let an AI agent search your entries |

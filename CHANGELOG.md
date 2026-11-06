@@ -6,6 +6,13 @@ release is prepared; see `docs/specs/release.md`.
 
 ## Unreleased
 
+### Added
+
+- `sb ingest` reads files from SharePoint and OneDrive (ADR-0021). Add an account with
+  `sb account add microsoft <id> --client-id <GUID>`, then give `sb ingest` a
+  SharePoint or OneDrive link. The new source kind is `microsoft.file`. See
+  `manuals/en/microsoft-account.md`.
+
 ## 0.2.1 - 2026-11-03
 
 ### Fixed

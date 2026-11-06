@@ -239,6 +239,25 @@ pub enum AccountAdd {
         #[arg(long)]
         no_browser: bool,
     },
+    /// Run the Microsoft sign-in for SharePoint and OneDrive.
+    ///
+    /// Needs an application registered in Microsoft Entra ID (public client, redirect
+    /// URI http://localhost, delegated permission Files.Read.All). There is no client
+    /// secret.
+    Microsoft {
+        id: String,
+        /// Application (client) ID of the registered application.
+        #[arg(long, value_name = "GUID")]
+        client_id: String,
+        /// Tenant ID or domain, or organizations, consumers or common.
+        #[arg(long, default_value = "organizations")]
+        tenant: String,
+        #[arg(long)]
+        label: Option<String>,
+        /// Print the sign-in URL instead of opening a browser.
+        #[arg(long)]
+        no_browser: bool,
+    },
     /// Validate a Slack user token (xoxp-) and store it.
     Slack {
         id: String,

@@ -36,6 +36,7 @@ This chapter lists all commands. Add `--help` to a command to see its options.
 | Command | Purpose |
 |---|---|
 | `sb account add google <id> --client-secret <file>` | Add a Google account |
+| `sb account add microsoft <id> --client-id <GUID>` | Add a Microsoft account for SharePoint and OneDrive |
 | `sb account add slack <id>` | Add a Slack workspace |
 | `sb account list` | List the accounts |
 | `sb account show <id>` | Show one account |
@@ -50,7 +51,7 @@ This chapter lists all commands. Add `--help` to a command to see its options.
 | Command | Purpose |
 |---|---|
 | `sb sync` | Collect new data and write summaries |
-| `sb ingest <url-or-path>...` | Add a Google Doc, a web page or a file |
+| `sb ingest <url-or-path>...` | Add a Google Doc, a SharePoint or OneDrive file, a web page or a file |
 | `sb import <bundle>` | Import an import bundle |
 | `sb refetch` | Download the raw data again |
 | `sb reextract` | Process the saved raw data again (no network) |
@@ -101,6 +102,7 @@ Write dates as `YYYY-MM-DD`. Only `sb sync` also accepts a period such as `90d` 
 | `slack.day` | The messages of one Slack channel on one day, outside threads |
 | `google.meet` | Google Meet notes |
 | `google.doc` | A Google Doc, Sheet, Slide or Drive file |
+| `microsoft.file` | A file in SharePoint or OneDrive |
 | `web.page` | A web page |
 | `local.file` | A file on your computer |
 

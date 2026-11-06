@@ -101,7 +101,10 @@ impl Pipeline {
                     // An ingested document that kept its original keeps it.
                     let hint = if matches!(
                         e.source_kind,
-                        SourceKind::GoogleDoc | SourceKind::WebPage | SourceKind::LocalFile
+                        SourceKind::GoogleDoc
+                            | SourceKind::MicrosoftFile
+                            | SourceKind::WebPage
+                            | SourceKind::LocalFile
                     ) {
                         let keep = self
                             .catalog()

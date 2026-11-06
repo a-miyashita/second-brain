@@ -5,7 +5,7 @@ personal knowledge base for AI agents.
 
 The tool does the following:
 
-- It collects context from Slack, Google Meet notes, documents and web pages.
+- It collects context from Slack, Google Meet notes, documents (Google Docs, SharePoint and OneDrive files) and web pages.
 - It stores the raw data as files and keeps a catalog in SQLite.
 - It summarizes each entry with an LLM and records which model wrote each summary.
 - It lets AI agents search the catalog through an agent skill that calls the CLI
@@ -58,7 +58,9 @@ crates/sb-kernel    domain types and traits (no I/O)
 crates/sb-store     SQLite catalog, raw file store, secrets, FTS5 search backend
 crates/sb-pipeline  ingestion and summarization pipeline
 crates/sb-llm       summarizers (LLM APIs and LLM CLIs)
+crates/sb-oauth     OAuth helpers shared by the Google and Microsoft crates
 crates/sb-google    Google OAuth, Meet and Docs sources
+crates/sb-microsoft Microsoft OAuth and the SharePoint/OneDrive source
 crates/sb-slack     Slack source
 crates/sb-extract   text extraction from documents
 crates/sb-ondemand  sources that need no sync: web pages and local files
@@ -74,7 +76,7 @@ The dependency direction is: `sb-kernel` ← sources, `sb-llm` and `sb-store` �
 ## How the data flows
 
 ```text
-sources (Slack, Google, web, files)
+sources (Slack, Google, Microsoft, web, files)
    │ fetch
    ▼
 raw files ──normalize──▶ catalog (SQLite: entries, sections, summaries)

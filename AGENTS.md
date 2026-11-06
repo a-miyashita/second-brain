@@ -8,7 +8,7 @@ the skill in `crates/sb-setup/assets/skills/second-brain/`.
 
 second-brain is a Rust CLI (`second-brain`, alias `sb`) that:
 
-- ingests context (Slack, Google Meet, documents, ...) from multiple accounts;
+- ingests context (Slack, Google Meet, documents, SharePoint/OneDrive files, ...) from multiple accounts;
 - stores the raw data as files and a catalog in SQLite;
 - summarizes entries with pluggable LLM backends, recording which model produced
   each summary;
@@ -42,7 +42,9 @@ crates/sb-kernel    domain types and traits (no I/O)
 crates/sb-store     SQLite catalog, raw file store, secrets, sqlite-fts backend
 crates/sb-pipeline  ingestion / summarization pipeline
 crates/sb-llm       summarizers
+crates/sb-oauth     OAuth helpers shared by the Google and Microsoft crates
 crates/sb-google    Google OAuth + Meet/Docs sources
+crates/sb-microsoft Microsoft OAuth + SharePoint/OneDrive source
 crates/sb-slack     Slack source
 crates/sb-extract   document text extraction
 crates/sb-mcp       MCP server

@@ -16,6 +16,8 @@ second-brain-kernel = { path = "crates/sb-kernel", version = "=0.2.1" }
 second-brain-store = { path = "crates/sb-store", version = "=0.2.1" }
 second-brain-pipeline = { path = "crates/sb-pipeline", version = "=0.2.1" }
 second-brain-llm = { path = "crates/sb-llm", version = "=0.2.1" }
+second-brain-microsoft = { path = "crates/sb-microsoft", version = "=0.2.1" }
+second-brain-oauth = { path = "crates/sb-oauth", version = "=0.2.1" }
 second-brain-google = { path = "crates/sb-google", version = "=0.2.1" }
 second-brain-slack = { path = "crates/sb-slack", version = "=0.2.1" }
 second-brain-setup = { path = "crates/sb-setup", version = "=0.2.1" }
