@@ -2474,16 +2474,15 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
- "rand 0.9.5",
  "regex",
  "reqwest",
  "second-brain-extract",
  "second-brain-kernel",
+ "second-brain-oauth",
  "second-brain-pipeline",
  "second-brain-store",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2523,6 +2522,22 @@ dependencies = [
  "tracing",
  "ulid",
  "which",
+ "wiremock",
+]
+
+[[package]]
+name = "second-brain-oauth"
+version = "0.2.1"
+dependencies = [
+ "base64 0.22.1",
+ "rand 0.9.5",
+ "reqwest",
+ "second-brain-kernel",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "url",
  "wiremock",
 ]
 

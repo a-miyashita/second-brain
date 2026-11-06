@@ -1,19 +1,16 @@
-//! OAuth 2.0 for installed apps: authorization code with PKCE and a loopback
-//! redirect on 127.0.0.1 (ADR-0006, accounts-and-auth.md).
+//! Google OAuth 2.0 for installed apps (ADR-0006, accounts-and-auth.md): the
+//! Google scopes, the client JSON and the token provider. The generic flow
+//! (PKCE, loopback redirect, token requests) is in `second-brain-oauth`.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::Rng;
 use second_brain_kernel::Secret;
-use second_brain_kernel::source::SourceError;
+use second_brain_oauth::{ClientConfig, FlowOptions};
 use serde::Deserialize;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpListener;
+
+pub use second_brain_oauth::{OAuthError, code_challenge};
 
 pub const SCOPE_OPENID: &str = "openid";
 pub const SCOPE_EMAIL: &str = "email";
@@ -45,35 +42,6 @@ pub fn scopes_for(features: &[String], meet_api: bool) -> Vec<&'static str> {
         }
     }
     s
-}
-
-/// Errors of the OAuth flow.
-#[derive(Debug, thiserror::Error)]
-pub enum OAuthError {
-    #[error("invalid OAuth client JSON: {0}")]
-    InvalidClient(String),
-    #[error("authorization was denied or failed: {0}")]
-    Denied(String),
-    #[error("the refresh token is invalid or revoked (invalid_grant)")]
-    InvalidGrant,
-    #[error("network error: {0}")]
-    Network(String),
-    #[error("token endpoint error: {0}")]
-    Token(String),
-    #[error("timed out waiting for the browser redirect")]
-    Timeout,
-}
-
-impl From<OAuthError> for SourceError {
-    fn from(e: OAuthError) -> Self {
-        match e {
-            OAuthError::InvalidGrant | OAuthError::Denied(_) | OAuthError::InvalidClient(_) => {
-                SourceError::Auth(e.to_string())
-            }
-            OAuthError::Network(m) => SourceError::Network(m),
-            other => SourceError::Api(other.to_string()),
-        }
-    }
 }
 
 /// A Desktop-app OAuth client.
@@ -127,7 +95,7 @@ impl OAuthClient {
     }
 }
 
-/// Tokens returned by a code exchange.
+/// Tokens returned by a code exchange or a refresh.
 #[derive(Debug, Clone)]
 pub struct Tokens {
     pub refresh_token: Option<Secret>,
@@ -138,36 +106,42 @@ pub struct Tokens {
     pub scopes: Vec<String>,
 }
 
-fn random_string(len: usize) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
-    let mut rng = rand::rng();
-    (0..len)
-        .map(|_| CHARS[rng.random_range(0..CHARS.len())] as char)
-        .collect()
+impl From<second_brain_oauth::Tokens> for Tokens {
+    fn from(t: second_brain_oauth::Tokens) -> Self {
+        let email = t.id_token.as_deref().and_then(id_token_email);
+        Tokens {
+            refresh_token: t.refresh_token,
+            access_token: t.access_token,
+            expires_in: t.expires_in,
+            email,
+            scopes: t.scopes,
+        }
+    }
 }
 
-/// S256 code challenge of a verifier.
-pub fn code_challenge(verifier: &str) -> String {
-    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
-}
-
-/// Read the `email` claim from an ID token. The token comes straight from
-/// Google's token endpoint over TLS, so its signature is not re-verified.
+/// Read the `email` claim from an ID token (see `second_brain_oauth::id_token_claims`).
 pub fn id_token_email(id_token: &str) -> Option<String> {
-    let payload = id_token.split('.').nth(1)?;
-    let bytes = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
-    let v: Value = serde_json::from_slice(&bytes).ok()?;
-    v.get("email").and_then(Value::as_str).map(str::to_string)
+    second_brain_oauth::id_token_claims(id_token)?
+        .get("email")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+impl OAuthClient {
+    fn config(&self) -> ClientConfig {
+        ClientConfig {
+            client_id: self.client_id.clone(),
+            client_secret: Some(self.client_secret.clone()),
+            auth_uri: self.auth_uri.clone(),
+            token_uri: self.token_uri.clone(),
+        }
+    }
 }
 
 /// A consent flow in progress: the URL to open and the loopback listener.
 pub struct PendingAuth {
     pub url: String,
-    listener: TcpListener,
-    verifier: String,
-    state: String,
-    redirect_uri: String,
-    client: OAuthClient,
+    inner: second_brain_oauth::PendingAuth,
 }
 
 /// Start a consent flow: bind the loopback listener and build the URL.
@@ -176,190 +150,37 @@ pub async fn begin(
     scopes: &[&str],
     login_hint: Option<&str>,
 ) -> Result<PendingAuth, OAuthError> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| OAuthError::Network(format!("loopback listener: {e}")))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| OAuthError::Network(e.to_string()))?
-        .port();
-    let redirect_uri = format!("http://127.0.0.1:{port}");
-    let verifier = random_string(64);
-    let state = random_string(24);
-    let mut url =
-        url::Url::parse(&client.auth_uri).map_err(|e| OAuthError::InvalidClient(e.to_string()))?;
-    {
-        let mut q = url.query_pairs_mut();
-        q.append_pair("client_id", &client.client_id)
-            .append_pair("redirect_uri", &redirect_uri)
-            .append_pair("response_type", "code")
-            .append_pair("scope", &scopes.join(" "))
-            .append_pair("code_challenge", &code_challenge(&verifier))
-            .append_pair("code_challenge_method", "S256")
-            .append_pair("state", &state)
-            .append_pair("access_type", "offline")
-            .append_pair("prompt", "consent")
-            .append_pair("include_granted_scopes", "true");
-        if let Some(h) = login_hint {
-            q.append_pair("login_hint", h);
-        }
+    let mut extra = vec![
+        ("access_type", "offline"),
+        ("prompt", "consent"),
+        ("include_granted_scopes", "true"),
+    ];
+    if let Some(h) = login_hint {
+        extra.push(("login_hint", h));
     }
+    let opts = FlowOptions {
+        redirect_host: "127.0.0.1",
+        extra_params: &extra,
+    };
+    let inner = second_brain_oauth::begin(&client.config(), scopes, &opts).await?;
     Ok(PendingAuth {
-        url: url.to_string(),
-        listener,
-        verifier,
-        state,
-        redirect_uri,
-        client: client.clone(),
+        url: inner.url.clone(),
+        inner,
     })
 }
-
-const DONE_PAGE: &str = "<!doctype html><meta charset=utf-8><title>second-brain</title>\
-<p>Authorization complete. You can close this tab and return to the terminal.</p>";
 
 impl PendingAuth {
     /// Wait for the browser redirect, then exchange the code for tokens.
     pub async fn finish(self, timeout: Duration) -> Result<Tokens, OAuthError> {
-        let deadline = Instant::now() + timeout;
-        let code = loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(OAuthError::Timeout);
-            }
-            let (mut sock, _) = tokio::time::timeout(remaining, self.listener.accept())
-                .await
-                .map_err(|_| OAuthError::Timeout)?
-                .map_err(|e| OAuthError::Network(e.to_string()))?;
-            let mut buf = vec![0u8; 8192];
-            let n = sock
-                .read(&mut buf)
-                .await
-                .map_err(|e| OAuthError::Network(e.to_string()))?;
-            let req = String::from_utf8_lossy(&buf[..n]);
-            let target = req
-                .lines()
-                .next()
-                .and_then(|l| l.split_whitespace().nth(1))
-                .unwrap_or("/");
-            let parsed = url::Url::parse(&format!("http://127.0.0.1{target}")).ok();
-            let get = |k: &str| {
-                parsed.as_ref().and_then(|u| {
-                    u.query_pairs()
-                        .find(|(key, _)| key == k)
-                        .map(|(_, v)| v.to_string())
-                })
-            };
-            let (status, body) = match (get("code"), get("error")) {
-                (Some(_), _) | (_, Some(_)) => ("200 OK", DONE_PAGE),
-                _ => ("404 Not Found", "not found"),
-            };
-            let _ = sock
-                .write_all(
-                    format!(
-                        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                        body.len()
-                    )
-                    .as_bytes(),
-                )
-                .await;
-            if let Some(err) = get("error") {
-                return Err(OAuthError::Denied(err));
-            }
-            if let Some(code) = get("code") {
-                if get("state").as_deref() != Some(self.state.as_str()) {
-                    return Err(OAuthError::Denied("state mismatch".into()));
-                }
-                break code;
-            }
-            // Favicon or other requests: keep waiting.
-        };
-        exchange_code(&self.client, &code, &self.verifier, &self.redirect_uri).await
+        Ok(self.inner.finish(timeout).await?.into())
     }
-}
-
-fn http() -> Result<reqwest::Client, OAuthError> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| OAuthError::Network(e.to_string()))
-}
-
-async fn token_request(client: &OAuthClient, form: &[(&str, &str)]) -> Result<Value, OAuthError> {
-    let resp = http()?
-        .post(&client.token_uri)
-        .form(form)
-        .send()
-        .await
-        .map_err(|e| OAuthError::Network(e.to_string()))?;
-    let status = resp.status();
-    let v: Value = resp
-        .json()
-        .await
-        .map_err(|e| OAuthError::Token(e.to_string()))?;
-    if status.is_success() {
-        return Ok(v);
-    }
-    let err = v.get("error").and_then(Value::as_str).unwrap_or("unknown");
-    if err == "invalid_grant" {
-        return Err(OAuthError::InvalidGrant);
-    }
-    let desc = v
-        .get("error_description")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    Err(OAuthError::Token(format!("{status}: {err} {desc}")))
-}
-
-fn tokens_from(v: &Value) -> Result<Tokens, OAuthError> {
-    let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
-    Ok(Tokens {
-        refresh_token: s("refresh_token").map(Secret::new),
-        access_token: Secret::new(
-            s("access_token").ok_or_else(|| OAuthError::Token("no access_token".into()))?,
-        ),
-        expires_in: v.get("expires_in").and_then(Value::as_u64).unwrap_or(3600),
-        email: s("id_token").as_deref().and_then(id_token_email),
-        scopes: s("scope")
-            .map(|x| x.split_whitespace().map(str::to_string).collect())
-            .unwrap_or_default(),
-    })
-}
-
-/// Exchange an authorization code.
-pub async fn exchange_code(
-    client: &OAuthClient,
-    code: &str,
-    verifier: &str,
-    redirect_uri: &str,
-) -> Result<Tokens, OAuthError> {
-    let v = token_request(
-        client,
-        &[
-            ("grant_type", "authorization_code"),
-            ("code", code),
-            ("code_verifier", verifier),
-            ("redirect_uri", redirect_uri),
-            ("client_id", &client.client_id),
-            ("client_secret", client.client_secret.expose()),
-        ],
-    )
-    .await?;
-    tokens_from(&v)
 }
 
 /// Get a fresh access token from a refresh token.
 pub async fn refresh(client: &OAuthClient, refresh_token: &Secret) -> Result<Tokens, OAuthError> {
-    let v = token_request(
-        client,
-        &[
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_token.expose()),
-            ("client_id", &client.client_id),
-            ("client_secret", client.client_secret.expose()),
-        ],
-    )
-    .await?;
-    tokens_from(&v)
+    Ok(second_brain_oauth::refresh(&client.config(), refresh_token)
+        .await?
+        .into())
 }
 
 /// Access tokens refreshed on demand and cached in memory only.
@@ -399,6 +220,9 @@ impl TokenProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use second_brain_kernel::source::SourceError;
     use serde_json::json;
     use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
