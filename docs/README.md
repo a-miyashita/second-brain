@@ -28,6 +28,7 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0018](adrs/0018-crates-io-distribution-via-cargo-install.md) | Distribute through crates.io with `cargo install` only; crate renaming (`second-brain-*`, `core` → `kernel`) |
 | [0019](adrs/0019-tag-triggered-release-and-changelog.md) | Tag-triggered release workflow, `CHANGELOG.md` and the release skill |
 | [0020](adrs/0020-terminal-ui-for-setup-and-settings.md) | Terminal UI (ratatui) for `sb setup` and `sb config`; command mode kept |
+| [0021](adrs/0021-microsoft-sharepoint-onedrive-ingest.md) | Microsoft accounts and single-item ingest for SharePoint and OneDrive (`microsoft.file`) |
 
 ## Specs (`specs/`)
 
@@ -40,7 +41,7 @@ Specs describe how things work and may be edited as the design evolves.
 | [cli.md](specs/cli.md) | Commands, exit codes, JSON contract |
 | [search.md](specs/search.md) | Query model, FTS5 trigram + LIKE, future vector/hybrid |
 | [summarization.md](specs/summarization.md) | Prompts, profiles, providers, budget, `resummarize` |
-| [accounts-and-auth.md](specs/accounts-and-auth.md) | Google OAuth, Slack tokens, re-authentication |
+| [accounts-and-auth.md](specs/accounts-and-auth.md) | Google and Microsoft OAuth, Slack tokens, re-authentication |
 | [source-slack.md](specs/source-slack.md) | Slack sync and entries |
 | [source-google-meet.md](specs/source-google-meet.md) | Meet discovery strategies and Gemini notes parsing |
 | [import-format.md](specs/import-format.md) | Import bundle format (`second-brain-import/v1`) |
@@ -48,7 +49,8 @@ Specs describe how things work and may be edited as the design evolves.
 | [setup-and-scheduling.md](specs/setup-and-scheduling.md) | Installer, setup screen, scheduler registration |
 | [agent-integration.md](specs/agent-integration.md) | Skill and MCP server |
 | [ingest.md](specs/ingest.md) | `sb ingest`: locators, flow, statuses, settings, JSON, security |
-| [source-documents.md](specs/source-documents.md) | `google.doc`, `web.page` and `local.file` sources |
+| [source-documents.md](specs/source-documents.md) | `google.doc`, `microsoft.file`, `web.page` and `local.file` sources |
 | [extract.md](specs/extract.md) | `sb-extract`: formats, encodings, limits, library choice |
 | [mvp-plan.md](specs/mvp-plan.md) | Spikes, phases, work items, testing strategy |
+| [microsoft-ingest-plan.md](specs/microsoft-ingest-plan.md) | Implementation plan for ADR-0021: spikes, tasks, order, tests |
 | [release.md](specs/release.md) | Installation, crate names, manifest rules, CI checks, release workflow, `release.mjs`, release skill |

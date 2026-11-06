@@ -1,9 +1,9 @@
 # Text extraction (`sb-extract`)
 
-Related ADRs: 0002, 0008, 0014.
+Related ADRs: 0002, 0008, 0014, 0021.
 
 `sb-extract` turns the bytes of a document into Markdown text and a little metadata. It
-is called by `fetch` of `google.doc`, `web.page` and `local.file`
+is called by `fetch` of `google.doc`, `microsoft.file`, `web.page` and `local.file`
 ([source-documents.md](source-documents.md)); the result is stored as the raw
 `extracted_text` object (ADR-0014). Entries are not extracted again unless they are fetched again.
 

@@ -37,6 +37,8 @@ installer scripts or Homebrew until they exist.
 | `crates/sb-pipeline` | `second-brain-pipeline` | Ingestion and summarization pipeline | Internal |
 | `crates/sb-llm` | `second-brain-llm` | Summarizers | Internal |
 | `crates/sb-google` | `second-brain-google` | Google OAuth, Meet and Docs | Internal |
+| `crates/sb-microsoft` | `second-brain-microsoft` | Microsoft OAuth, SharePoint and OneDrive files | Internal |
+| `crates/sb-oauth` | `second-brain-oauth` | OAuth helpers shared by the Google and Microsoft crates | Internal |
 | `crates/sb-slack` | `second-brain-slack` | Slack source | Internal |
 | `crates/sb-extract` | `second-brain-extract` | Document text extraction | Internal |
 | `crates/sb-ondemand` | `second-brain-ondemand` | `web.page`, `local.file` | Internal |

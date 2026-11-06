@@ -1,8 +1,8 @@
-# Sources: Google Docs, web pages and local files
+# Sources: Google Docs, SharePoint/OneDrive files, web pages and local files
 
-Related ADRs: 0002, 0006, 0008, 0014.
+Related ADRs: 0002, 0006, 0008, 0014, 0021.
 
-Three on-demand sources (no `sync`) used by `sb ingest` ([ingest.md](ingest.md)). They
+Four on-demand sources (no `sync`) used by `sb ingest` ([ingest.md](ingest.md)). They
 implement `Source` with `supports_sync() = false`; `fetch` and `normalize` do the work.
 `fetch` gets the original bytes, runs `sb-extract` ([extract.md](extract.md)) and returns
 the extracted Markdown as the raw data (ADR-0014). `normalize` is pure: it turns the stored
@@ -11,10 +11,11 @@ text and the fetch metadata into sections.
 | Kind | Crate | Account |
 |---|---|---|
 | `google.doc` | `sb-google` | a Google account |
+| `microsoft.file` | `sb-microsoft` | a Microsoft account |
 | `web.page` | `sb-ondemand` (new) | pseudo-account `web` |
 | `local.file` | `sb-ondemand` (new) | pseudo-account `local` |
 
-Common to all three:
+Common to all four:
 
 - **Raw data** (ADR-0014): one `extracted_text` object (segment 0, `text/markdown`, ext `md`),
   cut at `ingest.max_text_chars`. `raw_status = present` requires it. The original bytes
@@ -233,10 +234,85 @@ Bodies are logged only at `trace`.
 `path` (the canonical path in the OS notation), `file_name`, `size`, `media_type`,
 `file_mtime`, plus the common keys.
 
+## `microsoft.file`
+
+SharePoint Online document libraries and OneDrive (work, school and personal), through
+Microsoft Graph (ADR-0021). On demand only: no folders, libraries or sites.
+
+### Identity
+
+- `source_id`: `<driveId>/<itemId>` (both from the `driveItem`). It does not change when
+  the file is renamed or moved inside the drive.
+- `source_url`: the item's `webUrl`.
+- `source_created_at`: `createdDateTime`; `source_updated_at`: `lastModifiedDateTime`.
+
+### Fetch
+
+All Graph calls use `https://graph.microsoft.com/v1.0` with the account's access token.
+
+1. **Resolve** the locator: `GET /shares/u!{base64url(url)}/driveItem` (no padding) with
+   `$select=id,name,size,eTag,cTag,createdDateTime,lastModifiedDateTime,webUrl,file,folder,package,deleted,remoteItem,parentReference,createdBy,lastModifiedBy`.
+   - `remoteItem` (an item shared into the user's OneDrive) is followed: the key is that of
+     the **target** (`remoteItem.parentReference.driveId` / `remoteItem.id`).
+   - `folder` is `NotApplicable("folders are not supported")`. `package` (OneNote) is
+     `NotApplicable("unsupported item type: package")`. `deleted` is `NotFound`.
+   - `400` or `404` from `shares` for a URL on a SharePoint host is `NotFound("not a file
+     that Graph can resolve; copy a sharing link")` when probing one account, and "not
+     found or no access" when probing several (ingest.md).
+2. **Unchanged check:** if the stored `fetch_state.etag` equals `eTag` (and `full = false`),
+   return `Unchanged` without downloading. `lastModifiedDateTime` is the fallback when
+   `eTag` is missing.
+3. **Download:** `GET /drives/{driveId}/items/{itemId}/content` with redirects **not**
+   followed. The `302` `Location` is fetched without the `Authorization` header, only if it
+   is `https`, streamed, and aborted above `ingest.max_file_bytes`. (`size` above the limit
+   is refused before the download.)
+4. **Extract** by file name extension, confirmed by content, as for `local.file`
+   (`sb-extract`; extract.md). Content types:
+
+   | Type | Result |
+   |---|---|
+   | docx, pptx, xlsx, xls, ods, pdf, txt, md, csv, tsv, html | the matching extractor |
+   | `.doc`, `.ppt` | `NotApplicable` with the hint "save it as docx / pptx" |
+   | `.one`, `.loop`, `.whiteboard`, `.fluid`, SharePoint site pages (`.aspx`), images, audio, video, archives, other | `NotApplicable("unsupported file type: <ext>")` |
+
+5. Return a `Replace` bundle with `fetch_state = {"etag": ..., "modified_time": ...}` and the
+   fetch metadata. The raw-data rules at the top of this file apply (`--keep-original` keeps
+   the downloaded bytes as `primary`).
+
+Limits and errors:
+
+- `401` (after one token refresh) and `invalid_grant`, `interaction_required` or
+  `consent_required` at the token endpoint are the usual `needs_reauth` handling
+  (accounts-and-auth.md); the probe moves on to the next account.
+- `403` and `404` for an item are both "not found or no access" when probing accounts. A
+  single account gets the more specific message, and Entra's error text (for example an
+  administrator-consent requirement, `AADSTS65001`) is shown as it is.
+- `429` and `503` honor `Retry-After`; other transient errors use the retry policy of the
+  other sources. After retries the result is `failed`.
+- The access token is sent only to `graph.microsoft.com`. The locator itself is never
+  requested by `sb`, so the web address guard does not apply to it.
+
+### Metadata
+
+`drive_id`, `item_id`, `drive_type` (`business`, `documentLibrary`, `personal`),
+`mime_type`, `file_name`, `owners: [{name, email?}]` (from `createdBy` / `lastModifiedBy`),
+`ms_modified_time`, `ms_etag`, plus the common keys. The title falls back as for the other
+kinds (the extractor title, then the file name without its extension).
+
+### Accounts
+
+An account of kind `microsoft` is eligible when it is enabled, not `needs_reauth`, and was
+granted `Files.Read.All` (every account is, since that is the only feature).
+
 ## Tests
 
 - Drive: `wiremock` serving metadata, exports, downloads, shortcuts, trashed files,
   `403`/`404` probes and the export-size error.
+- Microsoft: `wiremock` for `login.microsoftonline.com` (token, refresh rotation,
+  `invalid_grant`) and `graph.microsoft.com` (`shares` with sharing-link and direct-URL
+  shapes, `remoteItem`, folder, package, deleted, `400`/`403`/`404`, `429` with
+  `Retry-After`, the `302` download and a check that the redirected request carries no
+  `Authorization` header and refuses `http`).
 - Web: `wiremock` on loopback with `ingest.web.allow_private = true`; the address
   guard has its own unit tests on the address classes and on the resolver. Cases: redirect
   loops, oversized body, `401`, `304`, content-type sniffing, JavaScript-only page.

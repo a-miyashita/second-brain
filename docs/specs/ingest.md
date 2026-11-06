@@ -1,6 +1,6 @@
 # Single-item ingest (`sb ingest`)
 
-Related ADRs: 0002, 0005, 0008, 0012, 0013, 0014.
+Related ADRs: 0002, 0005, 0008, 0012, 0013, 0014, 0021.
 
 Per-kind details are in [source-documents.md](source-documents.md). Text extraction is
 in [extract.md](extract.md).
@@ -15,7 +15,7 @@ sb ingest <locator>... [--account ID] [--title T] [--context TEXT] [--date DATE]
 | Option | Meaning |
 |---|---|
 | `<locator>` | One or more URLs or paths (below). At most 50 per call |
-| `--account ID` | The Google account to use for Google URLs. A usage error if the account is not a Google account. Ignored for other locators |
+| `--account ID` | The account to use for Google URLs (a Google account) or for SharePoint/OneDrive URLs (a Microsoft account). A usage error if the account's kind does not match the locator. Ignored for other locators |
 | `--title T` | Replace the extracted title. Only with a single locator |
 | `--context TEXT` | Why this matters. Becomes the `background` section and the summarizer hint. Applies to every locator in the call |
 | `--date DATE` | Replace the document date (`source_created_at`). Only with a single locator. Same formats as `sb search --since` |
@@ -36,13 +36,20 @@ Applied in order, per locator:
    `/presentation/d/<id>`, `/file/d/<id>`, or `open?id=<id>` / `uc?id=<id>`.
    - A published-to-web URL (`/d/e/...`) is a `web.page`.
    - A folder URL (`/drive/folders/...`) is a usage error ("folders are not supported").
-2. **Slack permalinks** (`*.slack.com/archives/...`) are a usage error: "Slack content is
+2. **Microsoft** (`microsoft.file`): the host is `*.sharepoint.com` (including
+   `*-my.sharepoint.com`), `onedrive.live.com` or `1drv.ms`. The URL is given to Graph as it
+   is (sharing links and direct document URLs); `sb` does not parse it.
+   - A host that ends in `.sharepoint.cn`, `.sharepoint.us` or `.sharepoint.de` is not
+     routed here; it is a `web.page` (sovereign clouds are not supported).
+   - There is no folder check on the URL: Graph says whether the item is a folder, and the
+     result is `not_applicable` ("folders are not supported").
+3. **Slack permalinks** (`*.slack.com/archives/...`) are a usage error: "Slack content is
    ingested by `sb sync`".
-3. Any other `http://` or `https://` URL is a **`web.page`**.
-4. A `file://` URL, or a string that is not a URL, is a **`local.file`** path. It is
+4. Any other `http://` or `https://` URL is a **`web.page`**.
+5. A `file://` URL, or a string that is not a URL, is a **`local.file`** path. It is
    resolved against the current directory. A Windows drive path (`C:\...`) is a path,
    not a URL.
-5. Any other scheme (`ftp://`, ...) is a usage error.
+6. Any other scheme (`ftp://`, ...) is a usage error.
 
 A directory is a usage error ("pass files; use your shell to expand `dir/*`"). On
 Windows, where the shell does not expand wildcards, `*` and `?` in a path are expanded
@@ -56,7 +63,7 @@ locator's `failed` result and the exit code is 64 only if **no** locator was val
 ```text
 for each locator (bounded concurrency):
   classify -> source kind
-  choose account            (google.doc: see below)   -> SourceRef via Source::resolve
+  choose account            (google.doc, microsoft.file: see below)   -> SourceRef via Source::resolve
   look up the natural key   -> existing entry?
   duplicate checks          -> `google.meet` file ID before the fetch; `local.file` hash at commit
                                time, one locator at a time, so two copies in one call see each other
@@ -95,6 +102,15 @@ then, unless --no-summary:
      (`not found or no access`, `needs re-authentication`, ...).
    - No Google account at all: `failed` with the hint `sb account add google`.
 
+### Choosing the Microsoft account
+
+1. `--account`, if given.
+2. The account of an existing `microsoft.file` entry with the same `driveId/itemId`.
+3. Otherwise each **eligible** Microsoft account (enabled, not `needs_reauth`) is probed in
+   order of creation with the `shares` call, and the first that can read the item wins.
+   Results and messages are as for Google: one line per account when none can read it, and
+   the hint `sb account add microsoft` when there is no Microsoft account.
+
 ### Existing entries
 
 | Situation | Result |
@@ -106,7 +122,7 @@ then, unless --no-summary:
 | Existing key with `raw_status = missing` (an imported entry) | `updated`: the raw data is fetched, as `sb refetch` would |
 | Drive file ID already present as `google.meet` | `duplicate` (`duplicate_of` = that entry); nothing is changed |
 | `local.file` with the same content hash as another `local.file` entry | `duplicate`, unless `--force` |
-| The source says "not something we make entries from" (a Drive folder or form, an unsupported file type, no extractable text) | `not_applicable`, with the reason |
+| The source says "not something we make entries from" (a Drive or SharePoint folder, a Drive form, a OneNote notebook, an unsupported file type, no extractable text) | `not_applicable`, with the reason |
 
 A document shorter than `summary.min_chars` is stored with `summary_status = skipped`; the
 result then carries a `message` ("shorter than summary.min_chars (400): kept as searchable
@@ -224,6 +240,9 @@ Detailed rules per kind are in source-documents.md. Summary:
 - **Web**: only `http`/`https`; non-public addresses refused on each hop; size and time
   limits; no cookies, no credentials, no `robots.txt` lookup (this is one fetch the user
   asked for, not a crawler).
+- **Microsoft**: the access token goes only to Microsoft endpoints; the user's URL is
+  never requested by `sb`; the download redirect is followed without credentials and over
+  `https` only.
 - **Local**: the home directory and credential locations are refused with no override.
 - **Extraction** treats files as untrusted: size, decompressed size and time are
   bounded (extract.md).
