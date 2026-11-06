@@ -64,6 +64,7 @@ locator's `failed` result and the exit code is 64 only if **no** locator was val
 for each locator (bounded concurrency):
   classify -> source kind
   choose account            (google.doc, microsoft.file: see below)   -> SourceRef via Source::resolve
+                            (microsoft.file: Source::locate, one Graph call)
   look up the natural key   -> existing entry?
   duplicate checks          -> `google.meet` file ID before the fetch; `local.file` hash at commit
                                time, one locator at a time, so two copies in one call see each other
@@ -104,10 +105,13 @@ then, unless --no-summary:
 
 ### Choosing the Microsoft account
 
-1. `--account`, if given.
-2. The account of an existing `microsoft.file` entry with the same `driveId/itemId`.
-3. Otherwise each **eligible** Microsoft account (enabled, not `needs_reauth`) is probed in
-   order of creation with the `shares` call, and the first that can read the item wins.
+1. `--account`, if given (a usage error if it is not a Microsoft account).
+2. Otherwise each **eligible** Microsoft account (enabled, not `needs_reauth`) is probed in
+   order of creation with the `shares` call (`Source::locate`), and the first that can read
+   the item wins. The key (`driveId/itemId`) is known only after this call, so unlike for
+   Google there is no "account of the existing entry" step. The order is stable, so the same
+   account wins each time; an item that this account can no longer read is read by the next
+   account and becomes a second entry under it.
    Results and messages are as for Google: one line per account when none can read it, and
    the hint `sb account add microsoft` when there is no Microsoft account.
 

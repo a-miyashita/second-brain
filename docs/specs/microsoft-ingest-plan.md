@@ -84,3 +84,15 @@ See "Tests" in [source-documents.md](source-documents.md). In addition:
   real tenant (the maintainer or a volunteer), since CI has no network access to Microsoft.
 - ADR-0021 is `Accepted` (2026-11-06); add an Amendments entry for anything
   that the spikes changed.
+
+## Status (2026-11-06)
+
+- Done: tasks 1 to 8 and 10 (`sb-oauth`, kernel kinds and `Source::locate`, OAuth, Graph
+  client, source, pipeline, CLI, `doctor` through `online_check`; README, AGENTS.md,
+  manual chapter, CHANGELOG).
+- Task 9: the skill text and version (3) are updated. The settings screen lists Microsoft
+  accounts and edits their config (`client_id`, `tenant`); it has no "add account" form for
+  any kind, so none was added for Microsoft.
+- Not done: spikes S-MS1 to S-MS4 need a real tenant. They are open, and the first manual
+  check against a real tenant (see "Done when") is still to do. Until then the accepted
+  SharePoint URL forms are those that the Graph documentation describes.

@@ -63,11 +63,15 @@ Crate dependency rules:
 - `sb-kernel` depends on no other workspace crate. Source, LLM and store crates depend
   only on `sb-kernel`, plus `sb-extract` where needed (`sb-google` for `google.doc`,
   `sb-microsoft` for `microsoft.file`, `sb-ondemand`). `sb-google` and `sb-microsoft`
-  also depend on `sb-oauth`, which has no other workspace dependency.
+  also depend on `sb-oauth`, which depends only on `sb-kernel`.
 - An account may serve several source kinds (a Google account has `google.meet` and
   `google.doc`). Its adapter (`GoogleSource`) dispatches by source kind and delegates
   `sync` to the Meet source; `sb ingest` calls `fetch` and `normalize` with the kind.
   The `Source` trait and `SourceFactory` stay one adapter per account.
+- `Source::resolve` maps a locator to a natural key without I/O. A source whose key is
+  known only to the service (`microsoft.file`: drive and item ID) implements
+  `Source::locate` instead, which may ask the service; `sb ingest` calls it for such
+  locators. Sources that do not need it keep the default, which calls `resolve`.
 - `sb-pipeline` wires everything together. `sb-cli` and `sb-mcp` depend on
   `sb-pipeline` and `sb-store`.
 - Only `sb-cli` (and `sb-mcp` for its server loop) may print to stdout.

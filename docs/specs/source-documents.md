@@ -256,9 +256,14 @@ All Graph calls use `https://graph.microsoft.com/v1.0` with the account's access
      the **target** (`remoteItem.parentReference.driveId` / `remoteItem.id`).
    - `folder` is `NotApplicable("folders are not supported")`. `package` (OneNote) is
      `NotApplicable("unsupported item type: package")`. `deleted` is `NotFound`.
-   - `400` or `404` from `shares` for a URL on a SharePoint host is `NotFound("not a file
-     that Graph can resolve; copy a sharing link")` when probing one account, and "not
-     found or no access" when probing several (ingest.md).
+   - `400` from `shares` (Graph cannot resolve the URL form) is `NotFound("Graph could not
+     resolve this URL; copy a sharing link and ingest that")`. `403` and `404` are
+     `NotFound("not found or no access")`. `sb ingest` prefixes each message with the
+     account, so probing several accounts gives one line per account.
+   - This step is `Source::locate` (architecture.md); `resolve` cannot do it offline and
+     returns `None`.
+   - `fetch` repeats the lookup by drive and item ID (`GET /drives/{driveId}/items/{itemId}`)
+     for the metadata, so that the unchanged check does not depend on the sharing link.
 2. **Unchanged check:** if the stored `fetch_state.etag` equals `eTag` (and `full = false`),
    return `Unchanged` without downloading. `lastModifiedDateTime` is the fallback when
    `eTag` is missing.

@@ -1,7 +1,7 @@
 # Adding documents
 
 Use `sb ingest` to add one item to the knowledge base. The item can be a Google Doc,
-a web page or a file on your computer.
+a SharePoint or OneDrive file, a web page or a file on your computer.
 
 Use this command for content that a sync does not collect. For example, a thread
 links to a design document. You add the document with `sb ingest`.
@@ -10,6 +10,7 @@ links to a design document. You add the document with `sb ingest`.
 
 ```sh
 $ sb ingest https://docs.google.com/document/d/<id>/edit --context "Q3 launch case"
+$ sb ingest "https://contoso.sharepoint.com/:w:/s/team/EabcDEF" --context "Beta launch"
 $ sb ingest https://example.com/blog/release-notes
 $ sb ingest ./minutes.docx ./budget.xlsx --context "FY27 planning"
 ```
@@ -22,6 +23,7 @@ You can give up to 50 items in one command.
 |---|---|
 | Google Docs, Sheets and Slides | The tool uses your Google accounts. See below |
 | Files in Google Drive | PDF, docx, pptx, xlsx, text, CSV and similar files |
+| Files in SharePoint and OneDrive | The same file types as Google Drive. The tool uses your Microsoft accounts. See [Microsoft account](microsoft-account.md) |
 | Web pages | Public pages only. The tool reads the main text of the page |
 | Local files | `txt`, `md`, `csv`, `tsv`, `html`, `docx`, `pptx`, `xlsx`, `xls`, `ods` and `pdf` |
 
@@ -31,7 +33,8 @@ The tool cannot read these items:
 - scanned documents without a text layer, and images;
 - files with a password;
 - the old formats `.doc` and `.ppt`. Save them as `.docx` and `.pptx`;
-- Google Drive folders and forms;
+- Google Drive folders and forms, and SharePoint or OneDrive folders;
+- OneNote notebooks, Loop pages, whiteboards and SharePoint site pages;
 - Slack links. The tool reads Slack with `sb sync`.
 
 For a page that needs a login, save the page as a file. Then add the file.
@@ -45,7 +48,7 @@ For a page that needs a login, save the page as a file. Then add the file.
 | `--context <text>` | Why the item matters. The tool stores it in the `background` section, and gives it to the summarizer as a hint |
 | `--title <text>` | Replace the title. Use it with one item |
 | `--date <date>` | Replace the date of the document. Use it with one item. Write the date as `YYYY-MM-DD` |
-| `--account <id>` | The Google account that reads Google links |
+| `--account <id>` | The Google account that reads Google links, or the Microsoft account that reads SharePoint and OneDrive links |
 | `--keep-original` | Also keep the original file or page |
 | `--no-summary` | Store the entry now. Write the summary later |
 | `--force` | Fetch the item again, even if nothing changed. It also adds a local file that is a duplicate |
@@ -90,6 +93,11 @@ If at least one item has the status `failed` or `not_applicable`, the exit code 
 - **Google accounts.** The tool tries your Google accounts in the order in which you
   added them. The first account that can open the file reads it. Use `--account` to
   choose one. The account must have the feature `meet` or `docs`.
+- **Microsoft accounts.** The tool tries your Microsoft accounts in the order in which
+  you added them. The first account that can open the file reads it. Use `--account` to
+  choose one. Use a link that you can open in your browser. A sharing link
+  ("Copy link" in SharePoint or OneDrive) works best. If the tool says that it cannot
+  resolve the link, copy a sharing link and add that.
 - **Duplicates.** If a Google Doc is already an entry from a Meet sync, the status is
   `duplicate`. A local file with the same content as another local file is also a
   `duplicate`.

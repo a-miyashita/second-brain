@@ -143,3 +143,25 @@ Decisions are needed on:
   on Microsoft endpoints.
 - **Microsoft Graph SDK crates**: rejected. As in ADR-0006, a thin `reqwest` client for
   three endpoints is enough.
+
+## Amendments
+
+### 2026-11-06: details settled during implementation
+
+- **Key lookup.** The natural key is known only to Graph, so the `Source` trait got
+  `locate`, an async `resolve` that may use the network (default: `resolve`). `sb ingest`
+  calls it for SharePoint and OneDrive links. As a result, decision 8 changes: there is
+  no "account of an existing entry" step, because the key is known only after the first
+  account resolves the item. Accounts are probed in order of creation.
+- **`sb-oauth`** holds PKCE, the loopback listener (which also listens on `::1` for
+  `localhost` redirects), and the token requests. `sb-google` keeps its public API and
+  uses it. Errors `interaction_required`, `consent_required` and `login_required` are
+  handled like `invalid_grant` (the account needs to sign in again).
+- **Config.** A Microsoft account's `config` is `{client_id, tenant, scopes?}`
+  (`MicrosoftConfig`). The client ID and tenant are validated (GUID; tenant limited to
+  letters, digits, `-` and `.`) because the tenant becomes a URL path segment.
+- **Rotation.** The token provider takes a sink that stores the new refresh token through
+  a second catalog connection; if the write fails, the refresh fails.
+- **Crates.** The workspace has twelve crates. `second-brain-oauth` and
+  `second-brain-microsoft` need the bootstrap described in release.md before the release
+  that includes them.

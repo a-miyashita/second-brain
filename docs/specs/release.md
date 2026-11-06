@@ -169,7 +169,7 @@ list current.
 | GitHub: environment `release` | Required reviewer: the maintainer. Deployment tags: `v*` only. Self-review allowed while there is one maintainer |
 | GitHub: ruleset for tags `v*` | Only the maintainer can create tags; tags cannot be deleted or moved by others |
 | GitHub: ruleset for `main` | Pull request required (the release commit goes through a pull request) |
-| crates.io: each of the ten crates | Trusted publisher: repository `a-miyashita/second-brain`, workflow `release.yml`, environment `release` |
+| crates.io: each of the twelve crates | Trusted publisher: repository `a-miyashita/second-brain`, workflow `release.yml`, environment `release` |
 | crates.io: account | A token for the bootstrap only (scope `publish-new`, `publish-update`); revoke it after the first release |
 
 ## Release procedure
@@ -197,6 +197,16 @@ Normal release, with the release skill (`.claude/skills/release/SKILL.md`):
 
 Without the skill, the same steps work by hand: edit `Unreleased`, run `bump`, make
 the pull request, tag, push the tag.
+
+### Crates added after the first release
+
+`second-brain-oauth` and `second-brain-microsoft` (ADR-0021) do not exist on crates.io
+when the release that introduces them is prepared, and trusted publishing needs the
+crate to exist. Before pushing that tag, the maintainer publishes both once with a
+bootstrap token (`CARGO_REGISTRY_TOKEN=... node scripts/release.mjs publish` from the
+merged `main` publishes whatever is missing, in dependency order), adds the trusted
+publisher to each of them on crates.io, and revokes the token. The same applies to any
+future crate.
 
 ### First release (`v0.1.0`) — bootstrap
 
