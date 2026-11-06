@@ -96,8 +96,10 @@ Application (client) ID and the tenant are needed, and neither is a secret.
 - Access tokens are refreshed on demand.
 - **Entra rotates refresh tokens.** Every refresh response carries a new refresh token.
   It is written to the secrets table **before** the new access token is returned for use.
-  Two processes cannot refresh at once: ingest takes the sync lock, and the refresh is
-  serialized inside the process.
+  Inside one process the refresh is serialized. Ingest takes the sync lock, but
+  `sb auth status --online`, `doctor` and `sb auth login` do not, so two processes can
+  refresh at the same time. The last writer wins. Entra normally keeps the previous
+  refresh token valid for a while, so the damage is a sign-in again at worst.
 - On `invalid_grant`, `interaction_required` or `consent_required`: set the account to
   `needs_reauth`, open an `auth.needs_reauth` issue, and skip the account for this run.
   Refresh tokens of public clients expire after 90 days of inactivity, and conditional

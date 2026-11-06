@@ -92,7 +92,7 @@ fn download_client(https_only: bool) -> Result<reqwest::Client, SourceError> {
             }
         }))
         .build()
-        .map_err(|e| SourceError::Network(e.to_string()))
+        .map_err(|e| SourceError::Network(e.without_url().to_string()))
 }
 
 impl GraphApi {
@@ -103,7 +103,7 @@ impl GraphApi {
             // The download redirect is handled by hand (see `download`).
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|e| SourceError::Network(e.to_string()))?;
+            .map_err(|e| SourceError::Network(e.without_url().to_string()))?;
         Ok(GraphApi {
             http,
             download_http: download_client(true)?,
@@ -153,7 +153,7 @@ impl GraphApi {
                 Ok(r) => r,
                 Err(e) => {
                     if attempt >= MAX_ATTEMPTS {
-                        return Err(SourceError::Network(e.to_string()).into());
+                        return Err(SourceError::Network(e.without_url().to_string()).into());
                     }
                     tracing::info!(attempt, "Graph network error; retrying");
                     tokio::time::sleep(Duration::from_secs(2u64.pow(attempt).min(60))).await;
@@ -181,6 +181,14 @@ impl GraphApi {
                 tracing::info!(attempt, status = status.as_u16(), "Graph asked to back off");
                 tokio::time::sleep(wait).await;
                 continue;
+            }
+            if status.as_u16() == 401 {
+                // A 401 right after a successful refresh is not about the stored
+                // credential, so it must not put the account into `needs_reauth`.
+                return Err(SourceError::Api(
+                    "Microsoft Graph rejected a freshly issued token (HTTP 401)".into(),
+                )
+                .into());
             }
             return Err(error_from(resp).await);
         }
@@ -252,7 +260,7 @@ impl GraphApi {
                 .get(target)
                 .send()
                 .await
-                .map_err(|e| SourceError::Network(e.to_string()))?;
+                .map_err(|e| SourceError::Network(e.without_url().to_string()))?;
             if r.status().as_u16() == 404 {
                 return Ok(None);
             }
@@ -274,7 +282,7 @@ impl GraphApi {
         while let Some(c) = resp
             .chunk()
             .await
-            .map_err(|e| SourceError::Network(e.to_string()))?
+            .map_err(|e| SourceError::Network(e.without_url().to_string()))?
         {
             buf.extend_from_slice(&c);
             if buf.len() as u64 > max_bytes {

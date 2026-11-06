@@ -98,7 +98,6 @@ impl MicrosoftClient {
 
 /// The `config` of a Microsoft account (not secret).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct MicrosoftConfig {
     /// Application (client) ID of the registered application.
     pub client_id: String,
