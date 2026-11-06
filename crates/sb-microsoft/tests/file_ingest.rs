@@ -496,7 +496,13 @@ async fn missing_items_say_so_and_a_bad_url_suggests_a_sharing_link() {
         .unwrap();
     let msg = |i: usize| r.results[i].message.clone().unwrap();
     assert_eq!(r.results[0].status, IngestStatus::Failed);
-    assert_eq!(msg(0), "work: not found or no access");
+    // Graph's own text is kept, so a missing permission is visible.
+    assert!(
+        msg(0).starts_with("work: not found or no access")
+            && msg(0).contains("accessDenied: Access denied"),
+        "{}",
+        msg(0)
+    );
     assert_eq!(r.results[1].status, IngestStatus::Failed);
     assert!(msg(1).contains("sharing link"), "{}", msg(1));
 }

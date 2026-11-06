@@ -286,12 +286,15 @@ All Graph calls use `https://graph.microsoft.com/v1.0` with the account's access
 
 Limits and errors:
 
-- `401` (after one token refresh) and `invalid_grant`, `interaction_required` or
-  `consent_required` at the token endpoint are the usual `needs_reauth` handling
-  (accounts-and-auth.md); the probe moves on to the next account.
-- `403` and `404` for an item are both "not found or no access" when probing accounts. A
-  single account gets the more specific message, and Entra's error text (for example an
-  administrator-consent requirement, `AADSTS65001`) is shown as it is.
+- `invalid_grant`, `interaction_required` or `consent_required` at the token endpoint are
+  the usual `needs_reauth` handling (accounts-and-auth.md); the probe moves on to the next
+  account. A `401` from Graph is retried once with a fresh token. A second `401` is an
+  ordinary API failure and does not change the account status, because the credential was
+  just renewed.
+- `403` and `404` for an item are both "not found or no access" when probing accounts. The
+  message always carries Graph's own error text (`accessDenied: ...`), and an Entra
+  description at the token endpoint (for example `AADSTS65001`, administrator consent) is
+  shown as it is.
 - `429` and `503` honor `Retry-After`; other transient errors use the retry policy of the
   other sources. After retries the result is `failed`.
 - The access token is sent only to `graph.microsoft.com`. The locator itself is never

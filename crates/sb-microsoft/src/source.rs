@@ -149,11 +149,18 @@ fn unsupported_reason(name: &str) -> Option<String> {
     }
 }
 
-fn not_found_message(status: u16) -> String {
-    if status == 400 {
-        "Graph could not resolve this URL; copy a sharing link and ingest that".into()
+/// The text for an item that Graph did not return. `message` is Graph's own error text,
+/// which is how a missing permission or an administrator-consent rule becomes visible.
+fn not_found_message(status: u16, message: &str) -> String {
+    let base = if status == 400 {
+        "Graph could not resolve this URL; copy a sharing link and ingest that"
     } else {
-        "not found or no access".into()
+        "not found or no access"
+    };
+    if message.is_empty() {
+        base.into()
+    } else {
+        format!("{base} (HTTP {status}: {message})")
     }
 }
 
@@ -212,7 +219,9 @@ impl Source for MicrosoftSource {
 
     async fn locate(&self, locator: &str) -> Result<Located, SourceError> {
         match self.api()?.shares_item(locator).await? {
-            ItemLookup::Missing { status, .. } => Ok(Located::NotFound(not_found_message(status))),
+            ItemLookup::Missing { status, message } => {
+                Ok(Located::NotFound(not_found_message(status, &message)))
+            }
             ItemLookup::Found(item) => Ok(match classify_item(&item) {
                 Kind::File(info) => Located::Found(self.source_ref(&info)),
                 Kind::NotApplicable(why) => Located::NotApplicable(why),
@@ -238,8 +247,8 @@ impl Source for MicrosoftSource {
         };
         let item = match api.item(drive_id, item_id).await? {
             ItemLookup::Found(v) => v,
-            ItemLookup::Missing { status, .. } => {
-                return Ok(FetchOutcome::NotFound(not_found_message(status)));
+            ItemLookup::Missing { status, message } => {
+                return Ok(FetchOutcome::NotFound(not_found_message(status, &message)));
             }
         };
         let info = match classify_item(&item) {

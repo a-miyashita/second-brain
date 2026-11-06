@@ -299,6 +299,22 @@ impl Pipeline {
                     "{a} is not a Google or Microsoft account"
                 )));
             }
+            // The kind must fit every locator that names a provider.
+            for w in &work {
+                let wanted = match w.locator {
+                    Locator::Google(_) => AccountKind::Google,
+                    Locator::Microsoft(_) => AccountKind::Microsoft,
+                    _ => continue,
+                };
+                if acc.kind != wanted {
+                    return Err(PipelineError::Invalid(format!(
+                        "{a} is a {} account, but {} needs a {} account",
+                        acc.kind.as_str(),
+                        w.raw,
+                        wanted.as_str()
+                    )));
+                }
+            }
         }
         let hint = IngestHint {
             locator: String::new(),

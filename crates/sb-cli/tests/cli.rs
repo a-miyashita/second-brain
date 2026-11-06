@@ -642,6 +642,24 @@ fn microsoft_accounts_and_sharepoint_links() {
     );
     assert_ne!(o.status.code(), Some(0));
 
+    // A Microsoft account cannot read a Google Docs link: a usage error.
+    let o = sb(
+        &home,
+        &[
+            "ingest",
+            "--dry-run",
+            "--account",
+            "ms",
+            "https://docs.google.com/document/d/abc123/edit",
+        ],
+    );
+    assert_eq!(o.status.code(), Some(64));
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("needs a google account"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+
     // The account shows up in `account list` and `auth status`.
     let v = json_of(&sb(&home, &["account", "list", "--json"]));
     let ms = v["accounts"]

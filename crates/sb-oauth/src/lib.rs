@@ -26,8 +26,8 @@ pub enum OAuthError {
     InvalidClient(String),
     #[error("authorization was denied or failed: {0}")]
     Denied(String),
-    #[error("the refresh token is invalid or revoked (invalid_grant)")]
-    InvalidGrant,
+    #[error("the refresh token is invalid or revoked (invalid_grant){}", detail(.0))]
+    InvalidGrant(String),
     /// The provider wants an interactive sign-in or consent again
     /// (`interaction_required`, `consent_required`, `login_required`).
     #[error("signing in again is required: {0}")]
@@ -45,15 +45,24 @@ impl OAuthError {
     pub fn needs_reauth(&self) -> bool {
         matches!(
             self,
-            OAuthError::InvalidGrant | OAuthError::InteractionRequired(_)
+            OAuthError::InvalidGrant(_) | OAuthError::InteractionRequired(_)
         )
+    }
+}
+
+/// `: <text>` for an error that carries the provider's description, or nothing.
+fn detail(text: &str) -> String {
+    if text.is_empty() {
+        String::new()
+    } else {
+        format!(": {text}")
     }
 }
 
 impl From<OAuthError> for SourceError {
     fn from(e: OAuthError) -> Self {
         match e {
-            OAuthError::InvalidGrant
+            OAuthError::InvalidGrant(_)
             | OAuthError::InteractionRequired(_)
             | OAuthError::Denied(_)
             | OAuthError::InvalidClient(_) => SourceError::Auth(e.to_string()),
@@ -290,7 +299,7 @@ async fn token_request(client: &ClientConfig, form: &[(&str, &str)]) -> Result<V
         .and_then(Value::as_str)
         .unwrap_or("");
     match err {
-        "invalid_grant" => Err(OAuthError::InvalidGrant),
+        "invalid_grant" => Err(OAuthError::InvalidGrant(desc.chars().take(300).collect())),
         "interaction_required" | "consent_required" | "login_required" => {
             Err(OAuthError::InteractionRequired(format!("{err} {desc}")))
         }
@@ -483,7 +492,7 @@ mod tests {
         }
         let c = client(format!("{}/token", server.uri()), Some("s"));
         let e = refresh(&c, &Secret::new("revoked")).await.unwrap_err();
-        assert!(matches!(e, OAuthError::InvalidGrant) && e.needs_reauth());
+        assert!(matches!(e, OAuthError::InvalidGrant(_)) && e.needs_reauth());
         let e = refresh(&c, &Secret::new("stale")).await.unwrap_err();
         assert!(matches!(e, OAuthError::InteractionRequired(_)) && e.needs_reauth());
         assert!(matches!(SourceError::from(e), SourceError::Auth(_)));

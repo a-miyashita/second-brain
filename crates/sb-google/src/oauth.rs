@@ -312,7 +312,7 @@ mod tests {
         assert_eq!(tokens.email.as_deref(), Some("user@example.test"));
         assert_eq!(tokens.refresh_token.unwrap().expose(), "rt1");
         let err = refresh(&client, &Secret::new("revoked")).await.unwrap_err();
-        assert!(matches!(err, OAuthError::InvalidGrant));
+        assert!(matches!(err, OAuthError::InvalidGrant(_)));
         assert!(matches!(SourceError::from(err), SourceError::Auth(_)));
     }
 }
