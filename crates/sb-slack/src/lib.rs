@@ -2,6 +2,7 @@
 //! (docs/specs/source-slack.md).
 
 pub mod client;
+pub mod links;
 pub mod render;
 pub mod source;
 

@@ -90,6 +90,24 @@ pub(crate) fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
     {
         return Err(usage(format!("{key} is a positive whole number")));
     }
+    if key == "links.ingest_kinds" {
+        let ok = value.as_array().is_some_and(|a| {
+            a.iter()
+                .all(|k| matches!(k.as_str(), Some("google.doc" | "microsoft.file")))
+        });
+        if !ok {
+            return Err(usage(
+                "links.ingest_kinds is a list of source kinds: \"google.doc\", \"microsoft.file\"",
+            ));
+        }
+    }
+    if matches!(
+        key,
+        "links.max_per_run" | "links.context_chars" | "links.max_attempts"
+    ) && value.as_u64().is_none_or(|n| n == 0)
+    {
+        return Err(usage(format!("{key} is a positive whole number")));
+    }
     if key == "ingest.web.max_redirects" && value.as_u64().is_none() {
         return Err(usage(
             "ingest.web.max_redirects is a whole number (0 or more)",
@@ -956,4 +974,30 @@ pub fn version(ctx: &Ctx) -> anyhow::Result<i32> {
         );
     }
     Ok(exit::OK)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn link_and_threshold_settings_are_validated() {
+        let ok = |k: &str, v: Value| validate_setting(k, &v).is_ok();
+        assert!(ok("links.ingest_kinds", json!([])));
+        assert!(ok(
+            "links.ingest_kinds",
+            json!(["google.doc", "microsoft.file"])
+        ));
+        assert!(!ok("links.ingest_kinds", json!(["web.page"])));
+        assert!(!ok("links.ingest_kinds", json!("google.doc")));
+        assert!(ok("links.max_per_run", json!(10)));
+        assert!(!ok("links.max_per_run", json!(0)));
+        assert!(!ok("links.context_chars", json!("big")));
+        assert!(ok("summary.min_chars.google.doc", json!(0)));
+        assert!(ok("summary.min_chars.local.file", json!(2000)));
+        assert!(!ok("summary.min_chars.google.docs", json!(0)));
+        assert!(!ok("summary.min_chars.google.doc", json!(-1)));
+        assert!(!ok("summary.min_chars.google.doc", json!("400")));
+    }
 }

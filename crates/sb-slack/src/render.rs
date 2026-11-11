@@ -638,7 +638,14 @@ pub fn normalize(
             referenced_in: None,
         }),
         native_summary: None,
-        links: Vec::new(),
+        links: crate::links::discover(
+            &messages,
+            &dir,
+            &label,
+            kind == SourceKind::SlackThread,
+            &zone,
+            ctx.link_context_chars,
+        ),
     })))
 }
 
@@ -762,6 +769,7 @@ mod tests {
             language: lang,
             timezone: "Asia/Tokyo".into(),
             snapshot: json!({"users": dir()}),
+            link_context_chars: 1200,
         }
     }
 

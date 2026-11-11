@@ -117,6 +117,10 @@ impl<'a> Host<'a> {
             language: self.language,
             timezone: self.timezone.clone(),
             snapshot,
+            link_context_chars: self
+                .p
+                .catalog()
+                .setting_or("links.context_chars", 1200usize)?,
         })
     }
 

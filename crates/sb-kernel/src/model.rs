@@ -322,6 +322,8 @@ pub struct NormalizeCtx {
     pub timezone: String,
     /// Source-specific snapshot, e.g. the Slack user directory.
     pub snapshot: Value,
+    /// Size limit of the excerpt kept with a discovered link (`links.context_chars`).
+    pub link_context_chars: usize,
 }
 
 /// Input to `Source::normalize`.
