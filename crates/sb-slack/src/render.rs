@@ -634,6 +634,8 @@ pub fn normalize(
             body: details,
             message_count: Some(messages.len()),
             want_details: false,
+            location: None,
+            referenced_in: None,
         }),
         native_summary: None,
     })))

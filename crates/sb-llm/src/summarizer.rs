@@ -219,6 +219,8 @@ mod tests {
             body,
             message_count: None,
             want_details: false,
+            location: None,
+            referenced_in: None,
         }
     }
 

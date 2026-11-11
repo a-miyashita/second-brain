@@ -434,13 +434,14 @@ impl Pipeline {
                 {
                     r.summary_status = Some(e.summary_status.to_string());
                     r.title = Some(e.title.clone());
+                    let min_chars = policy.min_chars_for(e.source_kind);
                     if e.summary_status == second_brain_kernel::SummaryStatus::Skipped
                         && matches!(r.status, IngestStatus::Created | IngestStatus::Updated)
                         && r.message.is_none()
                     {
                         r.message = Some(format!(
                             "shorter than summary.min_chars ({}): kept as searchable text, not summarized",
-                            policy.min_chars
+                            min_chars
                         ));
                     }
                 }

@@ -189,6 +189,13 @@ pub struct SummaryInput {
     pub message_count: Option<usize>,
     /// Whether the summarizer should produce a `details` section.
     pub want_details: bool,
+    /// Where a synced file is stored (the folder path). A hint only: it is not
+    /// a description of the file (ADR-0023).
+    #[serde(default)]
+    pub location: Option<String>,
+    /// An excerpt of the Slack conversation that shared a document (ADR-0023).
+    #[serde(default)]
+    pub referenced_in: Option<String>,
 }
 
 /// Token usage and timing of a summarizer call.

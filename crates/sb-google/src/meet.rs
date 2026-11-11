@@ -651,6 +651,8 @@ pub fn normalize(input: &NormalizeInput) -> Result<NormalizeOutcome, SourceError
             body,
             message_count: None,
             want_details: true,
+            location: None,
+            referenced_in: None,
         }),
         native_summary: Some(Generator::gemini_meet_notes()),
     })))

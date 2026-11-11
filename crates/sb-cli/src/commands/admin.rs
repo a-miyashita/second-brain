@@ -37,6 +37,16 @@ pub(crate) fn validate_setting(key: &str, value: &Value) -> anyhow::Result<()> {
     if key.starts_with("summary.profile.") && !value.is_string() {
         return Err(usage(format!("{key} takes a profile name")));
     }
+    if let Some(kind) = key.strip_prefix("summary.min_chars.") {
+        if kind.parse::<second_brain_kernel::SourceKind>().is_err() {
+            return Err(usage(format!(
+                "{key}: {kind:?} is not a source kind (for example google.doc)"
+            )));
+        }
+        if value.as_u64().is_none() {
+            return Err(usage(format!("{key} is a whole number (0 or more)")));
+        }
+    }
     if key == "display.language" && !matches!(value.as_str(), Some("ja" | "en")) {
         return Err(usage("display.language is \"ja\" or \"en\""));
     }

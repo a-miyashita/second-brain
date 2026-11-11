@@ -15,6 +15,10 @@ use crate::source::SourceError;
 /// Fetch-metadata keys written by `fetch` and read by `normalize`.
 pub mod keys {
     pub const CONTEXT: &str = "context";
+    /// Folder sync: the path of the file's folder (folder-sync.md).
+    pub const FOLDER_PATH: &str = "folder_path";
+    /// Link ingest: the Slack excerpt around the link (link-ingest.md).
+    pub const LINK_CONTEXT: &str = "link_context";
     pub const TITLE_OVERRIDE: &str = "title_override";
     pub const DATE_OVERRIDE: &str = "date_override";
     pub const TITLE_FALLBACK: &str = "title_fallback";
@@ -167,6 +171,8 @@ pub fn normalize_document(
             body: text,
             message_count: None,
             want_details: false,
+            location: meta_str(fetch_metadata, keys::FOLDER_PATH).map(str::to_string),
+            referenced_in: meta_str(fetch_metadata, keys::LINK_CONTEXT).map(str::to_string),
         }),
         native_summary: None,
     })))

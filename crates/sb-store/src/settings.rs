@@ -14,6 +14,8 @@ pub fn default_value(key: &str) -> Option<Value> {
         "summary.language" => json!("auto"),
         "summary.max_attempts" => json!(3),
         "summary.min_chars" => json!(400),
+        "summary.min_chars.google.doc" => json!(0),
+        "summary.min_chars.microsoft.file" => json!(0),
         "summary.min_messages" => json!(3),
         "summary.profile.google.meet" => json!("native"),
         "summary.budget.weekly_usd" => json!(2.0),
@@ -49,6 +51,8 @@ const KNOWN_KEYS: &[&str] = &[
     "summary.language",
     "summary.max_attempts",
     "summary.min_chars",
+    "summary.min_chars.google.doc",
+    "summary.min_chars.microsoft.file",
     "summary.min_messages",
     "summary.budget.weekly_usd",
     "summary.budget.monthly_usd",
@@ -82,7 +86,12 @@ const KNOWN_KEYS: &[&str] = &[
 ];
 
 /// Key prefixes for open-ended families of settings.
-const KNOWN_PREFIXES: &[&str] = &["summary.profile.", "llm.profiles.", "google.meet."];
+const KNOWN_PREFIXES: &[&str] = &[
+    "summary.profile.",
+    "summary.min_chars.",
+    "llm.profiles.",
+    "google.meet.",
+];
 
 /// Whether `key` is a recognized setting.
 pub fn is_known_key(key: &str) -> bool {
@@ -230,6 +239,25 @@ mod tests {
             Some(json!("native"))
         );
         assert!(cat.setting("summary.profile.default").unwrap().is_none());
+    }
+
+    #[test]
+    fn document_kinds_have_no_length_threshold_by_default() {
+        let (_d, cat) = temp_catalog();
+        assert_eq!(
+            cat.setting("summary.min_chars.google.doc").unwrap(),
+            Some(json!(0))
+        );
+        assert_eq!(
+            cat.setting("summary.min_chars.microsoft.file").unwrap(),
+            Some(json!(0))
+        );
+        assert!(
+            cat.setting("summary.min_chars.local.file")
+                .unwrap()
+                .is_none()
+        );
+        assert!(is_known_key("summary.min_chars.web.page"));
     }
 
     #[test]
