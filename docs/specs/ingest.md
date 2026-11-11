@@ -1,6 +1,6 @@
 # Single-item ingest (`sb ingest`)
 
-Related ADRs: 0002, 0005, 0008, 0012, 0013, 0014, 0021.
+Related ADRs: 0002, 0005, 0008, 0012, 0013, 0014, 0021, 0022, 0023.
 
 Per-kind details are in [source-documents.md](source-documents.md). Text extraction is
 in [extract.md](extract.md).
@@ -85,8 +85,10 @@ then, unless --no-summary:
   (ADR-0012). An interrupted run leaves committed entries `pending`; `sb summarize`
   or the next `sb sync` summarizes them.
 - A failed fetch writes nothing. There is no queue: the user runs the command again.
-- Summaries are subject to the thresholds (`summary.min_chars`, default 400: shorter
-  documents become `skipped`; their extracted text stays searchable), to the profile
+- Summaries are subject to the thresholds (`summary.min_chars`, default 400, or
+  `summary.min_chars.<source_kind>`: shorter documents become `skipped`; their extracted
+  text stays searchable. The default for `google.doc` and `microsoft.file` is `0`, so
+  those documents are always summarized, ADR-0023), to the profile
   chosen by `summary.profile.<source_kind>` (falling back to the default), and to the
   budget. When the budget or the profile is missing, the entry stays `pending`, the
   command still exits 0, and a line says why.
@@ -128,9 +130,11 @@ then, unless --no-summary:
 | `local.file` with the same content hash as another `local.file` entry | `duplicate`, unless `--force` |
 | The source says "not something we make entries from" (a Drive or SharePoint folder, a Drive form, a OneNote notebook, an unsupported file type, no extractable text) | `not_applicable`, with the reason |
 
-A document shorter than `summary.min_chars` is stored with `summary_status = skipped`; the
-result then carries a `message` ("shorter than summary.min_chars (400): kept as searchable
-text, not summarized") and the CLI prints it as a note.
+A document shorter than its threshold (`summary.min_chars`, or the per-kind value; `0` for
+`google.doc` and `microsoft.file` unless the user set one) is stored with
+`summary_status = skipped`; the result then carries a `message` ("shorter than
+summary.min_chars (400): kept as searchable text, not summarized") and the CLI prints it as
+a note.
 
 A changed `--context` does **not** change `input_hash` (the hash covers the prompt
 version, the model and the body, see summarization.md), so it does not trigger a new
@@ -138,7 +142,8 @@ summary. Run `sb resummarize --entry <uid>` to apply it.
 
 ## What is stored
 
-An entry per locator, with `origin = ingest`:
+An entry per locator, with `origin = ingest` (an entry that already exists keeps the origin it
+has: `sync` for a synced folder, `link` for a Slack link, ADR-0022):
 
 - `raw_objects` (ADR-0014):
   - `extracted_text` (segment 0): the **extracted Markdown**, cut at

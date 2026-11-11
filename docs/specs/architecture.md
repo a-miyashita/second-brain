@@ -1,6 +1,6 @@
 # Architecture
 
-Related ADRs: 0001, 0002, 0004, 0005, 0008, 0014.
+Related ADRs: 0001, 0002, 0004, 0005, 0008, 0014, 0022, 0023.
 
 ## Overview
 
@@ -72,6 +72,12 @@ Crate dependency rules:
   known only to the service (`microsoft.file`: drive and item ID) implements
   `Source::locate` instead, which may ask the service; `sb ingest` calls it for such
   locators. Sources that do not need it keep the default, which calls `resolve`.
+- **Stages of `sb sync`** (ADR-0022): account syncs (a Google or Microsoft account with
+  folders lists and queues them, then the queue is drained) → link stage (ingest of the
+  Slack-discovered links of enabled kinds, `origin = link`) → summarize → index. The link
+  stage lives in `sb-pipeline`, reuses the ingest path, and is the only place where one
+  account's output (a Slack link) drives another account's source (a Google or Microsoft
+  account). Sources never call each other.
 - `sb-pipeline` wires everything together. `sb-cli` and `sb-mcp` depend on
   `sb-pipeline` and `sb-store`.
 - Only `sb-cli` (and `sb-mcp` for its server loop) may print to stdout.
@@ -84,7 +90,8 @@ Crate dependency rules:
 | `SourceKind` | `slack.thread`, `slack.day`, `google.meet`, `google.doc`, `microsoft.file`, `mail.message`, `mail.thread`, `web.page`, `local.file` |
 | `SourceRef` | Natural key `(account_id, source_kind, source_id)` plus `source_url` and timestamps |
 | `RawBundle`, `RawObject` | Raw content with a role and media type |
-| `Normalized` | Title, timestamps, metadata JSON, extracted sections, `SummaryInput`, optional native summary |
+| `Normalized` | Title, timestamps, metadata JSON, extracted sections, `SummaryInput`, optional native summary, and for Slack entries the document links found (`links`, ADR-0022) |
+| `SummaryInput` | The summarizer's input: kind, prompt, title, date, body, and the optional hints `context`, `location`, `referenced_in` (ADR-0023) |
 | `SectionKind` | `overview`, `decisions`, `action_items`, `details`, `background` |
 | `SectionOrigin` | `generated`, `extracted`, `user` |
 | `Generator` | `generator_kind`, `provider`, `model`, `prompt_version` |

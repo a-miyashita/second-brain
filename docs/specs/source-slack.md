@@ -1,6 +1,6 @@
 # Source: Slack (`slack.thread`, `slack.day`)
 
-Related ADRs: 0007, 0008. Target scale: hundreds of conversations and thousands
+Related ADRs: 0007, 0008, 0022. Target scale: hundreds of conversations and thousands
 of workspace users per account, with a daily run of a few minutes.
 
 ## Account configuration (`accounts.config`)
@@ -19,6 +19,8 @@ of workspace users per account, with a daily run of a few minutes.
 | `dormant_days` | `30` | Conversations idle this long are only scanned in `--deep` (except `full_channels`) |
 | `fetch_jobs` | `4` | Parallel API workers |
 | `users_cache_days` | `7` | User directory cache lifetime |
+| `ingest_links` | global `links.ingest_kinds` (`[]`) | Source kinds (`google.doc`, `microsoft.file`) whose links in this workspace's entries are ingested (link-ingest.md, ADR-0022). `[]` = none |
+| `ingest_link_hosts` | `[]` | Globs on the host of those links. Empty = no restriction |
 
 ## What is ingested
 
@@ -105,6 +107,9 @@ snapshot it needs is passed in through its context.
   - The label words ("Group DM", "conversation") follow `display.language`.
 - Metadata: `channel_id`, `channel_name`, `channel_kind`, `thread_ts`,
   `message_count`, participants.
+- **Links.** `normalize` also returns the document links of the entry and the excerpt
+  around each (link-ingest.md "Finding links"). It does not fetch them, and the
+  `details` section is unchanged.
 - Summary input: the rendered conversation, with prompt `conversation-summary/v1`.
   The thresholds come from summarization.md.
 
@@ -207,8 +212,10 @@ The user directory is kept in `cache`.
 It counts pending summarization inputs and
 estimated tokens and cost without calling the LLM.
 
-## Link scanning (phase 2)
+## Document links (ADR-0022)
 
-`sb scan-links` scans the `details` of Slack entries that have `decisions` or
-`action_items` sections. It lists Google Docs, Slides and Sheets links whose Drive
-file ID is not yet an entry in any Google account. It never fetches anything.
+Supported Google Drive and SharePoint/OneDrive file links in Slack entries are recorded by
+the pipeline when the entry is committed and, for the kinds the user enabled with
+`ingest_links` or `links.ingest_kinds`, ingested by the link stage of `sb sync`.
+`sb scan-links` lists them, and with `--ingest` backfills them from entries that already
+exist. Specified in [link-ingest.md](link-ingest.md). Slack itself is only read.

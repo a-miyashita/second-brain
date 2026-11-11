@@ -29,6 +29,8 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0019](adrs/0019-tag-triggered-release-and-changelog.md) | Tag-triggered release workflow, `CHANGELOG.md` and the release skill |
 | [0020](adrs/0020-terminal-ui-for-setup-and-settings.md) | Terminal UI (ratatui) for `sb setup` and `sb config`; command mode kept |
 | [0021](adrs/0021-microsoft-sharepoint-onedrive-ingest.md) | Microsoft accounts and single-item ingest for SharePoint and OneDrive (`microsoft.file`) |
+| [0022](adrs/0022-folder-sync-and-slack-link-ingest.md) | Folder sync for Google Drive and SharePoint/OneDrive, and ingest of document links found in Slack |
+| [0023](adrs/0023-document-location-and-link-context-for-summaries.md) | Location and link context for document summaries; documents always summarized |
 
 ## Specs (`specs/`)
 
@@ -49,6 +51,9 @@ Specs describe how things work and may be edited as the design evolves.
 | [setup-and-scheduling.md](specs/setup-and-scheduling.md) | Installer, setup screen, scheduler registration |
 | [agent-integration.md](specs/agent-integration.md) | Skill and MCP server |
 | [ingest.md](specs/ingest.md) | `sb ingest`: locators, flow, statuses, settings, JSON, security |
+| [folder-sync.md](specs/folder-sync.md) | Folder settings, listing, coverage and `sb folder` for Drive and SharePoint/OneDrive |
+| [link-ingest.md](specs/link-ingest.md) | Document links in Slack: discovery, `discovered_links`, the link stage, `sb scan-links` |
+| [folder-and-links-plan.md](specs/folder-and-links-plan.md) | Spikes and tasks for folder sync and link ingest |
 | [source-documents.md](specs/source-documents.md) | `google.doc`, `microsoft.file`, `web.page` and `local.file` sources |
 | [extract.md](specs/extract.md) | `sb-extract`: formats, encodings, limits, library choice |
 | [mvp-plan.md](specs/mvp-plan.md) | Spikes, phases, work items, testing strategy |

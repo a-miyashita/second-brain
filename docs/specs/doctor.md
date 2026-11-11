@@ -1,6 +1,6 @@
 # `sb doctor`
 
-Related ADRs: 0003, 0009, 0011, 0017.
+Related ADRs: 0003, 0009, 0011, 0017, 0022.
 
 `sb doctor [--online] [--fix] [--json]` runs health checks and lists open issues.
 
@@ -29,6 +29,10 @@ Related ADRs: 0003, 0009, 0011, 0017.
 | `schedule.registered` | Scheduled jobs exist and point to this binary and home | warning | re-register |
 | `runs.recent` | The last scheduled `sync` finished within 36 h and was not `failed`. An `interrupted` or `stopped_by_limit` run is reported with the remaining work | warning / error (failed) | — |
 | `summaries.backlog` | Count of `pending`/`failed` summaries, and entries at the attempt limit | warning if failed > 0 | — |
+| `folders.access` (`--online`) | Every configured folder resolves and can be listed (the root only). Opens `folder.unavailable` otherwise | error | — |
+| `folders.too_large` | A folder with an open `folder.too_large` issue (files in scope above `max_files`) | warning | — (raise `max_files`, narrow `include`/`exclude`, or reduce `initial_days`) |
+| `links.pending` | Links of an enabled kind that are `pending` because the kind has no eligible account (per kind), and the number of `abandoned` links (link-ingest.md) | info | — |
+| `docs.meet_overlap` | A Drive file ID that is both a `google.doc` and a `google.meet` entry (a folder sync of a Meet notes folder) | info | — |
 | `meet.transcripts` | Share of meet entries without a transcript (informational) | info | — |
 | `skills.version` | Installed skills match the binary's embedded version | warning | reinstall |
 | `index.consistency` | FTS row count matches the sections count | warning | `index rebuild` |

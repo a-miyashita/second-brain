@@ -1,6 +1,6 @@
 # CLI specification
 
-Related ADRs: 0001, 0009, 0010, 0014, 0015, 0020.
+Related ADRs: 0001, 0009, 0010, 0014, 0015, 0020, 0022.
 
 The binary is `second-brain`, with alias `sb`. Examples use `sb`.
 
@@ -45,12 +45,14 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 | `sb account list` / `show <id>` / `disable <id>` / `enable <id>` / `remove <id> [--purge]` | M | `--purge` also deletes the account's entries and raw files |
 | `sb auth status` | M | Validity of every account's credentials; exit 1 if any need re-auth |
 | `sb auth login <id>` | M | Re-authenticate: Google or Microsoft consent again, or Slack token replacement |
+| `sb folder add <account> <url> [--label ..] [--no-recursive] [--max-depth N] [--include GLOB].. [--exclude GLOB].. [--initial-days N] [--max-files N]` | 2 | Add a Drive or SharePoint/OneDrive folder to a Google or Microsoft account for `sb sync` ([folder-sync.md](folder-sync.md), ADR-0022). Prints a preview; fetches nothing |
+| `sb folder list [--account ..]` / `remove <account> <label-or-key>` / `check [<account> [<folder>]] [--since AGE]` | 2 | List folders and their coverage; remove one (entries stay); count what the next sync would enter, without writing. `--json` schema `sb.folder/v1` |
 
 ### Ingestion
 
 | Command | Phase | Description |
 |---|---|---|
-| `sb sync [--account ..] [--source ..] [--deep] [--since DATE\|AGE] [--until DATE\|AGE] [--no-summary] [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--dry-run] [--estimate]` | M | Incremental, resumable sync of all enabled accounts and sources, then pending summaries, then indexing. Interrupt any time; re-run to continue (ADR-0012). The first window is `sync.initial_days` (default 30); `--since`/`--until` extend coverage backwards (below, ADR-0016) |
+| `sb sync [--account ..] [--source ..] [--deep] [--since DATE\|AGE] [--until DATE\|AGE] [--no-summary] [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--dry-run] [--estimate]` | M | Incremental, resumable sync of all enabled accounts and sources (including configured folders, folder-sync.md), then the link stage (link-ingest.md), then pending summaries, then indexing. `--source` also accepts `google.doc` and `microsoft.file` (folder sync only) and `links` (the link stage only). Interrupt any time; re-run to continue (ADR-0012). The first window is `sync.initial_days` (default 30); `--since`/`--until` extend coverage backwards (below, ADR-0016) |
 
 `sb sync --since` / `--until` (ADR-0016):
 
@@ -65,7 +67,8 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 - `--until` without `--since` is a usage error. `Y` later than the run start is
   clamped to it.
 - `X` and `Y` accept `YYYY-MM-DD`, RFC 3339, or an age such as `90d` or `12w`
-  (before the run start). For Slack they are rounded down to local midnight.
+  (before the run start). For Slack they are rounded down to local midnight. For synced folders
+  they select files by modification time (folder-sync.md "Coverage").
 - `--estimate` (pending summaries) and `--dry-run` (queued items) do not fetch, so
   `--since` / `--until` do not change them; they are still validated. Budget caps
   apply as usual.
@@ -81,7 +84,7 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 | `sb summarize [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--retry-failed] [--profile ..]` | M | Process entries with `summary_status = pending/failed` (below the attempt limit) |
 | `sb resummarize [filters] [--profile P \| --native] [--where-model M] [--dry-run] [--estimate] [--limit N] [--max-cost USD] [--time-limit DUR] [--force]` | M | Overwrite generated sections for matching entries. Entries already produced by the same profile with the target prompt version and the same body are skipped, so re-running resumes; the recorded model is not compared, so a changed model setting needs `--force` (ADR-0017, see [summarization.md](summarization.md)) |
 | `sb import <bundle-dir> [--map kind=account]... [--dry-run]` | M | Import a bundle (see [import-format.md](import-format.md)) |
-| `sb scan-links [--since ..] [--account ..]` | 2 | List Google Docs links in Slack entries that have decisions or action items and are not yet ingested |
+| `sb scan-links [--since ..] [--account ..] [--kind ..].. [--limit N] [--ingest [--retry]]` | 2 | List the Google Drive and SharePoint/OneDrive links in Slack entries and their state. Read-only by default; `--ingest` records and ingests them for the enabled (or `--kind`) kinds ([link-ingest.md](link-ingest.md), ADR-0022). `--json` schema `sb.scan-links/v1` |
 
 Common filters: `--account`, `--source <source_kind>`, `--since`, `--until`,
 `--entry <uid>` (repeatable), `--raw-status`, `--summary-status`.

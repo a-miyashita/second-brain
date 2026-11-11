@@ -167,3 +167,19 @@ Decisions are needed on:
   produced no text is `not_applicable`, and a Drive shortcut whose target already exists is
   `updated`.
 - A document shorter than `summary.min_chars` says so in the result.
+
+### 2026-11-11: decision 8 is superseded in part by ADR-0022
+
+Decision 8 ("No crawling. One locator is one entry. Directories, Drive folders, sitemaps
+and link following are out of scope.") is superseded by
+[ADR-0022](0022-folder-sync-and-slack-link-ingest.md) for two cases only:
+
+- Google Drive folders (and SharePoint/OneDrive folders, ADR-0021) that the user adds with
+  `sb folder add` are synced by `sb sync`;
+- document links found in Slack entries are ingested for the source kinds the user
+  enabled.
+
+Still in force: `sb ingest` takes one locator per entry and refuses a directory or a
+folder URL; web pages are never crawled or followed; sitemaps are out of scope; the skill
+tells agents to ingest only what the user names. The document summary prompt gets new
+inputs in [ADR-0023](0023-document-location-and-link-context-for-summaries.md).
