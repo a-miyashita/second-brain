@@ -41,6 +41,9 @@ pub struct IngestHint {
     pub title: Option<String>,
     pub date: Option<DateTime<Utc>>,
     pub keep_original: bool,
+    /// Further fetch metadata set by the caller: `folder_path` and `sync_folder`
+    /// for folder sync, `link_context` and `discovered_via` for link ingest.
+    pub extra: serde_json::Map<String, Value>,
 }
 
 impl IngestHint {
@@ -57,6 +60,9 @@ impl IngestHint {
         }
         if let Some(t) = self.title.as_deref().filter(|t| !t.trim().is_empty()) {
             m.insert(keys::TITLE_OVERRIDE.into(), json!(t.trim()));
+        }
+        for (k, v) in &self.extra {
+            m.insert(k.clone(), v.clone());
         }
         if let Some(d) = self.date {
             m.insert(

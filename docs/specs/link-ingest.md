@@ -107,7 +107,8 @@ when at least one Slack account was synced in the run, or with `--source links` 
    - the entry gets `origin = link` (an existing entry keeps its origin);
    - a document is summarized by the usual stage afterwards, with `location` empty and
      `referenced_in` from `link_context` (ADR-0023).
-3. **Record the result** in the same transaction as the commit:
+3. **Record the result** right after the commit of the entry (a separate transaction: an
+   interruption between the two repeats the fetch, which ends as `unchanged`):
 
    | Result of the ingest path | `status` | Other fields |
    |---|---|---|
@@ -170,9 +171,12 @@ reason other than "not found or no access". 64 usage error, 75 sync lock held.
 
 ## Stats and JSON of `sb sync`
 
-`sb.sync/v1` adds `links` (additive): `{"discovered": n, "pending": n, "ingested": n,
-"unavailable": n, "not_applicable": n, "duplicate": n, "abandoned": n,
-"deferred_by_limit": n}` for the run. The human output prints one line.
+`sb.sync/v1` adds `stats.links` (additive), for the run: `{"due": n, "ingested": n,
+"duplicate": n, "not_applicable": n, "unavailable": n, "abandoned": n, "waiting": n,
+"deferred_by_limit": n}`. `due` counts the links the stage was allowed to look at;
+`waiting` the ones left for the next run without a counted failure; `deferred_by_limit`
+the ones beyond `links.max_per_run` or a limit. The entries it creates are counted under
+`stats.sources` like any other. The human output prints one line.
 
 ## Doctor
 

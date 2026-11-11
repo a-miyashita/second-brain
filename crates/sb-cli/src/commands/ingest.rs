@@ -134,9 +134,18 @@ pub async fn sync(ctx: &Ctx, a: SyncArgs) -> anyhow::Result<i32> {
         return Err(usage("--since must be earlier than --until"));
     }
     let p = ctx.pipeline()?;
+    // `--source links` is not a source kind: it selects the link stage alone.
+    let named: Vec<String> = a
+        .sources
+        .iter()
+        .filter(|s| s.as_str() != "links")
+        .cloned()
+        .collect();
+    let links_only = !a.sources.is_empty() && named.is_empty();
     let opts = SyncOptions {
         accounts: a.accounts.clone(),
-        sources: parse_source_kinds(&a.sources)?,
+        sources: parse_source_kinds(&named)?,
+        links_only,
         mode: if a.deep {
             SyncMode::Deep
         } else {
@@ -221,6 +230,20 @@ fn print_run_stats(s: &RunStats) {
         eprintln!(
             "{k}: {} new, {} updated, {} unchanged, {} not applicable, {} failed",
             v.new, v.updated, v.unchanged, v.not_applicable, v.failed
+        );
+    }
+    let l = &s.links;
+    if !l.is_empty() {
+        eprintln!(
+            "links: {} due, {} ingested, {} duplicate, {} not applicable, {} unavailable, {} abandoned, {} waiting, {} deferred",
+            l.due,
+            l.ingested,
+            l.duplicate,
+            l.not_applicable,
+            l.unavailable,
+            l.abandoned,
+            l.waiting,
+            l.deferred_by_limit
         );
     }
 }

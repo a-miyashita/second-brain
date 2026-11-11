@@ -61,6 +61,8 @@ pub struct RunStats {
     /// Keyed by `"<account>/<source_kind>"`.
     pub sources: BTreeMap<String, SourceStats>,
     pub summaries: SummaryStats,
+    /// The link stage (link-ingest.md); all zero when it did not run.
+    pub links: crate::link_stage::LinkStats,
     pub errors: Vec<String>,
     pub stop: Option<Stop>,
     /// Remaining work: queued fetches and pending summaries.
