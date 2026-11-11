@@ -39,11 +39,12 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
 | Command | Phase | Description |
 |---|---|---|
 | `sb account add google <id> --client-secret <file> [--label ..] [--features meet,docs,gmail]` | M | Import OAuth client and run consent |
+| `sb account add microsoft <id> --client-id <GUID> [--tenant <t>] [--label ..]` | M | Run consent for SharePoint and OneDrive (ADR-0021). No client secret |
 | `sb account add slack <id> [--token xoxp-..] [--label ..]` | M | Validate token (`auth.test`) and store |
 | `sb account add imap <id> ...` | 3 | |
 | `sb account list` / `show <id>` / `disable <id>` / `enable <id>` / `remove <id> [--purge]` | M | `--purge` also deletes the account's entries and raw files |
 | `sb auth status` | M | Validity of every account's credentials; exit 1 if any need re-auth |
-| `sb auth login <id>` | M | Re-authenticate: Google consent again, or Slack token replacement |
+| `sb auth login <id>` | M | Re-authenticate: Google or Microsoft consent again, or Slack token replacement |
 
 ### Ingestion
 
@@ -74,7 +75,7 @@ Phase: M = MVP, 2 = phase 2, 3 = phase 3. See [mvp-plan.md](mvp-plan.md).
   holds for every scope of the source (the latest one), `covered_until` the earliest
   forward cursor.
 - `sb stats` shows the same coverage per account and source.
-| `sb ingest <url-or-path>... [--account ..] [--title ..] [--context ..] [--date ..] [--force] [--keep-original] [--no-summary] [--dry-run]` | M ([ingest.md](ingest.md)) | Single-item ingest (Google Docs/Drive, web page, local file). `--context` becomes the `background` section. `--json` schema `sb.ingest/v1` |
+| `sb ingest <url-or-path>... [--account ..] [--title ..] [--context ..] [--date ..] [--force] [--keep-original] [--no-summary] [--dry-run]` | M ([ingest.md](ingest.md)) | Single-item ingest (Google Docs/Drive, SharePoint/OneDrive, web page, local file). `--context` becomes the `background` section. `--json` schema `sb.ingest/v1` |
 | `sb refetch [filters] [--raw-missing]` | M | Fetch raw data again by natural key; enables re-summarization of imported entries |
 | `sb reextract [filters]` | M | Re-run `normalize` on stored raw data (no network) |
 | `sb summarize [--max-summaries N] [--max-cost USD] [--time-limit DUR] [--retry-failed] [--profile ..]` | M | Process entries with `summary_status = pending/failed` (below the attempt limit) |
@@ -117,7 +118,7 @@ Options added during implementation (all additive):
   [--model M] [--base-url URL] [--no-default] [--no-test]` for non-interactive use.
 - `sb setup schedule --dry-run` prints the task XML, plists, crontab block or
   systemd units without installing them.
-- `sb account add google --no-browser`, `sb auth login <id> --no-browser`,
+- `sb account add google --no-browser`, `sb account add microsoft --no-browser`, `sb auth login <id> --no-browser`,
   `sb auth status --online`, `sb account remove <id> --purge --yes`.
 - `sb summarize --estimate`.
 - Error codes in `sb.error/v1` include `usage`, `home.not_initialized`,

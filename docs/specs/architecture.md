@@ -20,7 +20,7 @@ Related ADRs: 0001, 0002, 0004, 0005, 0008, 0014.
               │      ▲ all traits and domain types live in sb-kernel                       │
               └──────┼───────────────────────────────────────────────────────────────────┘
                      │ HTTPS (rustls)
-          Slack Web API / Google APIs / LLM APIs / local LLM server / LLM CLIs (subprocess)
+          Slack Web API / Google APIs / Microsoft Graph / LLM APIs / local LLM server / LLM CLIs (subprocess)
 ```
 
 ## Workspace layout
@@ -37,6 +37,8 @@ second-brain/
 │   │                         # Google, Claude CLI, Copilot CLI), prompts
 │   ├── sb-google/            # OAuth (PKCE loopback), Drive/Calendar/Meet clients,
 │   │                         # google.meet and google.doc sources
+│   ├── sb-microsoft/         # Microsoft OAuth, Graph client, microsoft.file source
+│   ├── sb-oauth/             # shared OAuth helpers (PKCE, loopback listener, token calls)
 │   ├── sb-slack/             # Slack client and slack.thread / slack.day sources
 │   ├── sb-extract/           # bytes → Markdown for text/csv/html/docx/pptx/xlsx/pdf
 │   │                         # (pure, Rust-only, feature-gated; see extract.md)
@@ -60,11 +62,16 @@ Crate dependency rules:
 
 - `sb-kernel` depends on no other workspace crate. Source, LLM and store crates depend
   only on `sb-kernel`, plus `sb-extract` where needed (`sb-google` for `google.doc`,
-  `sb-ondemand`).
+  `sb-microsoft` for `microsoft.file`, `sb-ondemand`). `sb-google` and `sb-microsoft`
+  also depend on `sb-oauth`, which depends only on `sb-kernel`.
 - An account may serve several source kinds (a Google account has `google.meet` and
   `google.doc`). Its adapter (`GoogleSource`) dispatches by source kind and delegates
   `sync` to the Meet source; `sb ingest` calls `fetch` and `normalize` with the kind.
   The `Source` trait and `SourceFactory` stay one adapter per account.
+- `Source::resolve` maps a locator to a natural key without I/O. A source whose key is
+  known only to the service (`microsoft.file`: drive and item ID) implements
+  `Source::locate` instead, which may ask the service; `sb ingest` calls it for such
+  locators. Sources that do not need it keep the default, which calls `resolve`.
 - `sb-pipeline` wires everything together. `sb-cli` and `sb-mcp` depend on
   `sb-pipeline` and `sb-store`.
 - Only `sb-cli` (and `sb-mcp` for its server loop) may print to stdout.
@@ -73,8 +80,8 @@ Crate dependency rules:
 
 | Type | Meaning |
 |---|---|
-| `AccountId`, `AccountKind` | Account slug; `google`, `slack`, `imap`, `local`, `web` |
-| `SourceKind` | `slack.thread`, `slack.day`, `google.meet`, `google.doc`, `mail.message`, `mail.thread`, `web.page`, `local.file` |
+| `AccountId`, `AccountKind` | Account slug; `google`, `microsoft`, `slack`, `imap`, `local`, `web` |
+| `SourceKind` | `slack.thread`, `slack.day`, `google.meet`, `google.doc`, `microsoft.file`, `mail.message`, `mail.thread`, `web.page`, `local.file` |
 | `SourceRef` | Natural key `(account_id, source_kind, source_id)` plus `source_url` and timestamps |
 | `RawBundle`, `RawObject` | Raw content with a role and media type |
 | `Normalized` | Title, timestamps, metadata JSON, extracted sections, `SummaryInput`, optional native summary |

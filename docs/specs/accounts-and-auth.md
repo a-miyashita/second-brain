@@ -1,6 +1,6 @@
 # Accounts and authentication
 
-Related ADRs: 0003, 0006, 0007.
+Related ADRs: 0003, 0006, 0007, 0021.
 
 ## Google
 
@@ -55,6 +55,58 @@ JSON with the whole organization.
 - A different Google identity at re-login is refused unless `--allow-identity-change`
   is given.
 
+## Microsoft (SharePoint and OneDrive)
+
+### Prerequisite: application registration
+
+The user (or a Microsoft 365 administrator) registers an application in Microsoft Entra
+ID (Azure portal, "App registrations"):
+
+- Supported account types: "single tenant" for one organization, or "accounts in any
+  organizational directory" (add "personal Microsoft accounts" for personal OneDrive).
+- Platform: **Mobile and desktop applications**, redirect URI `http://localhost`.
+  Entra ignores the port of a `localhost` redirect, so the ephemeral loopback port works.
+- Authentication: **Allow public client flows** is on. There is **no client secret**.
+- API permissions (delegated, Microsoft Graph): `Files.Read.All`, `offline_access`,
+  `openid`, `profile`, `email`. No other permission is needed, and no write permission
+  should be granted.
+
+Some tenants require an administrator to grant consent for the application, or have
+turned off user consent. That is a tenant policy, not something `sb` can change. The
+error from Entra is shown as it is, and `README.md` has the text to send to the
+administrator. A registration can be shared by the whole organization: only the
+Application (client) ID and the tenant are needed, and neither is a secret.
+
+### `sb account add microsoft <id> --client-id <GUID> [--tenant <t>] [--label ..] [--no-browser]`
+
+1. Store `client_id` and `tenant` in the account `config` (they are not secrets).
+   `--tenant` is a tenant ID, a verified domain, or `organizations` (default),
+   `consumers` or `common`.
+2. Scopes: `openid profile email offline_access Files.Read.All`.
+3. Run the flow, the same as for Google (PKCE, loopback listener on `127.0.0.1:0`,
+   browser or printed URL). The redirect URI is `http://localhost:<port>`, and the
+   listener accepts the connection on both loopback addresses because a browser may
+   resolve `localhost` to `::1`.
+4. Read `tid` and `oid` from the ID token and store `identity = <tid>:<oid>`. The default
+   label is `preferred_username`.
+5. Store the secret `microsoft.refresh_token`. Access tokens are cached in memory only.
+
+### Token lifecycle
+
+- Access tokens are refreshed on demand.
+- **Entra rotates refresh tokens.** Every refresh response carries a new refresh token.
+  It is written to the secrets table **before** the new access token is returned for use.
+  Inside one process the refresh is serialized. Ingest takes the sync lock, but
+  `sb auth status --online`, `doctor` and `sb auth login` do not, so two processes can
+  refresh at the same time. The last writer wins. Entra normally keeps the previous
+  refresh token valid for a while, so the damage is a sign-in again at worst.
+- On `invalid_grant`, `interaction_required` or `consent_required`: set the account to
+  `needs_reauth`, open an `auth.needs_reauth` issue, and skip the account for this run.
+  Refresh tokens of public clients expire after 90 days of inactivity, and conditional
+  access policies can force a new sign-in earlier.
+- `sb auth login <id>` re-runs the flow and resolves the issue. A different identity
+  (`tid:oid`) is refused unless `--allow-identity-change` is given.
+
 ## Slack
 
 ### Prerequisite: Slack app
@@ -94,5 +146,5 @@ ADR-0003.
 ## `sb auth status`
 
 For each account it shows: kind, identity, status, last successful use, scopes (for
-Google), and, with `--online`, a live check (Google token refresh, Slack
-`auth.test`).
+Google and Microsoft), and, with `--online`, a live check (Google and Microsoft token
+refresh, Slack `auth.test`). A Microsoft check refreshes the token, which rotates it.

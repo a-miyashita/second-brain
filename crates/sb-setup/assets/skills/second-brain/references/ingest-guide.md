@@ -1,7 +1,8 @@
 # Ingest guide
 
 `sb ingest` adds single items to the knowledge base: a Google Docs, Sheets or Slides
-link, a Drive file, a web page or a file on the user's disk.
+link, a Drive file, a SharePoint or OneDrive link, a web page or a file on the user's
+disk.
 
 ```sh
 sb ingest <url-or-path>... --context "<why this matters>" --json
@@ -30,7 +31,7 @@ Each locator has a `status`:
 | `unchanged` | Already ingested and nothing changed |
 | `duplicate` | The same content already exists (`duplicate_of`); say so, do not retry with `--force` unless asked |
 | `not_applicable` | Nothing to store (unsupported type, no text). Show `message` |
-| `failed` | Show `message`. Common causes: a page behind a login (suggest saving it as a file and ingesting that), a Google file the user's accounts cannot open, a missing file |
+| `failed` | Show `message`. Common causes: a page behind a login (suggest saving it as a file and ingesting that), a Google or SharePoint/OneDrive file the user's accounts cannot open, a missing file. For a SharePoint or OneDrive link that cannot be resolved, ask the user for a sharing link ("Copy link") |
 
 `run.pending` > 0 means summaries are still waiting (budget, no summarizer profile);
 the entries are searchable already. Do not run `sb sync` or `sb summarize` unless the
@@ -40,6 +41,9 @@ user asks.
 
 - Only the extracted text is stored, not the original. Ingesting the same locator again
   updates the entry; a new `--context` is applied without fetching again.
+- SharePoint and OneDrive links need a Microsoft account (`sb account add microsoft`);
+  if there is none, tell the user instead of adding one. Folders, OneNote notebooks and
+  site pages cannot be ingested.
 - Pages that need JavaScript or a login, scanned documents, password-protected files and
   old `.doc` / `.ppt` files cannot be ingested.
 - Files in credential folders (`~/.ssh`, ...) and web pages on private addresses are refused

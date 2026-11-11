@@ -577,3 +577,104 @@ fn budget_command_reports_history_and_feeds_stats_and_doctor() {
     let v = json_of(&sb(&home, &["budget", "--json"]));
     assert!(v["current"]["week"]["cap_usd"].is_null());
 }
+
+#[test]
+fn microsoft_accounts_and_sharepoint_links() {
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("h");
+    assert!(sb(&home, &["setup", "home"]).status.success());
+    let url = "https://contoso.sharepoint.com/:w:/s/team/EabcDEF?e=xyz";
+
+    // A malformed client ID is refused before any browser opens.
+    let o = sb(
+        &home,
+        &[
+            "account",
+            "add",
+            "microsoft",
+            "ms",
+            "--client-id",
+            "nope",
+            "--json",
+        ],
+    );
+    assert_eq!(o.status.code(), Some(64));
+    assert_eq!(json_of(&o)["error"]["code"], "usage");
+
+    // Without a Microsoft account the dry run says what to do.
+    let o = sb(&home, &["ingest", "--dry-run", "--json", url]);
+    assert_eq!(o.status.code(), Some(1));
+    let v = json_of(&o);
+    assert_eq!(v["results"][0]["status"], "failed");
+    assert!(
+        v["results"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Microsoft account")
+    );
+
+    {
+        let cat = second_brain_store::Catalog::open(&second_brain_store::Home::new(&home)).unwrap();
+        cat.add_account(
+            &AccountId::new("ms").unwrap(),
+            AccountKind::Microsoft,
+            "Work",
+            Some("tid:oid"),
+            &json!({"client_id": "11111111-2222-3333-4444-555555555555", "tenant": "common"}),
+        )
+        .unwrap();
+    }
+    let o = sb(&home, &["ingest", "--dry-run", "--json", url]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stdout)
+    );
+    let v = json_of(&o);
+    assert_eq!(v["results"][0]["status"], "would_create");
+    assert_eq!(v["results"][0]["source_kind"], "microsoft.file");
+
+    // An account of another name is not a Microsoft account.
+    let o = sb(
+        &home,
+        &["ingest", "--dry-run", "--json", "--account", "other", url],
+    );
+    assert_ne!(o.status.code(), Some(0));
+
+    // A Microsoft account cannot read a Google Docs link: a usage error.
+    let o = sb(
+        &home,
+        &[
+            "ingest",
+            "--dry-run",
+            "--account",
+            "ms",
+            "https://docs.google.com/document/d/abc123/edit",
+        ],
+    );
+    assert_eq!(o.status.code(), Some(64));
+    assert!(
+        String::from_utf8_lossy(&o.stderr).contains("needs a google account"),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+
+    // The account shows up in `account list` and `auth status`.
+    let v = json_of(&sb(&home, &["account", "list", "--json"]));
+    let ms = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "ms")
+        .unwrap();
+    assert_eq!(ms["kind"], "microsoft");
+    let v = json_of(&sb(&home, &["auth", "status", "--json"]));
+    let ms = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "ms")
+        .unwrap();
+    assert_eq!(ms["identity"], "tid:oid");
+}
