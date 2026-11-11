@@ -638,6 +638,7 @@ pub fn normalize(
             referenced_in: None,
         }),
         native_summary: None,
+        links: Vec::new(),
     })))
 }
 

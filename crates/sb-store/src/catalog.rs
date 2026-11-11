@@ -16,10 +16,11 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/0001_initial.sql")),
     (2, include_str!("../migrations/0002_budget.sql")),
     (3, include_str!("../migrations/0003_input_hash_version.sql")),
+    (4, include_str!("../migrations/0004_discovered_links.sql")),
 ];
 
 /// The schema version this binary expects.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// A catalog connection.
 pub struct Catalog {

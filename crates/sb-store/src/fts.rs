@@ -376,6 +376,7 @@ mod tests {
                     })
                     .collect(),
                 summary: SummaryDecision::NoSummary,
+                links: Vec::new(),
             }),
         })
         .unwrap()

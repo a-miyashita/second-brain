@@ -93,9 +93,10 @@ remove --purge` removes the rows of that Slack account through the foreign key.
 Runs in `sb sync` after the account syncs and before summarization (ADR-0022 decision 16),
 when at least one Slack account was synced in the run, or with `--source links` alone.
 
-1. **Select.** For each Slack account in the run, take the `discovered_links` rows with
-   `status = pending`, `source_kind` in the account's effective kinds, a host that passes
-   `ingest_link_hosts`, and `next_attempt_at` empty or in the past. Order by
+1. **Select.** For each Slack account in the run, take the `discovered_links` rows that are
+   *due*: `status = pending`, or `status = unavailable` with `next_attempt_at` in the past;
+   with `source_kind` in the account's effective kinds and a host that passes
+   `ingest_link_hosts`. Order by
    `first_seen_at`, newest first. Take at most `links.max_per_run` rows over all accounts.
 2. **Process** with up to 4 links in flight, on the ingest path (ingest.md "Flow"):
    classify, choose the account, `locate`, duplicate checks, `fetch`, commit. Differences:

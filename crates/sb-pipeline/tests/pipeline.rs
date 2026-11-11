@@ -166,6 +166,7 @@ impl Source for FakeSource {
                 referenced_in: None,
             }),
             native_summary: None,
+            links: Vec::new(),
         })))
     }
 }

@@ -851,6 +851,7 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
                 source_updated_at: None,
                 sections: vec![],
                 summary: second_brain_store::SummaryDecision::NoSummary,
+                links: Vec::new(),
             }),
         })
         .unwrap();

@@ -193,7 +193,20 @@ str_enum! {
     pub enum EntryOrigin ("entry origin") {
         Sync => "sync",
         Ingest => "ingest",
+        Link => "link",
         Import => "import",
+    }
+}
+
+str_enum! {
+    /// State of a document link found in a conversation (link-ingest.md).
+    pub enum LinkStatus ("link status") {
+        Pending => "pending",
+        Ingested => "ingested",
+        Unavailable => "unavailable",
+        Abandoned => "abandoned",
+        NotApplicable => "not_applicable",
+        Duplicate => "duplicate",
     }
 }
 

@@ -2505,6 +2505,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "unicode-normalization",
+ "url",
 ]
 
 [[package]]

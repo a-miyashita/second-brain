@@ -270,6 +270,7 @@ mod tests {
                 referenced_in: None,
             }),
             native_summary: native.then(Generator::gemini_meet_notes),
+            links: Vec::new(),
         }
     }
 

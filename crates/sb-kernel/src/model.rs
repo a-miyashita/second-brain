@@ -347,6 +347,8 @@ pub struct Normalized {
     pub summary_input: Option<SummaryInput>,
     /// Set when `sections` contains a source-native summary.
     pub native_summary: Option<Generator>,
+    /// Document links found in the entry (Slack entries only, ADR-0022).
+    pub links: Vec<crate::links::DiscoveredLink>,
 }
 
 /// Outcome of normalization.

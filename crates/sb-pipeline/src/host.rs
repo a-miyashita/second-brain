@@ -159,6 +159,7 @@ impl<'a> Host<'a> {
                 source_updated_at: n.source_updated_at,
                 sections: n.sections.clone(),
                 summary: decision,
+                links: n.links.clone(),
             }),
         }))
     }
@@ -281,6 +282,7 @@ impl<'a> Host<'a> {
                 source_updated_at: n.source_updated_at,
                 sections: n.sections.clone(),
                 summary: decision,
+                links: n.links.clone(),
             }),
         };
         Ok(Some((update, existing.is_some())))

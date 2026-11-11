@@ -175,6 +175,7 @@ pub fn normalize_document(
             referenced_in: meta_str(fetch_metadata, keys::LINK_CONTEXT).map(str::to_string),
         }),
         native_summary: None,
+        links: Vec::new(),
     })))
 }
 

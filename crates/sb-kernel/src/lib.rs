@@ -5,6 +5,7 @@ pub mod clock;
 pub mod coverage;
 pub mod document;
 pub mod kinds;
+pub mod links;
 pub mod model;
 pub mod notify;
 pub mod search;
