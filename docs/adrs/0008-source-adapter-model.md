@@ -82,3 +82,13 @@ normalize(ctx, raw) -> Normalized        // metadata, extracted sections,
 - Because `normalize` is pure, parser improvements can be applied to all stored
   entries with `sb reextract`, without hitting the network.
 - Per-source specs live under `docs/specs/source-*.md`.
+
+## Amendments
+
+### 2026-11-11: link discovery may ingest, when the user opts in
+
+The sentence "Link discovery (`scan-links`) ... never ingests automatically" is replaced
+by [ADR-0022](0022-folder-sync-and-slack-link-ingest.md) for the links it describes.
+`sb scan-links` is still read-only by default. With `--ingest`, and through a link stage
+of `sb sync` for the source kinds the user listed in `links.ingest_kinds` /
+`ingest_links`, supported document links found in Slack entries are ingested.

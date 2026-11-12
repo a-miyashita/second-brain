@@ -23,6 +23,8 @@ The tool works on Windows, macOS and Linux.
 | Source kind | The type of an entry, such as `slack.thread`, `slack.day`, `google.meet`, `google.doc`, `microsoft.file`, `web.page` or `local.file` |
 | Account | A connection to a service. You can have more than one account. For example, you can connect two Slack workspaces |
 | Sync | The action that collects new data from your accounts |
+| Synced folder | A Google Drive, SharePoint or OneDrive folder that you add with `sb folder add`. Each sync adds its new and changed documents |
+| Linked document | A document that a Slack thread links to. The tool can add it as an entry. See [Folders and linked documents](folders-and-links.md) |
 | Summary | A short text that describes an entry |
 | Section | One part of an entry. See the table below |
 | Summarizer | The program that writes summaries. It can be an LLM API, an LLM command-line tool, or a local model |
@@ -42,7 +44,7 @@ Each entry has up to five sections.
 | `decisions` | What people decided, and who decided it |
 | `action_items` | Who does what, and by when |
 | `details` | The full text of the entry, or a longer summary of the discussion |
-| `background` | Why you added the entry. You write this section yourself |
+| `background` | Why you added the entry. You write this section yourself with `--context`. Documents from synced folders and Slack links have none; their entry keeps the folder name or the thread in its details (`sb show --meta`) |
 
 A document often has no decisions and no action items. This is normal.
 
@@ -50,6 +52,7 @@ A document often has no decisions and no action items. This is normal.
 
 ```text
 Slack, Google Meet, Google Docs, SharePoint/OneDrive, web pages, files
+(also: synced folders, documents linked in Slack)
         │  sync or ingest
         ▼
 raw data (files on your computer)

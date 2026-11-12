@@ -45,6 +45,8 @@ Without `--online`, the command does not use the network.
 | Schedule | The daily sync is registered |
 | Recent runs | The last scheduled sync finished in the last 36 hours |
 | Summaries | The number of pending and failed summaries |
+| Folders | Each synced folder can be opened (with `--online`), no folder has too many files, and no Drive file is in two places |
+| Linked documents | Links that wait for an account that you did not add, and links that the tool gave up |
 | Skills | The installed skill has the same version as the program |
 | Search index | The index matches the entries |
 | Disk | The size of the home directory, and the free space. The tool warns below 1 GB |

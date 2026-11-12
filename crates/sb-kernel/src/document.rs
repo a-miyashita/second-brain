@@ -15,6 +15,10 @@ use crate::source::SourceError;
 /// Fetch-metadata keys written by `fetch` and read by `normalize`.
 pub mod keys {
     pub const CONTEXT: &str = "context";
+    /// Folder sync: the path of the file's folder (folder-sync.md).
+    pub const FOLDER_PATH: &str = "folder_path";
+    /// Link ingest: the Slack excerpt around the link (link-ingest.md).
+    pub const LINK_CONTEXT: &str = "link_context";
     pub const TITLE_OVERRIDE: &str = "title_override";
     pub const DATE_OVERRIDE: &str = "date_override";
     pub const TITLE_FALLBACK: &str = "title_fallback";
@@ -37,6 +41,9 @@ pub struct IngestHint {
     pub title: Option<String>,
     pub date: Option<DateTime<Utc>>,
     pub keep_original: bool,
+    /// Further fetch metadata set by the caller: `folder_path` and `sync_folder`
+    /// for folder sync, `link_context` and `discovered_via` for link ingest.
+    pub extra: serde_json::Map<String, Value>,
 }
 
 impl IngestHint {
@@ -53,6 +60,9 @@ impl IngestHint {
         }
         if let Some(t) = self.title.as_deref().filter(|t| !t.trim().is_empty()) {
             m.insert(keys::TITLE_OVERRIDE.into(), json!(t.trim()));
+        }
+        for (k, v) in &self.extra {
+            m.insert(k.clone(), v.clone());
         }
         if let Some(d) = self.date {
             m.insert(
@@ -167,8 +177,11 @@ pub fn normalize_document(
             body: text,
             message_count: None,
             want_details: false,
+            location: meta_str(fetch_metadata, keys::FOLDER_PATH).map(str::to_string),
+            referenced_in: meta_str(fetch_metadata, keys::LINK_CONTEXT).map(str::to_string),
         }),
         native_summary: None,
+        links: Vec::new(),
     })))
 }
 
@@ -225,6 +238,22 @@ mod tests {
             n.summary_input.unwrap().context.as_deref(),
             Some("for the Q3 case")
         );
+    }
+
+    #[test]
+    fn folder_path_and_link_context_are_hints_not_sections() {
+        let meta = json!({
+            "folder_path": "Minutes / 2026",
+            "link_context": "#dev, 2026-09-01\nBob: please read [linked document]",
+            "sync_folder": "ROOT"
+        });
+        let n = entry(normalize_document(&sref(), &meta, &seg("body text")).unwrap());
+        let i = n.summary_input.unwrap();
+        assert_eq!(i.location.as_deref(), Some("Minutes / 2026"));
+        assert!(i.referenced_in.as_deref().unwrap().contains("please read"));
+        assert_eq!(i.context, None);
+        // No background section: the hints do not appear in the entry's text.
+        assert!(n.sections.iter().all(|s| s.kind == SectionKind::Details));
     }
 
     #[test]

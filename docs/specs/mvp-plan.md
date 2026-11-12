@@ -74,7 +74,10 @@ Not done yet:
 - MCP server + `setup mcp`.
 - `sb ingest` with `google.doc` (Drive export and `sb-extract`), `local.file` and
   `web.page`: **done**, see [ingest.md](ingest.md).
-- `scan-links`.
+- `scan-links`, folder sync and link ingest from Slack: **done** (ADR-0022 and ADR-0023;
+  [folder-sync.md](folder-sync.md), [link-ingest.md](link-ingest.md),
+  [folder-and-links-plan.md](folder-and-links-plan.md)). The spikes S-F1 to S-F5 need real
+  accounts and are still open.
 - Gemini API summarizer. (The Foundry Local wizard was dropped, ADR-0015.)
 - Notification sinks `slack_dm` and `desktop` (needs `chat:write` in the manifest).
 - `meet_api` strategy (if S1 is positive).

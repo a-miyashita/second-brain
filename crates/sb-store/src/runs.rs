@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use rusqlite::params;
+use second_brain_kernel::util::ts;
 use second_brain_kernel::{RunStatus, RunTrigger, Severity};
 use serde::Serialize;
 use serde_json::Value;
@@ -169,6 +170,23 @@ impl Catalog {
                AND (code = ?1 OR (substr(?1, -1) = '.' AND substr(code, 1, length(?1)) = ?1))
                AND (?2 IS NULL OR account_id = ?2)",
             params![code, account_id, self.now_ts()],
+        )?;
+        Ok(n as u64)
+    }
+
+    /// Resolve the open issues of an account whose code starts with `prefix` and
+    /// that were not seen since `since` (the start of a run that checked them
+    /// again and found nothing).
+    pub fn resolve_unseen_issues(
+        &self,
+        prefix: &str,
+        account_id: &str,
+        since: DateTime<Utc>,
+    ) -> Result<u64> {
+        let n = self.conn.execute(
+            "UPDATE issues SET resolved_at = ?4 WHERE resolved_at IS NULL AND account_id = ?2
+               AND substr(code, 1, length(?1)) = ?1 AND last_seen_at < ?3",
+            params![prefix, account_id, ts(since), self.now_ts()],
         )?;
         Ok(n as u64)
     }

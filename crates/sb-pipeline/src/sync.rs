@@ -39,6 +39,8 @@ pub struct SyncOptions {
     pub limits: Limits,
     pub dry_run: bool,
     pub estimate: bool,
+    /// Run only the link stage (`--source links`).
+    pub links_only: bool,
 }
 
 /// What a dry run would do.
@@ -134,7 +136,18 @@ impl Pipeline {
         let mut stats = RunStats::default();
         // One instant bounds everything this run fetches (ADR-0016).
         let run_started_at = self.catalog().now();
-        let result = self.sync_inner(opts, run_started_at, &mut stats).await;
+        let result = if opts.links_only {
+            Ok(())
+        } else {
+            self.sync_inner(opts, run_started_at, &mut stats).await
+        };
+        let result = match result {
+            Ok(()) if stats.stop.is_none() && self.should_run_links(opts)? => {
+                self.emit(Progress::Stage("links".into()));
+                self.link_stage_in_sync(opts, &mut stats).await
+            }
+            other => other,
+        };
         let mut summarize = None;
         if let Err(e) = &result {
             stats.errors.push(e.to_string());
@@ -191,6 +204,49 @@ impl Pipeline {
             summarize,
             dry_run: None,
         })
+    }
+
+    /// Whether the link stage runs in this sync: with `--source links`, or when a
+    /// Slack account takes part in the run.
+    fn should_run_links(&self, opts: &SyncOptions) -> Result<bool, PipelineError> {
+        if opts.links_only {
+            return Ok(true);
+        }
+        let slack_selected = opts.sources.is_empty()
+            || opts
+                .sources
+                .iter()
+                .any(|k| matches!(k, SourceKind::SlackThread | SourceKind::SlackDay));
+        Ok(slack_selected
+            && self.selected_accounts(opts)?.iter().any(|a| {
+                a.kind == second_brain_kernel::AccountKind::Slack
+                    && a.status == AccountStatus::Active
+            }))
+    }
+
+    async fn link_stage_in_sync(
+        &self,
+        opts: &SyncOptions,
+        stats: &mut RunStats,
+    ) -> Result<(), PipelineError> {
+        let r = self
+            .run_link_stage(&crate::link_stage::LinkStageOptions {
+                accounts: opts.accounts.clone(),
+                limits: opts.limits.clone(),
+                ..Default::default()
+            })
+            .await?;
+        stats.links = r.stats;
+        stats.errors.extend(r.errors);
+        for (key, (new, updated)) in r.entries {
+            let s = stats.sources.entry(key).or_default();
+            s.new += new;
+            s.updated += updated;
+        }
+        if stats.stop.is_none() {
+            stats.stop = r.stop;
+        }
+        Ok(())
     }
 
     async fn sync_inner(
@@ -273,6 +329,8 @@ impl Pipeline {
                     )?;
                     cat.resolve_issues("auth.", Some(account.id.as_str()))?;
                     cat.resolve_issues("sync.", Some(account.id.as_str()))?;
+                    // Folder problems that this run did not meet again are over.
+                    cat.resolve_unseen_issues("folder.", account.id.as_str(), run_started_at)?;
                     if let Some(s) = stop {
                         stats.stop = Some(s);
                         break;

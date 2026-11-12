@@ -52,6 +52,12 @@ This chapter lists all commands. Add `--help` to a command to see its options.
 |---|---|
 | `sb sync` | Collect new data and write summaries |
 | `sb ingest <url-or-path>...` | Add a Google Doc, a SharePoint or OneDrive file, a web page or a file |
+| `sb folder add <account> <link>` | Add a Drive, SharePoint or OneDrive folder that `sb sync` reads |
+| `sb folder list` | Show the synced folders |
+| `sb folder check [<account> [<folder>]]` | Show what the next sync would add from the folders. Writes nothing |
+| `sb folder remove <account> <folder>` | Remove a folder from the list. The entries stay |
+| `sb scan-links` | Show the document links in Slack entries and their state |
+| `sb scan-links --ingest` | Record these links and add the documents |
 | `sb import <bundle>` | Import an import bundle |
 | `sb refetch` | Download the raw data again |
 | `sb reextract` | Process the saved raw data again (no network) |

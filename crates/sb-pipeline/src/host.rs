@@ -117,6 +117,10 @@ impl<'a> Host<'a> {
             language: self.language,
             timezone: self.timezone.clone(),
             snapshot,
+            link_context_chars: self
+                .p
+                .catalog()
+                .setting_or("links.context_chars", 1200usize)?,
         })
     }
 
@@ -159,6 +163,7 @@ impl<'a> Host<'a> {
                 source_updated_at: n.source_updated_at,
                 sections: n.sections.clone(),
                 summary: decision,
+                links: n.links.clone(),
             }),
         }))
     }
@@ -281,6 +286,7 @@ impl<'a> Host<'a> {
                 source_updated_at: n.source_updated_at,
                 sections: n.sections.clone(),
                 summary: decision,
+                links: n.links.clone(),
             }),
         };
         Ok(Some((update, existing.is_some())))
@@ -431,5 +437,18 @@ impl SyncHost for Host<'_> {
 
     fn now(&self) -> DateTime<Utc> {
         self.p.clock().now()
+    }
+
+    fn issue(&self, code: &str, severity: second_brain_kernel::Severity, message: &str) {
+        let _ = self.p.catalog().open_issue(
+            code,
+            severity,
+            Some(self.account.id.as_str()),
+            None,
+            message,
+        );
+        if let Ok(mut e) = self.errors.lock() {
+            e.push(format!("{}: {message}", self.account.id));
+        }
     }
 }

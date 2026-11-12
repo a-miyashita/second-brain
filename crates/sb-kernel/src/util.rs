@@ -36,6 +36,38 @@ pub fn summary_input_hash(prompt_version: &str, model: &str, body: &str) -> Stri
     sha256_parts([prompt_version.as_bytes(), model.as_bytes(), body.as_bytes()])
 }
 
+/// Case-insensitive glob match. `*` matches any run of characters except `/`,
+/// `**` any run including `/`, and `?` one character except `/`. A pattern
+/// without `/` is also tried against the last path segment by
+/// [`glob_match_path`].
+pub fn glob_match(pattern: &str, text: &str) -> bool {
+    fn go(p: &[char], t: &[char]) -> bool {
+        match p.first() {
+            None => t.is_empty(),
+            Some('*') => {
+                let double = p.get(1) == Some(&'*');
+                let rest = &p[if double { 2 } else { 1 }..];
+                // `**/` also matches nothing at all ("**/a" matches "a").
+                if double && rest.first() == Some(&'/') && go(&rest[1..], t) {
+                    return true;
+                }
+                (0..=t.len()).any(|i| (double || !t[..i].contains(&'/')) && go(rest, &t[i..]))
+            }
+            Some('?') => t.first().is_some_and(|c| *c != '/') && go(&p[1..], &t[1..]),
+            Some(c) => t.first() == Some(c) && go(&p[1..], &t[1..]),
+        }
+    }
+    let p: Vec<char> = pattern.to_lowercase().chars().collect();
+    let t: Vec<char> = text.to_lowercase().chars().collect();
+    go(&p, &t)
+}
+
+/// [`glob_match`] on a path, or on its last segment when the pattern has no `/`.
+pub fn glob_match_path(pattern: &str, path: &str) -> bool {
+    glob_match(pattern, path)
+        || (!pattern.contains('/') && glob_match(pattern, path.rsplit('/').next().unwrap_or(path)))
+}
+
 /// NFKC normalization, used for queries and indexed text comparisons.
 pub fn nfkc(s: &str) -> String {
     s.nfkc().collect()
@@ -91,6 +123,22 @@ pub fn truncate_chars(s: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn globs() {
+        use super::{glob_match, glob_match_path};
+        assert!(glob_match("*.sharepoint.com", "contoso-my.SharePoint.com"));
+        assert!(!glob_match("*.sharepoint.com", "sharepoint.com"));
+        assert!(glob_match("~$*", "~$draft.docx"));
+        assert!(glob_match("_archive/**", "_archive/2020/a.docx"));
+        assert!(!glob_match("_archive/*", "_archive/2020/a.docx"));
+        assert!(glob_match("**/old/*.pdf", "old/a.pdf"));
+        assert!(glob_match("**/old/*.pdf", "x/y/old/a.pdf"));
+        assert!(glob_match("a?c", "abc") && !glob_match("a?c", "a/c"));
+        assert!(glob_match_path("*.docx", "minutes/2026/A.DOCX"));
+        assert!(!glob_match_path("minutes/*.docx", "minutes/2026/a.docx"));
+        assert!(glob_match_path("minutes/**", "minutes/2026/a.docx"));
+    }
+
     use super::*;
 
     #[test]

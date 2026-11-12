@@ -162,8 +162,11 @@ impl Source for FakeSource {
                 body,
                 message_count: Some(count),
                 want_details: false,
+                location: None,
+                referenced_in: None,
             }),
             native_summary: None,
+            links: Vec::new(),
         })))
     }
 }

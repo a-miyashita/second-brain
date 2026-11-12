@@ -218,6 +218,41 @@ async fn run_job(ctx: &Ctx, app: &App, job: Job) -> anyhow::Result<(i32, String)
             }
             Ok((exit::OK, text))
         }
+        Job::AddFolder {
+            account,
+            url,
+            options,
+        } => {
+            let p = ctx.pipeline()?;
+            let info = p.folder_add(&account, &url, &options).await?;
+            let mut text = format!("Added {:?} to {account}.", info.folder.label);
+            // The count is a convenience: the folder is saved either way.
+            match p
+                .folder_check(Some(&account), Some(&info.folder.key), None)
+                .await
+            {
+                Ok(c) => {
+                    for x in &c {
+                        text.push(' ');
+                        text.push_str(&crate::commands::folder::check_summary(x));
+                    }
+                }
+                Err(e) => text.push_str(&format!(" Could not list it yet: {e}")),
+            }
+            Ok((exit::OK, text))
+        }
+        Job::CheckFolder { account, folder } => {
+            let checks = ctx
+                .pipeline()?
+                .folder_check(Some(&account), Some(&folder), None)
+                .await?;
+            let text = checks
+                .iter()
+                .map(crate::commands::folder::check_summary)
+                .collect::<Vec<_>>()
+                .join(" ");
+            Ok((exit::OK, text))
+        }
         Job::Estimate | Job::Sync => {
             let estimate = matches!(job, Job::Estimate);
             let code = ingest::sync(

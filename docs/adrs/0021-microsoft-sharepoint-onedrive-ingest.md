@@ -165,3 +165,14 @@ Decisions are needed on:
 - **Crates.** The workspace has twelve crates. `second-brain-oauth` and
   `second-brain-microsoft` need the bootstrap described in release.md before the release
   that includes them.
+
+### 2026-11-11: decision 2 is superseded in part by ADR-0022
+
+Decision 2 ("On-demand only (no `sync`)") is superseded by
+[ADR-0022](0022-folder-sync-and-slack-link-ingest.md): a Microsoft account can have
+folders that `sb sync` lists and ingests, and `microsoft.file` links found in Slack
+entries can be ingested. The sentence "If sync is later added for Google Drive, a
+Microsoft equivalent follows the same specification in a new ADR" is satisfied by that
+ADR, which covers both providers. The permission scope is unchanged (`Files.Read.All`,
+no `Sites.Read.All`); a folder is named by the user's URL and listed with
+`GET /drives/{driveId}/items/{itemId}/children`.

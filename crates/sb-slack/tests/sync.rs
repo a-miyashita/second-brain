@@ -607,3 +607,171 @@ async fn interrupted_extension_keeps_its_windows_and_resumes() {
     assert_eq!(covered_since(&p), midnight(90));
     assert!(has(&p, 45) && has(&p, 80));
 }
+
+#[tokio::test]
+async fn document_links_are_recorded_with_their_entries() {
+    const DOC: &str = "https://docs.google.com/document/d/AAA/edit";
+    const SP: &str = "https://contoso.sharepoint.com/:w:/s/team/Eabc";
+    let state: Messages = Arc::new(Mutex::new(BTreeMap::new()));
+    let parent = ts(0);
+    {
+        let mut s = state.lock().unwrap();
+        let mut c1 = vec![msg(
+            &parent,
+            "U2",
+            &format!("Design doc for the export: <{DOC}|Export design>"),
+        )];
+        let mut r = msg(
+            &ts(60),
+            "U1",
+            "Looks good, see also https://example.com/page",
+        );
+        r["thread_ts"] = json!(parent);
+        c1.push(r);
+        s.insert("C1".into(), c1);
+    }
+    let slack = slack_mock(state.clone()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let home = Home::new(dir.path().join("home"));
+    {
+        let cat = Catalog::create(&home).unwrap();
+        let mut config = second_brain_slack::default_config_json();
+        config["full_channels"] = json!(["dev"]);
+        config["team_url"] = json!("https://acme.slack.test/");
+        cat.add_account(
+            &AccountId::new("acme").unwrap(),
+            AccountKind::Slack,
+            "Acme",
+            Some("T1:U1"),
+            &config,
+        )
+        .unwrap();
+    }
+    let p = pipeline(&home, &slack);
+    let opts = SyncOptions {
+        no_summary: true,
+        ..SyncOptions::default()
+    };
+    let r = p.sync(&opts).await.unwrap();
+    assert!(r.stats.errors.is_empty(), "{:?}", r.stats.errors);
+    let links = p.catalog().list_links(Some("acme"), &[], 10).unwrap();
+    assert_eq!(links.len(), 1, "{links:?}");
+    let l = &links[0];
+    assert_eq!(l.link_key, "google:AAA");
+    assert_eq!(l.source_kind, SourceKind::GoogleDoc);
+    assert!(l.first_entry_id.is_some());
+    let excerpt = l.excerpt.as_deref().unwrap();
+    assert!(excerpt.starts_with("#dev, 2026-09-08"), "{excerpt}");
+    assert!(excerpt.contains("Design doc for the export"), "{excerpt}");
+    assert!(!excerpt.contains("docs.google.com"), "{excerpt}");
+
+    // A later reply with another link adds it; the first one keeps its row.
+    {
+        let mut s = state.lock().unwrap();
+        let mut r = msg(&ts(120), "U2", &format!("and the plan: <{SP}>"));
+        r["thread_ts"] = json!(parent);
+        s.get_mut("C1").unwrap().push(r);
+    }
+    let r = p.sync(&opts).await.unwrap();
+    assert!(r.stats.errors.is_empty(), "{:?}", r.stats.errors);
+    let links = p.catalog().list_links(Some("acme"), &[], 10).unwrap();
+    assert_eq!(links.len(), 2, "{links:?}");
+    assert!(
+        links
+            .iter()
+            .any(|l| l.source_kind == SourceKind::MicrosoftFile)
+    );
+}
+
+#[tokio::test]
+async fn scan_links_lists_stored_links_and_ingest_waits_without_an_account() {
+    use second_brain_pipeline::scan_links::ScanLinksOptions;
+    const DOC: &str = "https://docs.google.com/document/d/AAA/edit";
+    let state: Messages = Arc::new(Mutex::new(BTreeMap::new()));
+    {
+        let mut s = state.lock().unwrap();
+        s.insert(
+            "C1".into(),
+            vec![
+                msg(&ts(0), "U2", &format!("Design doc: <{DOC}|Export design>")),
+                msg(&ts(60), "U1", "unrelated <https://example.com/page>"),
+            ],
+        );
+    }
+    let slack = slack_mock(state.clone()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let home = Home::new(dir.path().join("home"));
+    {
+        let cat = Catalog::create(&home).unwrap();
+        let mut config = second_brain_slack::default_config_json();
+        config["full_channels"] = json!(["dev"]);
+        config["team_url"] = json!("https://acme.slack.test/");
+        cat.add_account(
+            &AccountId::new("acme").unwrap(),
+            AccountKind::Slack,
+            "Acme",
+            Some("T1:U1"),
+            &config,
+        )
+        .unwrap();
+    }
+    let p = pipeline(&home, &slack);
+    let opts = SyncOptions {
+        no_summary: true,
+        ..SyncOptions::default()
+    };
+    p.sync(&opts).await.unwrap();
+
+    // Read-only: lists the link, writes nothing (no run, no lock).
+    let runs_before = p.catalog().runs(None, None, 50).unwrap().len();
+    let r = p.scan_links(&ScanLinksOptions::default()).await.unwrap();
+    assert_eq!(r.links.len(), 1, "{:?}", r.links);
+    let l = &r.links[0];
+    assert_eq!(
+        (l.status.as_str(), l.source_kind),
+        ("pending", SourceKind::GoogleDoc)
+    );
+    assert_eq!(l.host, "docs.google.com");
+    assert!(l.from_title.contains("#dev"), "{}", l.from_title);
+    assert!(l.message_date.as_deref().unwrap().starts_with("2026-09-08"));
+    assert_eq!(r.counts["pending"], 1);
+    assert_eq!(p.catalog().runs(None, None, 50).unwrap().len(), runs_before);
+
+    // Filters.
+    let o = ScanLinksOptions {
+        kinds: vec![SourceKind::MicrosoftFile],
+        ..Default::default()
+    };
+    assert!(p.scan_links(&o).await.unwrap().links.is_empty());
+    let o = ScanLinksOptions {
+        accounts: vec!["nobody".into()],
+        ..Default::default()
+    };
+    assert!(p.scan_links(&o).await.is_err());
+
+    // --ingest with no kind enabled does nothing; with --kind it tries, and
+    // without a Google account the link waits (not counted as a failure).
+    let o = ScanLinksOptions {
+        ingest: true,
+        ..Default::default()
+    };
+    let r = p.scan_links(&o).await.unwrap();
+    assert_eq!(r.stage.as_ref().unwrap().due, 0);
+    let o = ScanLinksOptions {
+        ingest: true,
+        kinds: vec![SourceKind::GoogleDoc],
+        ..Default::default()
+    };
+    let r = p.scan_links(&o).await.unwrap();
+    let s = r.stage.unwrap();
+    assert_eq!((s.due, s.waiting, s.unavailable), (1, 1, 0));
+    assert_eq!(r.links[0].status, "pending");
+    assert!(
+        r.links[0]
+            .last_error
+            .as_deref()
+            .unwrap()
+            .contains("Google account")
+    );
+    assert!(r.run_id.is_some());
+}

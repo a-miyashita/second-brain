@@ -1,6 +1,6 @@
 # Data model (catalog schema)
 
-Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014, 0017.
+Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014, 0017, 0022, 0023.
 
 SQLite, WAL mode, `foreign_keys = ON`. Timestamps are stored as RFC 3339 text in UTC.
 IDs named `id INTEGER` are internal rowids. Entry IDs exposed to users are
@@ -70,7 +70,7 @@ Primary key: `(scope, name)`.
 | `summary_error` | TEXT NULL | last error message |
 | `fetch_state` | TEXT (JSON) NULL | source-defined incremental state, e.g. `{"last_ts": "..."}` for Slack |
 | `metadata` | TEXT (JSON) | source-specific; see per-source specs |
-| `origin` | TEXT | `sync`, `ingest`, `import` |
+| `origin` | TEXT | `sync` (including folder sync), `ingest`, `link` (ingested from a Slack link, ADR-0022), `import`. An existing entry keeps its origin when another path reaches it |
 
 Unique key: `(account_id, source_kind, source_id)`.
 Indexes: `(source_kind, source_created_at)`, `(account_id)`, `(summary_status)`,
@@ -193,6 +193,11 @@ discovered it (ADR-0012).
 
 A row is deleted in the transaction that commits the fetched entry.
 
+### `discovered_links`
+Document links found in Slack entries and their ingest state (ADR-0022, migration `0004`).
+Mutable state, one row per `(account_id, link_key)`. Columns, statuses and the stage that
+uses it: [link-ingest.md](link-ingest.md#table-discovered_links-migration-0004).
+
 ### `cache`
 Expiring cache, for example the Slack user directory.
 
@@ -254,6 +259,8 @@ keeps backends swappable.
 | `fetched_url`, `final_url`, `canonical_url`, `site_name`, `content_type`, `http_last_modified`, `http_etag` | web.page |
 | `path`, `file_name`, `size`, `media_type`, `file_mtime` | local.file |
 | `context`, `title_override`, `date_override` | google.doc, microsoft.file, web.page, local.file: values given to `sb ingest`, stored with the fetch metadata |
+| `sync_folder`, `folder_path` | google.doc, microsoft.file made by folder sync: the folder key and the path of the file's folder from the configured root (folder-sync.md). `folder_path` becomes the summary's `location` (ADR-0023) |
+| `link_context`, `discovered_via` | google.doc, microsoft.file made from a Slack link: the Slack excerpt (the summary's `referenced_in`) and `{entry_uid, title, url}` of the first referencing Slack entry (link-ingest.md) |
 | `extractor`, `doc_title`, `doc_created`, `doc_modified`, `text_truncated`, `page_count`, `sheet_names`, `slide_count`, `extract_warnings`, `original_sha256`, `original_size` | google.doc, microsoft.file, web.page, local.file: written at fetch time with the extraction (extract.md) |
 | `import_ref` | imported entries: the entry's identifier in the exporting tool |
 
@@ -277,6 +284,12 @@ keeps backends swappable.
 6. `llm_usage` and `budget_periods` are never rewritten or pruned by the tool, so
    the history of spend and caps can be looked up at any time. The only copy of
    a period's spend is the ledger.
+
+### Migration `0004` (ADR-0022)
+
+Creates `discovered_links` and its index. It changes no other table: `entries.origin` is
+text, so the new value `link` needs no schema change, and the folder settings live in
+`accounts.config` and `sync_state`.
 
 ### Hash upgrade marker (ADR-0017)
 

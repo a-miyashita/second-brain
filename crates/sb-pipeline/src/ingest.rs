@@ -220,15 +220,68 @@ impl IngestReport {
     }
 }
 
+/// Why a fetch failed, for callers that treat the cases differently (the link
+/// stage of `sb sync`). `sb ingest` shows only the message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FailKind {
+    /// No usable account of the right kind (none added, disabled, needs re-auth).
+    NoAccount,
+    /// Every usable account answered "not found or no access".
+    NoAccess,
+    /// Network error or rate limit: worth trying again soon.
+    Transient,
+    /// The run was cancelled.
+    Interrupted,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Fail {
+    pub kind: FailKind,
+    pub msg: String,
+}
+
+impl Fail {
+    pub(crate) fn other(msg: impl Into<String>) -> Self {
+        Fail::new(FailKind::Other, msg)
+    }
+
+    pub(crate) fn interrupted() -> Self {
+        Fail::new(FailKind::Interrupted, "interrupted")
+    }
+
+    fn new(kind: FailKind, msg: impl Into<String>) -> Self {
+        Fail {
+            kind,
+            msg: msg.into(),
+        }
+    }
+}
+
+impl From<String> for Fail {
+    fn from(msg: String) -> Self {
+        Fail::new(FailKind::Other, msg)
+    }
+}
+
+fn fail_of(account: &str, e: &SourceError) -> Fail {
+    let kind = match e {
+        SourceError::Network(_) | SourceError::RateLimited(_) => FailKind::Transient,
+        SourceError::Cancelled => FailKind::Interrupted,
+        _ => FailKind::Other,
+    };
+    Fail::new(kind, format!("{account}: {e}"))
+}
+
 /// A locator to work on, with its position in the call.
-struct Work {
-    idx: usize,
-    raw: String,
-    locator: Locator,
+pub(crate) struct Work {
+    pub(crate) idx: usize,
+    pub(crate) raw: String,
+    pub(crate) locator: Locator,
 }
 
 /// The result of the fetch phase for one locator.
-enum Phase {
+pub(crate) enum Phase {
     /// Nothing to commit.
     Done(usize, IngestResult),
     /// A fetched entry to commit.
@@ -322,6 +375,7 @@ impl Pipeline {
             title: opts.title.clone(),
             date: opts.date,
             keep_original: opts.keep_original,
+            extra: Default::default(),
         };
         if opts.dry_run {
             self.ingest_dry_run(&work, opts, &mut slots)?;
@@ -343,7 +397,7 @@ impl Pipeline {
         report.run_id = Some(run_id);
 
         let policy = SummaryPolicy::load(&self.catalog())?;
-        let hosts = self.ingest_hosts(&policy)?;
+        let hosts = self.ingest_hosts(&policy, EntryOrigin::Ingest)?;
         let mut committed: Vec<String> = Vec::new();
 
         let mut stream = futures::stream::iter(work)
@@ -434,13 +488,14 @@ impl Pipeline {
                 {
                     r.summary_status = Some(e.summary_status.to_string());
                     r.title = Some(e.title.clone());
+                    let min_chars = policy.min_chars_for(e.source_kind);
                     if e.summary_status == second_brain_kernel::SummaryStatus::Skipped
                         && matches!(r.status, IngestStatus::Created | IngestStatus::Updated)
                         && r.message.is_none()
                     {
                         r.message = Some(format!(
                             "shorter than summary.min_chars ({}): kept as searchable text, not summarized",
-                            policy.min_chars
+                            min_chars
                         ));
                     }
                 }
@@ -464,9 +519,10 @@ impl Pipeline {
 
     /// A host per account that can take part: the `web` and `local`
     /// pseudo-accounts and the usable Google accounts.
-    fn ingest_hosts<'a>(
+    pub(crate) fn ingest_hosts<'a>(
         &'a self,
         policy: &'a SummaryPolicy,
+        origin: EntryOrigin,
     ) -> Result<HashMap<String, Host<'a>>, PipelineError> {
         let accounts = self.catalog().accounts()?;
         let mut hosts = HashMap::new();
@@ -484,7 +540,7 @@ impl Pipeline {
                 continue;
             };
             let id = a.id.to_string();
-            hosts.insert(id, Host::new(self, a, source, policy, EntryOrigin::Ingest)?);
+            hosts.insert(id, Host::new(self, a, source, policy, origin)?);
         }
         Ok(hosts)
     }
@@ -503,7 +559,7 @@ impl Pipeline {
         hint.locator = w.raw.clone();
         match self.fetch_inner(&w, hosts, opts, &hint).await {
             Ok(p) => p,
-            Err(why) => Phase::Done(w.idx, IngestResult::failed(&w.raw, why)),
+            Err(f) => Phase::Done(w.idx, IngestResult::failed(&w.raw, f.msg)),
         }
     }
 
@@ -513,7 +569,7 @@ impl Pipeline {
         w: &Work,
         hosts: &HashMap<String, Host<'_>>,
         opts: &IngestOptions,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<String>, Fail> {
         match &w.locator {
             Locator::Web(_) => Ok(vec!["web".into()]),
             Locator::Local(_) => Ok(vec!["local".into()]),
@@ -521,7 +577,7 @@ impl Pipeline {
                 if let Some(a) = &opts.account {
                     return match hosts.get(a) {
                         Some(h) if h.account.kind != AccountKind::Microsoft => {
-                            Err(format!("{a} is not a Microsoft account"))
+                            Err(format!("{a} is not a Microsoft account").into())
                         }
                         _ => Ok(vec![a.clone()]),
                     };
@@ -535,10 +591,10 @@ impl Pipeline {
                     .collect();
                 rest.sort_by_key(|(k, t)| (*t, (*k).clone()));
                 if rest.is_empty() {
-                    return Err(
-                        "no usable Microsoft account (add one with `sb account add microsoft`)"
-                            .into(),
-                    );
+                    return Err(Fail::new(
+                        FailKind::NoAccount,
+                        "no usable Microsoft account (add one with `sb account add microsoft`)",
+                    ));
                 }
                 Ok(rest.into_iter().map(|(k, _)| k.clone()).collect())
             }
@@ -546,7 +602,7 @@ impl Pipeline {
                 if let Some(a) = &opts.account {
                     return match hosts.get(a) {
                         Some(h) if h.account.kind != AccountKind::Google => {
-                            Err(format!("{a} is not a Google account"))
+                            Err(format!("{a} is not a Google account").into())
                         }
                         _ => Ok(vec![a.clone()]),
                     };
@@ -570,22 +626,23 @@ impl Pipeline {
                     }
                 }
                 if out.is_empty() {
-                    return Err(
-                        "no usable Google account (add one with `sb account add google`)".into(),
-                    );
+                    return Err(Fail::new(
+                        FailKind::NoAccount,
+                        "no usable Google account (add one with `sb account add google`)",
+                    ));
                 }
                 Ok(out)
             }
         }
     }
 
-    async fn fetch_inner(
+    pub(crate) async fn fetch_inner(
         &self,
         w: &Work,
         hosts: &HashMap<String, Host<'_>>,
         opts: &IngestOptions,
         hint: &IngestHint,
-    ) -> Result<Phase, String> {
+    ) -> Result<Phase, Fail> {
         let kind = w.locator.source_kind();
         // The same Drive file as a Meet entry is a duplicate.
         if let Locator::Google(id) = &w.locator {
@@ -609,6 +666,8 @@ impl Pipeline {
         }
         let candidates = self.candidates(w, hosts, opts)?;
         let mut notes: Vec<String> = Vec::new();
+        // Accounts that answered "not found or no access".
+        let mut denied = 0usize;
         for account in candidates {
             let Some(host) = hosts.get(&account) else {
                 notes.push(format!(
@@ -622,6 +681,7 @@ impl Pipeline {
                 match source.locate(url).await {
                     Ok(Located::Found(r)) => r,
                     Ok(Located::NotFound(why)) => {
+                        denied += 1;
                         notes.push(format!("{account}: {why}"));
                         continue;
                     }
@@ -638,8 +698,10 @@ impl Pipeline {
                         ));
                         continue;
                     }
-                    Err(SourceError::Cancelled) => return Err("interrupted".into()),
-                    Err(e) => return Err(format!("{account}: {e}")),
+                    Err(SourceError::Cancelled) => {
+                        return Err(Fail::new(FailKind::Interrupted, "interrupted"));
+                    }
+                    Err(e) => return Err(fail_of(&account, &e)),
                 }
             } else {
                 let Some(sref) = source
@@ -650,7 +712,8 @@ impl Pipeline {
                         Locator::Local(_) => "file not found or not readable".to_string(),
                         Locator::Web(_) => "not a valid web address".to_string(),
                         _ => format!("{account}: cannot resolve the locator"),
-                    });
+                    }
+                    .into());
                 };
                 sref
             };
@@ -690,7 +753,9 @@ impl Pipeline {
                 }
                 Ok(FetchOutcome::Unchanged) => {
                     let Some(e) = existing else {
-                        return Err("the source reported no change for a new item".into());
+                        return Err("the source reported no change for a new item"
+                            .to_string()
+                            .into());
                     };
                     if overrides_differ(&e, hint) {
                         return Ok(Phase::Overrides {
@@ -713,9 +778,10 @@ impl Pipeline {
                 }
                 Ok(FetchOutcome::NotFound(why)) => {
                     if matches!(w.locator, Locator::Google(_) | Locator::Microsoft(_)) {
+                        denied += 1;
                         notes.push(format!("{account}: {why}"));
                     } else {
-                        return Err(why);
+                        return Err(why.into());
                     }
                 }
                 Err(e @ SourceError::Auth(_)) => {
@@ -724,14 +790,23 @@ impl Pipeline {
                         self.needs_reauth(host, &account, &e)
                     ));
                 }
-                Err(SourceError::Cancelled) => return Err("interrupted".into()),
-                Err(e) if matches!(w.locator, Locator::Google(_) | Locator::Microsoft(_)) => {
-                    return Err(format!("{account}: {e}"));
+                Err(SourceError::Cancelled) => {
+                    return Err(Fail::new(FailKind::Interrupted, "interrupted"));
                 }
-                Err(e) => return Err(e.to_string()),
+                Err(e) if matches!(w.locator, Locator::Google(_) | Locator::Microsoft(_)) => {
+                    return Err(fail_of(&account, &e));
+                }
+                Err(e) => return Err(e.to_string().into()),
             }
         }
-        Err(notes.join("; "))
+        // Only accounts that could not be used (re-authentication, no Drive access)
+        // and no "not found" answer: the document may be readable once they work.
+        let kind = if denied > 0 {
+            FailKind::NoAccess
+        } else {
+            FailKind::NoAccount
+        };
+        Err(Fail::new(kind, notes.join("; ")))
     }
 
     /// Mark an account as needing re-authentication and open the issue. Returns the
@@ -788,7 +863,7 @@ impl Pipeline {
             .find(|e| e.source_id != fe.source_ref.source_id)
     }
 
-    fn commit_one(
+    pub(crate) fn commit_one(
         &self,
         hosts: &HashMap<String, Host<'_>>,
         account: &str,

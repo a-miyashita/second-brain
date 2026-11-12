@@ -446,7 +446,7 @@ async fn summaries_run_for_long_documents_and_short_ones_are_skipped() {
         assert!(kinds.contains(&k), "missing {k:?} in {kinds:?}");
     }
     let sum = cat.summary(e.id).unwrap().unwrap();
-    assert_eq!(sum.prompt_version.as_deref(), Some("document-summary/v2"));
+    assert_eq!(sum.prompt_version.as_deref(), Some("document-summary/v3"));
     // The user's context reached the model as a hint, outside the input tags.
     let reqs = llm.received_requests().await.unwrap();
     let body = reqs
@@ -851,6 +851,7 @@ async fn an_imported_entry_without_raw_data_is_filled_by_ingest() {
                 source_updated_at: None,
                 sections: vec![],
                 summary: second_brain_store::SummaryDecision::NoSummary,
+                links: Vec::new(),
             }),
         })
         .unwrap();

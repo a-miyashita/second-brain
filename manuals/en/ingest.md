@@ -3,8 +3,9 @@
 Use `sb ingest` to add one item to the knowledge base. The item can be a Google Doc,
 a SharePoint or OneDrive file, a web page or a file on your computer.
 
-Use this command for content that a sync does not collect. For example, a thread
-links to a design document. You add the document with `sb ingest`.
+Use this command for content that a sync does not collect. For example, you want one
+design document. To bring in a whole folder, or the documents that Slack threads link
+to, see [Folders and linked documents](folders-and-links.md).
 
 ## Add an item
 
@@ -33,9 +34,12 @@ The tool cannot read these items:
 - scanned documents without a text layer, and images;
 - files with a password;
 - the old formats `.doc` and `.ppt`. Save them as `.docx` and `.pptx`;
-- Google Drive folders and forms, and SharePoint or OneDrive folders;
+- Google Drive folders and forms, and SharePoint or OneDrive folders. To bring in a
+  whole folder, use `sb folder add`. See
+  [Folders and linked documents](folders-and-links.md);
 - OneNote notebooks, Loop pages, whiteboards and SharePoint site pages;
-- Slack links. The tool reads Slack with `sb sync`.
+- Slack links. The tool reads Slack with `sb sync`. The tool can add the documents
+  that Slack threads link to. See [Folders and linked documents](folders-and-links.md).
 
 For a page that needs a login, save the page as a file. Then add the file.
 
@@ -81,9 +85,10 @@ If at least one item has the status `failed` or `not_applicable`, the exit code 
 - **What the tool stores.** By default, the tool stores only the extracted text. It
   does not keep the original file. Use `--keep-original` to keep it. If you add the
   same item again, the tool updates the entry.
-- **Short documents.** The tool does not summarize a document that is shorter than
-  400 characters. The text stays searchable. The setting `summary.min_chars` changes
-  this limit.
+- **Short documents.** The tool summarizes every Google and Microsoft document, even a
+  short one. For web pages and local files, it does not summarize a document that is
+  shorter than 400 characters. The text stays searchable. The settings
+  `summary.min_chars` and `summary.min_chars.<source kind>` change these limits.
 - **Summary.** After the entry is stored, the tool writes the summary. If the budget
   is used up, or you have no summarizer, the entry waits for its summary. You can
   search it at once.

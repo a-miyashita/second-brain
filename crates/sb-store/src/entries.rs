@@ -191,6 +191,9 @@ pub struct NormalizedUpdate {
     pub source_updated_at: Option<DateTime<Utc>>,
     pub sections: Vec<SectionDraft>,
     pub summary: SummaryDecision,
+    /// Document links found in the entry; recorded in the same transaction
+    /// (ADR-0022).
+    pub links: Vec<second_brain_kernel::links::DiscoveredLink>,
 }
 
 /// An upsert of one entry by natural key.
@@ -538,6 +541,7 @@ pub(crate) fn upsert_entry_tx(
                 n.source_updated_at.map(ts)
             ],
         )?;
+        crate::links::record_links_tx(conn, now, r.account_id.as_str(), entry_id, &n.links)?;
         write_sections(conn, entry_id, SectionOrigin::Extracted, &n.sections, true)?;
         write_sections(conn, entry_id, SectionOrigin::User, &n.sections, false)?;
         match &n.summary {
@@ -1009,6 +1013,7 @@ mod tests {
                 text: text.into(),
             }],
             summary,
+            links: Vec::new(),
         }
     }
 

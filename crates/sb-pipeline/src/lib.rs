@@ -3,13 +3,16 @@
 
 pub mod budget;
 pub mod error;
+pub mod folders;
 pub mod hash_upgrade;
 mod host;
 pub mod import;
 pub mod ingest;
+pub mod link_stage;
 pub mod ops;
 pub mod policy;
 pub mod run;
+pub mod scan_links;
 pub mod summarize;
 pub mod sync;
 

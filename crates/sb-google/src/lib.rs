@@ -4,6 +4,7 @@
 
 pub mod api;
 pub mod doc;
+pub mod folder;
 pub mod gemini;
 pub mod meet;
 pub mod oauth;

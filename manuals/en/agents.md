@@ -68,6 +68,15 @@ these rules:
   It stores your answer as the context.
 - It tells you when the result is `duplicate`, `not_applicable` or `failed`.
 
+## Folders and linked documents
+
+Synced folders and linked documents are your settings. An agent can read them to answer
+a question, for example "is this folder synced?", with `sb folder list` and
+`sb scan-links`. An agent does not add or remove folders, does not run
+`sb scan-links --ingest` or `sb sync`, and does not change these settings. It tells you
+the command, and you run it. A folder name tells the agent where a file is stored. The
+agent does not use it to describe the document.
+
 ## Agent output format
 
 Agents use the option `--json`. The output has a field `schema`, for example

@@ -56,6 +56,7 @@ $ sb config set ingest.local.deny '["**/private/**"]'
 | `summary.profile.<source kind>` | | A profile for one source kind. The default for `google.meet` is `native` |
 | `summary.language` | `auto` | The language of summaries. `auto` uses the language of the entry. You can also use `ja` or `en` |
 | `summary.min_chars` | 400 | The tool does not summarize shorter items |
+| `summary.min_chars.<source kind>` | `0` for `google.doc` and `microsoft.file`; none for the others | The minimum length for one source kind. It replaces `summary.min_chars` for that kind |
 | `summary.min_messages` | 3 | The tool does not summarize conversations with fewer messages |
 | `summary.max_attempts` | 3 | The number of tries for a failed summary |
 | `summary.budget.weekly_usd` | 2.0 | The weekly limit in US dollars. `0` turns it off |
@@ -78,6 +79,17 @@ $ sb config set ingest.local.deny '["**/private/**"]'
 | `ingest.web.allow_private` | `false` | Allow pages on private addresses |
 | `ingest.local.deny` | `[]` | Extra file patterns that the tool must never read |
 
+## Linked documents
+
+| Key | Default | Meaning |
+|---|---|---|
+| `links.ingest_kinds` | `[]` | The kinds of document links in Slack that the tool adds: `google.doc` and `microsoft.file`. An empty list adds none |
+| `links.max_per_run` | 50 | The most links that one sync reads |
+| `links.context_chars` | 1200 | The size of the piece of the thread that the tool keeps with a link |
+| `links.max_attempts` | 6 | After this number of failed tries, the tool stops trying a link |
+
+See [Folders and linked documents](folders-and-links.md).
+
 ## Other
 
 | Key | Default | Meaning |
@@ -94,6 +106,21 @@ Each account has its own settings. Open them with `sb config edit --account <id>
 select the account in the Accounts section of `sb setup` and press Enter. In the
 account settings, `x` removes a value so that the default applies.
 [Slack account](slack-account.md) describes the Slack settings.
+
+For a Slack workspace, `ingest_links` and `ingest_link_hosts` choose the document links
+that the tool adds. See [Folders and linked documents](folders-and-links.md).
+
+For a Google or Microsoft account, `folders` is the list of synced folders. Use
+`sb folder add` to change the list. Each folder has these values:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `key`, `url`, `label` | set by `sb folder add` | The identity of the folder, the link, and the name that the tool shows |
+| `recursive` | `true` | Also read subfolders |
+| `max_depth` | 8 | How many levels of subfolders |
+| `include`, `exclude` | `[]` | Globs for file names or paths |
+| `initial_days` | `sync.initial_days` | Days for the first sync of this folder |
+| `max_files` | 5000 | The folder stops if more files are in scope |
 
 For a Google account, these settings are available:
 

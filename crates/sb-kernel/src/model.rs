@@ -189,6 +189,13 @@ pub struct SummaryInput {
     pub message_count: Option<usize>,
     /// Whether the summarizer should produce a `details` section.
     pub want_details: bool,
+    /// Where a synced file is stored (the folder path). A hint only: it is not
+    /// a description of the file (ADR-0023).
+    #[serde(default)]
+    pub location: Option<String>,
+    /// An excerpt of the Slack conversation that shared a document (ADR-0023).
+    #[serde(default)]
+    pub referenced_in: Option<String>,
 }
 
 /// Token usage and timing of a summarizer call.
@@ -315,6 +322,8 @@ pub struct NormalizeCtx {
     pub timezone: String,
     /// Source-specific snapshot, e.g. the Slack user directory.
     pub snapshot: Value,
+    /// Size limit of the excerpt kept with a discovered link (`links.context_chars`).
+    pub link_context_chars: usize,
 }
 
 /// Input to `Source::normalize`.
@@ -340,6 +349,8 @@ pub struct Normalized {
     pub summary_input: Option<SummaryInput>,
     /// Set when `sections` contains a source-native summary.
     pub native_summary: Option<Generator>,
+    /// Document links found in the entry (Slack entries only, ADR-0022).
+    pub links: Vec<crate::links::DiscoveredLink>,
 }
 
 /// Outcome of normalization.

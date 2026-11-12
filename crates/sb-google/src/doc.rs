@@ -5,6 +5,7 @@
 use async_trait::async_trait;
 use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
+use second_brain_kernel::folder::{FolderConfig, FolderOps, sync_folders};
 use second_brain_kernel::source::{Source, SourceError, SyncHost};
 use second_brain_kernel::util::parse_ts;
 use second_brain_kernel::{
@@ -14,17 +15,18 @@ use second_brain_kernel::{
 use serde_json::{Map, Value, json};
 
 use crate::api::{GOOGLE_DOC_MIME, GoogleApi, doc_id_from_url};
+use crate::folder::DriveFolderLister;
 use crate::gemini;
 use crate::meet::MeetSource;
 
 const SHEET_MIME: &str = "application/vnd.google-apps.spreadsheet";
 const SLIDES_MIME: &str = "application/vnd.google-apps.presentation";
-const SHORTCUT_MIME: &str = "application/vnd.google-apps.shortcut";
+pub(crate) const SHORTCUT_MIME: &str = "application/vnd.google-apps.shortcut";
 const XLSX_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const PPTX_MIME: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 /// How a Drive file is read.
-enum Plan {
+pub(crate) enum Plan {
     /// A native Google file exported in another format.
     Export {
         mime: &'static str,
@@ -36,7 +38,7 @@ enum Plan {
     Unsupported,
 }
 
-fn plan(mime: &str) -> Plan {
+pub(crate) fn plan(mime: &str) -> Plan {
     match mime {
         GOOGLE_DOC_MIME => Plan::Export {
             mime: "text/markdown",
@@ -350,6 +352,9 @@ impl Source for DocSource {
 pub struct GoogleSource {
     meet: MeetSource,
     doc: DocSource,
+    /// Drive folders to sync (ADR-0022).
+    folders: Vec<FolderConfig>,
+    lister: Option<DriveFolderLister>,
 }
 
 impl GoogleSource {
@@ -360,6 +365,8 @@ impl GoogleSource {
     ) -> Result<Self, SourceError> {
         Ok(GoogleSource {
             meet: MeetSource::new(account.clone(), api.clone())?,
+            folders: FolderConfig::list(&account.config),
+            lister: api.clone().map(DriveFolderLister::new),
             doc: DocSource::new(account, api, settings),
         })
     }
@@ -367,9 +374,10 @@ impl GoogleSource {
 
 #[async_trait]
 impl Source for GoogleSource {
-    /// The kinds that `sync` covers.
+    /// The kinds that `sync` covers: Meet notes, and Drive files of the account's
+    /// folders.
     fn kinds(&self) -> &'static [SourceKind] {
-        self.meet.kinds()
+        &[SourceKind::GoogleMeet, SourceKind::GoogleDoc]
     }
 
     fn account_kind(&self) -> AccountKind {
@@ -377,15 +385,29 @@ impl Source for GoogleSource {
     }
 
     fn supports_sync(&self) -> bool {
-        self.meet.supports_sync()
+        self.meet.supports_sync() || !self.folders.is_empty()
     }
 
     fn resolve(&self, locator: &str) -> Option<SourceRef> {
         self.doc.resolve(locator)
     }
 
+    fn folders(&self) -> Option<&dyn FolderOps> {
+        self.lister.as_ref().map(|l| l as &dyn FolderOps)
+    }
+
     async fn sync(&self, host: &dyn SyncHost, opts: &SyncOptions) -> Result<(), SourceError> {
-        self.meet.sync(host, opts).await
+        let wants = |k: SourceKind| opts.kinds.is_empty() || opts.kinds.contains(&k);
+        if self.meet.supports_sync() && wants(SourceKind::GoogleMeet) {
+            self.meet.sync(host, opts).await?;
+        }
+        if wants(SourceKind::GoogleDoc)
+            && !self.folders.is_empty()
+            && let Some(lister) = &self.lister
+        {
+            sync_folders(host, opts, &self.folders, lister).await?;
+        }
+        Ok(())
     }
 
     async fn fetch(

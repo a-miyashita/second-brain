@@ -70,6 +70,13 @@ pub struct SlackConfig {
     /// Workspace URL from `auth.test`, used to build permalinks locally.
     #[serde(default)]
     pub team_url: Option<String>,
+    /// Source kinds whose document links are ingested (ADR-0022); absent = the
+    /// global `links.ingest_kinds`. Read by the pipeline's link stage.
+    #[serde(default)]
+    pub ingest_links: Option<Vec<String>>,
+    /// Globs on the host of those links; empty = any host.
+    #[serde(default)]
+    pub ingest_link_hosts: Vec<String>,
 }
 
 fn d45() -> i64 {

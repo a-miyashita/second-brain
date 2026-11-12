@@ -1,9 +1,14 @@
 # Sources: Google Docs, SharePoint/OneDrive files, web pages and local files
 
-Related ADRs: 0002, 0006, 0008, 0014, 0021.
+Related ADRs: 0002, 0006, 0008, 0014, 0021, 0022, 0023.
 
-Four on-demand sources (no `sync`) used by `sb ingest` ([ingest.md](ingest.md)). They
-implement `Source` with `supports_sync() = false`; `fetch` and `normalize` do the work.
+Four sources used by `sb ingest` ([ingest.md](ingest.md)). `fetch` and `normalize` do the
+work. `web.page` and `local.file` are on demand only (`supports_sync() = false`).
+`google.doc` and `microsoft.file` are also reached by **folder sync** (`sb sync`, configured
+folders; [folder-sync.md](folder-sync.md)) and by **links** found in Slack
+([link-ingest.md](link-ingest.md)) (ADR-0022). All three paths use the same `fetch`, `normalize`
+and natural key, so one file is one entry. The adapter of an account lists and queues for
+folder sync; the fetch of a queued item receives the queue `hint` (`folder`, `folder_path`).
 `fetch` gets the original bytes, runs `sb-extract` ([extract.md](extract.md)) and returns
 the extracted Markdown as the raw data (ADR-0014). `normalize` is pure: it turns the stored
 text and the fetch metadata into sections.
@@ -25,6 +30,11 @@ Common to all four:
   `Replace` bundle.
 - Every source returns `NotApplicable(reason)` when the item is not something to make
   an entry from, and `NotFound(reason)` when it is gone or inaccessible.
+- Fetch-metadata keys written by folder sync and link ingest (`google.doc`, `microsoft.file`):
+  `sync_folder`, `folder_path` (folder-sync.md), `link_context`, `discovered_via`
+  (link-ingest.md). `normalize` turns `folder_path` into the summary's `location` and
+  `link_context` into `referenced_in` (ADR-0023). Both are hints only; they are not
+  sections and not part of `input_hash`.
 - Common fetch-metadata keys: `context`, `title_override`, `date_override` (RFC 3339; from
   the CLI), `original_sha256`, `original_size`, and the extractor results `extractor`
   (for example `"sb-extract 0.1/pdf"`), `doc_title`, `doc_created`, `doc_modified`,
@@ -237,7 +247,8 @@ Bodies are logged only at `trace`.
 ## `microsoft.file`
 
 SharePoint Online document libraries and OneDrive (work, school and personal), through
-Microsoft Graph (ADR-0021). On demand only: no folders, libraries or sites.
+Microsoft Graph (ADR-0021). One locator is one entry; folders that the user adds are listed by
+folder sync (folder-sync.md, ADR-0022), but libraries and sites are never enumerated.
 
 ### Identity
 

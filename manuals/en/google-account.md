@@ -75,6 +75,11 @@ delete the downloaded file after the command finishes.
 Both features `meet` and `docs` give the tool read-only access to Google Drive. An
 account with either feature can ingest Google Docs.
 
+### Sync folders
+
+An account with the feature `meet` or `docs` can also sync Drive folders. No other
+permission is needed. See [Folders and linked documents](folders-and-links.md).
+
 ### Add a second account
 
 You can add more than one Google account. To reuse the same client, give the same

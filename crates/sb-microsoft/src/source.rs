@@ -1,9 +1,11 @@
 //! The `microsoft.file` source: SharePoint and OneDrive files added by `sb ingest`
-//! (docs/specs/source-documents.md, ADR-0021). On demand only: no sync.
+//! (docs/specs/source-documents.md, ADR-0021), and the files of the account's
+//! folders (folder-sync.md, ADR-0022).
 
 use async_trait::async_trait;
 use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
+use second_brain_kernel::folder::{FolderConfig, FolderOps, sync_folders};
 use second_brain_kernel::source::{Located, Source, SourceError, SyncHost};
 use second_brain_kernel::util::parse_ts;
 use second_brain_kernel::{
@@ -12,6 +14,7 @@ use second_brain_kernel::{
 };
 use serde_json::{Map, Value, json};
 
+use crate::folder::GraphFolderLister;
 use crate::graph::{GraphApi, ItemLookup};
 
 /// File types that are never worth a download.
@@ -79,7 +82,7 @@ impl Info {
     }
 }
 
-fn str_at<'a>(v: &'a Value, ptr: &str) -> Option<&'a str> {
+pub(crate) fn str_at<'a>(v: &'a Value, ptr: &str) -> Option<&'a str> {
     v.pointer(ptr)
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty())
@@ -139,7 +142,7 @@ fn classify_item(item: &Value) -> Kind {
 }
 
 /// Why a file name is not worth downloading, if so.
-fn unsupported_reason(name: &str) -> Option<String> {
+pub(crate) fn unsupported_reason(name: &str) -> Option<String> {
     let ext = extension(name)?;
     match ext.as_str() {
         "doc" => Some("unsupported file type: legacy .doc (save it as docx)".into()),
@@ -151,7 +154,7 @@ fn unsupported_reason(name: &str) -> Option<String> {
 
 /// The text for an item that Graph did not return. `message` is Graph's own error text,
 /// which is how a missing permission or an administrator-consent rule becomes visible.
-fn not_found_message(status: u16, message: &str) -> String {
+pub(crate) fn not_found_message(status: u16, message: &str) -> String {
     let base = if status == 400 {
         "Graph could not resolve this URL; copy a sharing link and ingest that"
     } else {
@@ -169,11 +172,16 @@ pub struct MicrosoftSource {
     account: AccountCtx,
     api: Option<GraphApi>,
     settings: IngestSettings,
+    /// Folders to sync (ADR-0022).
+    folders: Vec<FolderConfig>,
+    lister: Option<GraphFolderLister>,
 }
 
 impl MicrosoftSource {
     pub fn new(account: AccountCtx, api: Option<GraphApi>, settings: IngestSettings) -> Self {
         MicrosoftSource {
+            folders: FolderConfig::list(&account.config),
+            lister: api.clone().map(GraphFolderLister::new),
             account,
             api,
             settings,
@@ -209,7 +217,11 @@ impl Source for MicrosoftSource {
     }
 
     fn supports_sync(&self) -> bool {
-        false
+        !self.folders.is_empty()
+    }
+
+    fn folders(&self) -> Option<&dyn FolderOps> {
+        self.lister.as_ref().map(|l| l as &dyn FolderOps)
     }
 
     /// The key is known only to Graph, so a locator cannot be resolved offline.
@@ -230,10 +242,15 @@ impl Source for MicrosoftSource {
         }
     }
 
-    async fn sync(&self, _host: &dyn SyncHost, _opts: &SyncOptions) -> Result<(), SourceError> {
-        Err(SourceError::Unsupported(
-            "SharePoint and OneDrive files have no sync".into(),
-        ))
+    async fn sync(&self, host: &dyn SyncHost, opts: &SyncOptions) -> Result<(), SourceError> {
+        if !opts.kinds.is_empty() && !opts.kinds.contains(&SourceKind::MicrosoftFile) {
+            return Ok(());
+        }
+        let Some(lister) = &self.lister else {
+            return Ok(());
+        };
+        sync_folders(host, opts, &self.folders, lister).await?;
+        Ok(())
     }
 
     async fn fetch(

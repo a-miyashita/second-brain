@@ -285,9 +285,35 @@ async fn unchanged_skips_the_export_and_keep_original_fetches_again() {
 }
 
 #[tokio::test]
+async fn short_documents_are_not_skipped_by_default() {
+    let server = mock().await;
+    let (_d, p) = setup(&server, &["work"]);
+    let r = p.ingest(&[url("TXT1")], &opts()).await.unwrap();
+    assert_eq!(
+        r.results[0].status,
+        IngestStatus::Created,
+        "{:#?}",
+        r.results
+    );
+    let t = p
+        .catalog()
+        .entry_by_key("work", SourceKind::GoogleDoc, "TXT1")
+        .unwrap()
+        .unwrap();
+    // No summarizer is configured in this test, so the entry waits for one;
+    // below the old threshold it would have been `skipped`.
+    assert_eq!(t.summary_status, SummaryStatus::Pending);
+}
+
+#[tokio::test]
 async fn drive_text_files_unsupported_types_and_failures() {
     let server = mock().await;
     let (_d, p) = setup(&server, &["work"]);
+    // Documents are summarized at any length by default (ADR-0023); the old
+    // threshold is still available per source kind.
+    p.catalog()
+        .set_setting("summary.min_chars.google.doc", &serde_json::json!(400))
+        .unwrap();
     let ids = ["TXT1", "FORM1", "TRASH1", "DENIED1", "NOPE1", "BIG1"];
     let locators: Vec<String> = ids.iter().map(|i| url(i)).collect();
     let r = p.ingest(&locators, &opts()).await.unwrap();

@@ -99,6 +99,10 @@ pub trait SyncHost: Send + Sync {
     fn is_cancelled(&self) -> bool;
     /// The current time (from the injected clock).
     fn now(&self) -> DateTime<Utc>;
+    /// Report a problem of the source that does not stop the sync, as an issue
+    /// with a stable code (for example `folder.unavailable`). The default drops
+    /// it.
+    fn issue(&self, _code: &str, _severity: crate::kinds::Severity, _message: &str) {}
 }
 
 /// A source adapter bound to one account.
@@ -127,6 +131,12 @@ pub trait Source: Send + Sync {
     /// A reason this source refuses an item, decided without side effects, so that
     /// a dry run can say so too.
     fn refusal(&self, _source_id: &str) -> Option<String> {
+        None
+    }
+
+    /// Folder operations for `sb folder` and folder sync, if the source has them
+    /// (ADR-0022).
+    fn folders(&self) -> Option<&dyn crate::folder::FolderOps> {
         None
     }
 

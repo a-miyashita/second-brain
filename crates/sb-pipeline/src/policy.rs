@@ -21,6 +21,9 @@ pub struct SummaryPolicy {
     /// Profiles that failed validation, with the reason.
     pub invalid_profiles: BTreeMap<String, String>,
     pub min_chars: usize,
+    /// `summary.min_chars.<source_kind>` overrides (ADR-0023). The built-in
+    /// default is `0` for `google.doc` and `microsoft.file`.
+    pub min_chars_by_kind: BTreeMap<SourceKind, usize>,
     pub min_messages: usize,
     pub max_attempts: i64,
     pub language: String,
@@ -60,6 +63,15 @@ impl SummaryPolicy {
                 per_kind.insert(*kind, s.to_string());
             }
         }
+        let mut min_chars_by_kind = BTreeMap::new();
+        for kind in SourceKind::ALL {
+            if let Some(n) = cat
+                .setting(&format!("summary.min_chars.{kind}"))?
+                .and_then(|v| v.as_u64())
+            {
+                min_chars_by_kind.insert(*kind, n as usize);
+            }
+        }
         let mut profiles = BTreeMap::new();
         let mut invalid_profiles = BTreeMap::new();
         for (key, v) in cat.settings_with_prefix("llm.profiles.")? {
@@ -81,6 +93,7 @@ impl SummaryPolicy {
             profiles,
             invalid_profiles,
             min_chars: cat.setting_or("summary.min_chars", 400usize)?,
+            min_chars_by_kind,
             min_messages: cat.setting_or("summary.min_messages", 3usize)?,
             max_attempts: cat.setting_or("summary.max_attempts", 3i64)?,
             language: cat.setting_or("summary.language", "auto".to_string())?,
@@ -110,13 +123,25 @@ impl SummaryPolicy {
         self.profiles.get(name)
     }
 
+    /// The length threshold that applies to a source kind: its own setting, else
+    /// `summary.min_chars`.
+    pub fn min_chars_for(&self, kind: SourceKind) -> usize {
+        self.min_chars_by_kind
+            .get(&kind)
+            .copied()
+            .unwrap_or(self.min_chars)
+    }
+
     /// Whether a summary input is below the thresholds: conversations by message
     /// count and length, documents by length. Other inputs only when empty.
     pub fn below_thresholds(&self, input: &SummaryInput) -> bool {
         match input.message_count {
-            Some(n) => n < self.min_messages || input.body.chars().count() < self.min_chars,
+            Some(n) => {
+                n < self.min_messages
+                    || input.body.chars().count() < self.min_chars_for(input.source_kind)
+            }
             None if input.prompt == PromptKind::Document => {
-                input.body.chars().count() < self.min_chars
+                input.body.chars().count() < self.min_chars_for(input.source_kind)
             }
             None => input.body.trim().is_empty(),
         }
@@ -213,6 +238,7 @@ mod tests {
             profiles,
             invalid_profiles: BTreeMap::new(),
             min_chars: 10,
+            min_chars_by_kind: BTreeMap::new(),
             min_messages: 2,
             max_attempts: 3,
             language: "auto".into(),
@@ -240,9 +266,53 @@ mod tests {
                 body: body.into(),
                 message_count: messages,
                 want_details: false,
+                location: None,
+                referenced_in: None,
             }),
             native_summary: native.then(Generator::gemini_meet_notes),
+            links: Vec::new(),
         }
+    }
+
+    #[test]
+    fn min_chars_can_be_set_per_source_kind() {
+        let mut p = policy(); // min_chars = 10
+        p.min_chars_by_kind.insert(SourceKind::GoogleDoc, 0);
+        let doc = |kind: SourceKind, body: &str| {
+            let mut n = normalized(body, None, false);
+            if let Some(i) = n.summary_input.as_mut() {
+                i.prompt = PromptKind::Document;
+                i.source_kind = kind;
+            }
+            n
+        };
+        // A short Google Doc is summarized; the same text as a local file is not.
+        assert_eq!(
+            p.decide(
+                SourceKind::GoogleDoc,
+                &doc(SourceKind::GoogleDoc, "tiny"),
+                None
+            ),
+            SummaryDecision::Pending
+        );
+        assert_eq!(
+            p.decide(
+                SourceKind::LocalFile,
+                &doc(SourceKind::LocalFile, "tiny"),
+                None
+            ),
+            SummaryDecision::Skipped
+        );
+        // A raised override applies to that kind only.
+        p.min_chars_by_kind.insert(SourceKind::GoogleDoc, 100);
+        assert_eq!(
+            p.decide(
+                SourceKind::GoogleDoc,
+                &doc(SourceKind::GoogleDoc, "a document that is long enough"),
+                None
+            ),
+            SummaryDecision::Skipped
+        );
     }
 
     #[test]

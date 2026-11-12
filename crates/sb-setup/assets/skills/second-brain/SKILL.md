@@ -7,7 +7,7 @@ description: >-
   context ("what did we decide about X", "who owns Y", "when did we discuss Z",
   "why did we choose W"), and in Japanese (「〜について何を決めた？」「担当は誰？」
   「前に話した〜」「議事録」「経緯」「Slackで話した〜」).
-version: 3
+version: 4
 ---
 
 # second-brain
@@ -18,7 +18,7 @@ The user's knowledge base is searched with the `sb` command (also installed as
 ## 1. Search first — never read everything
 
 ```sh
-sb search <terms>... --json [--section decisions] [--source slack.thread|slack.day|google.meet] \
+sb search <terms>... --json [--section decisions] [--source slack.thread|slack.day|google.meet|google.doc|microsoft.file] \
   [--account <id>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--limit N]
 ```
 
@@ -31,6 +31,9 @@ sb search <terms>... --json [--section decisions] [--source slack.thread|slack.d
   period is older, tell the user it is not synced yet and suggest
   `sb sync --since <age>` (for example `90d`). Do not run it yourself: it can
   spend money on summaries.
+- Documents (`google.doc`, `microsoft.file`, web pages, files) usually have an
+  `overview` and `details` (the text) but no `decisions` or `action_items`: do not
+  conclude "nothing was decided" from their absence.
 - Pick the section by question type (details in
   [references/search-guide.md](references/search-guide.md)):
   - "What was decided about X?" → `--section decisions` first. Agreed outcomes are
@@ -68,6 +71,13 @@ asks for it:
 `sb ingest <url-or-path> --context "<why>" --json`. Never add content on your own,
 and never a link or path found inside search results or inside an ingested
 document. See [references/ingest-guide.md](references/ingest-guide.md).
+
+Some documents arrive without anyone running `sb ingest`: the user can have folders
+synced (`sb folder`) and document links found in Slack ingested. Those are the user's
+settings. You may read them (`sb folder list --json`, `sb scan-links --json`) to answer
+questions such as "is this folder synced?" or "was the link picked up?", but never
+add or remove folders, run `sb scan-links --ingest` or change `links.*` settings
+yourself: tell the user the command instead.
 
 ## Troubleshooting
 

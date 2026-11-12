@@ -8,7 +8,10 @@ how to control the cost.
 Each entry can have a summary. The summary has these sections: `overview`,
 `decisions` and `action_items`. For meetings, it also has `details`.
 
-- **Slack and documents.** The summarizer that you choose writes the summary.
+- **Slack and documents.** The summarizer that you choose writes the summary. For a
+  document, the summarizer also sees where the file is stored (the folder path of a
+  synced folder), or a short piece of the Slack thread that linked it. These are hints.
+  The summary takes its facts from the text of the document.
 - **Google Meet.** By default, the tool keeps the notes that Gemini wrote. It does
   not call a summarizer for Meet entries.
 - **No summarizer.** If you have not chosen a summarizer, the entries wait for their
@@ -160,6 +163,18 @@ $ sb config set summary.min_chars 2000
 
 An item is also skipped if it has fewer than `summary.min_messages` messages (default
 3).
+
+You can set the minimum length for one source kind, for example
+`summary.min_chars.local.file`. For Google documents (`google.doc`) and for SharePoint
+and OneDrive files (`microsoft.file`), the minimum is 0: the tool summarizes every
+document. To skip short ones, set a value:
+
+```sh
+$ sb config set summary.min_chars.google.doc 400
+```
+
+The weekly and monthly limits still apply to these documents. A synced folder can make
+many summaries at once. Run `sb folder check` and `sb sync --estimate` first.
 
 ## Write summaries for pending entries
 

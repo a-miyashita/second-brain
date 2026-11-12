@@ -1,6 +1,6 @@
 # Setup, installation and scheduling
 
-Related ADRs: 0009, 0018, 0020.
+Related ADRs: 0009, 0018, 0020, 0022.
 
 ## Installation (end user)
 
@@ -27,15 +27,16 @@ which ones are complete.
 | # | Section | Rows and actions |
 |---|---|---|
 | 1 | Home | The home directory, whether it is the default; for a custom home, persist `SECOND_BRAIN_HOME` (`setup env`, without the confirmation prompt) |
-| 2 | Accounts | Google and Slack accounts (id, kind, status, identity). Enter edits the account config, `x` disables or enables. Add a Google account (id, client JSON path or `global`, features, label) or a Slack workspace (id, masked token, label) |
-| 3 | Summarizer | Profiles (`llm.profiles.*`), the default marked `*`. Enter makes one the default, `x` removes it (and the default, if it was). Add: pick a preset (as `setup llm`), then name, model, base URL (local only), the API key if the preset needs one that is not stored (masked), make default, test call |
-| 4 | Schedule | Daily time, weekly deep day and time, systemd timers (Linux), the registered state; register or remove the jobs |
-| 5 | Agent skills | Per target: installed version against the embedded one, and whether the agent CLI is on `PATH`. Enter installs or updates, `x` removes |
-| 6 | First sync | `sync.initial_days`; estimate (`sb sync --estimate`); run `sb sync` |
-| 7 | Settings | Every setting of `sb config list`, defaults in grey (below) |
-| 8 | Secrets | Stored secrets, masked; replace, delete or add one (global or per account) |
+| 2 | Accounts | Google, Microsoft and Slack accounts (id, kind, status, identity). Enter edits the account config (a Slack workspace shows `ingest_links` and `ingest_link_hosts`, with the global `links.ingest_kinds` as the value in force until set; a Google or Microsoft account shows `folders`), `x` disables or enables. Add a Google account (id, client JSON path or `global`, features, label) or a Slack workspace (id, masked token, label) |
+| 3 | Folders | Configured Drive and SharePoint/OneDrive folders (account, label, recursive, `covered_since`, last listing). Enter counts what the next sync would enter (`sb folder check`, in the screen, nothing written), `x` removes a folder after confirmation (its entries stay). Add: pick the account if there are several, then folder URL, label, subfolders, include and exclude globs, days back. The job resolves the URL (`sb folder add`) and shows the count. Other options are in the account config |
+| 4 | Summarizer | Profiles (`llm.profiles.*`), the default marked `*`. Enter makes one the default, `x` removes it (and the default, if it was). Add: pick a preset (as `setup llm`), then name, model, base URL (local only), the API key if the preset needs one that is not stored (masked), make default, test call |
+| 5 | Schedule | Daily time, weekly deep day and time, systemd timers (Linux), the registered state; register or remove the jobs |
+| 6 | Agent skills | Per target: installed version against the embedded one, and whether the agent CLI is on `PATH`. Enter installs or updates, `x` removes |
+| 7 | First sync | `sync.initial_days`; estimate (`sb sync --estimate`); run `sb sync` |
+| 8 | Settings | Every setting of `sb config list`, defaults in grey (below) |
+| 9 | Secrets | Stored secrets, masked; replace, delete or add one (global or per account) |
 
-Keys: ↑/↓ (or `j`/`k`) move, Tab / Shift+Tab, ←/→ or `1`–`8` change the section,
+Keys: ↑/↓ (or `j`/`k`) move, Tab / Shift+Tab, ←/→ or `1`–`9` change the section,
 Enter runs the row's action, `x` / Delete its second action, `r` reloads, `q` /
 Esc / Ctrl+C quit. Forms: Tab/↑/↓ move between fields, Space toggles, Enter goes
 to the next field or submits; a one-field form submits on Enter; Esc cancels. A

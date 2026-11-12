@@ -1,6 +1,6 @@
 # Accounts and authentication
 
-Related ADRs: 0003, 0006, 0007, 0021.
+Related ADRs: 0003, 0006, 0007, 0021, 0022.
 
 ## Google
 
@@ -148,3 +148,15 @@ ADR-0003.
 For each account it shows: kind, identity, status, last successful use, scopes (for
 Google and Microsoft), and, with `--online`, a live check (Google and Microsoft token
 refresh, Slack `auth.test`). A Microsoft check refreshes the token, which rotates it.
+
+## Folders and link settings in the account `config` (ADR-0022)
+
+- **Google and Microsoft accounts** can have `folders`, a list added with `sb folder add`
+  and edited with `sb config edit --account <id>`. Keys and rules:
+  [folder-sync.md](folder-sync.md#folder-settings). No scope and no consent change: Google
+  uses `drive.readonly`, Microsoft uses `Files.Read.All`. Folder sync of a Microsoft
+  account lists one folder named by the user; it never lists a site or a drive root that
+  the user did not name.
+- **Slack accounts** can have `ingest_links` and `ingest_link_hosts` (source-slack.md,
+  link-ingest.md). They only decide which already-recorded links are fetched with the
+  user's **Google and Microsoft** accounts; Slack scopes do not change.

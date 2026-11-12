@@ -9,6 +9,7 @@ pub mod error;
 pub mod fts;
 pub mod home;
 pub mod import;
+pub mod links;
 pub mod lock;
 pub mod perms;
 pub mod rawstore;
@@ -27,6 +28,7 @@ pub use entries::{
 };
 pub use error::{Result, StoreError};
 pub use home::Home;
+pub use links::{LinkOutcome, LinkRow, link_backoff, record_link_outcome_tx};
 pub use lock::SyncLock;
 pub use runs::{Issue, Run};
 pub use secrets::SecretScope;

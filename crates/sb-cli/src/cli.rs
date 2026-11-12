@@ -48,6 +48,11 @@ pub enum Command {
     Auth(AuthCmd),
     /// Incremental, resumable sync of all enabled accounts, then summaries.
     Sync(SyncArgs),
+    /// List the document links in Slack entries; with --ingest, ingest them.
+    ScanLinks(ScanLinksArgs),
+    /// Folders of Google Drive and SharePoint/OneDrive that `sb sync` brings in.
+    #[command(subcommand)]
+    Folder(FolderCmd),
     /// Fetch raw data again by natural key (replaces all segments).
     Refetch(RefetchArgs),
     /// Re-run normalization on stored raw data (no network).
@@ -193,6 +198,86 @@ pub enum ConfigCmd {
         #[arg(long)]
         editor: bool,
     },
+}
+
+// ---------- links ----------
+
+#[derive(Debug, Args)]
+pub struct ScanLinksArgs {
+    /// Only entries dated within this age or after this date (`90d`, `2026-07-01`).
+    #[arg(long, value_name = "DATE|AGE")]
+    pub since: Option<String>,
+    /// Only this Slack account (repeatable).
+    #[arg(long = "account", value_name = "ID")]
+    pub accounts: Vec<String>,
+    /// Only this kind of link: google.doc or microsoft.file (repeatable). With
+    /// --ingest it also overrides the enabled kinds for this run.
+    #[arg(long = "kind", value_name = "KIND")]
+    pub kinds: Vec<String>,
+    /// At most this many links (default links.max_per_run).
+    #[arg(long, value_name = "N")]
+    pub limit: Option<u64>,
+    /// Record the links and ingest them (the enabled kinds, or --kind).
+    #[arg(long)]
+    pub ingest: bool,
+    /// With --ingest: try unavailable and abandoned links again now.
+    #[arg(long, requires = "ingest")]
+    pub retry: bool,
+}
+
+// ---------- folders ----------
+
+#[derive(Debug, Subcommand)]
+pub enum FolderCmd {
+    /// Add a folder (by URL) to a Google or Microsoft account. Fetches nothing.
+    Add(FolderAddArgs),
+    /// List the configured folders and their coverage.
+    List {
+        #[arg(long, value_name = "ID")]
+        account: Option<String>,
+    },
+    /// Remove a folder setting. Entries already made stay.
+    Remove {
+        account: String,
+        /// The folder's label or key.
+        folder: String,
+    },
+    /// Count what the next sync would enter, without writing anything.
+    Check {
+        account: Option<String>,
+        /// The folder's label or key (default: every folder of the account).
+        folder: Option<String>,
+        /// Look back to this date or age (`2026-07-01`, `90d`).
+        #[arg(long, value_name = "DATE|AGE")]
+        since: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct FolderAddArgs {
+    pub account: String,
+    /// The folder's URL (a Drive folder, or a SharePoint/OneDrive folder link).
+    pub url: String,
+    #[arg(long)]
+    pub label: Option<String>,
+    /// Do not list subfolders.
+    #[arg(long)]
+    pub no_recursive: bool,
+    /// Folder levels below the root that are listed (default 8).
+    #[arg(long, value_name = "N")]
+    pub max_depth: Option<u32>,
+    /// Only files whose name or path matches (glob, repeatable).
+    #[arg(long, value_name = "GLOB")]
+    pub include: Vec<String>,
+    /// Skip files whose name or path matches (glob, repeatable).
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
+    /// Look-back of the first sync in days (default `sync.initial_days`).
+    #[arg(long, value_name = "N")]
+    pub initial_days: Option<i64>,
+    /// Stop the folder's sync above this many files in scope (default 5000).
+    #[arg(long, value_name = "N")]
+    pub max_files: Option<usize>,
 }
 
 // ---------- account / auth ----------

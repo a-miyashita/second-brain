@@ -37,6 +37,36 @@ Each locator has a `status`:
 the entries are searchable already. Do not run `sb sync` or `sb summarize` unless the
 user asks.
 
+## Folders and links are the user's settings
+
+Not every document comes from `sb ingest`. Two settings bring documents in by
+themselves during `sb sync`:
+
+- **Synced folders** (`sb folder add <account> <url>`): the supported files of a Google
+  Drive or SharePoint/OneDrive folder, kept up to date.
+- **Links in Slack**: Google Drive and SharePoint/OneDrive file links found in synced
+  Slack conversations, for the kinds the user listed in `links.ingest_kinds` (or the
+  workspace's `ingest_links`). Web pages are never taken from Slack.
+
+Rules for you:
+
+- **Read, do not change.** Reading is fine when the user asks: `sb folder list --json`
+  (folders and how far back they are covered), `sb scan-links --json` (links found in
+  Slack and their state). Never run `sb folder add|remove`, `sb scan-links --ingest`,
+  `sb sync`, or `sb config set links.*` / `summary.min_chars.*` yourself. They fetch
+  documents and can spend money on summaries; give the user the command to run.
+- Link states in `sb scan-links`: `new` (found, not recorded), `pending` (waiting: the
+  kind is off, there is no account for it, or the run limit was reached), `ingested`,
+  `unavailable` (no account can read it; retried later), `abandoned` (gave up),
+  `not_applicable` (a folder, an unsupported type), `duplicate`. For `pending`, say
+  which of the reasons applies if you can see it (`last_error`); do not guess.
+- An entry made this way shows where it came from in `sb show <uid> --meta --json`:
+  `folder_path` (the folder it lives in) or `discovered_via` (the Slack thread that
+  shared it). Cite the document's own `cite_url`, and mention the thread when it
+  explains why the document matters.
+- A folder name tells you where a file is stored, not what it is about. Do not describe a
+  document by its folder.
+
 ## Notes
 
 - Only the extracted text is stored, not the original. Ingesting the same locator again
