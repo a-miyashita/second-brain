@@ -241,6 +241,22 @@ mod tests {
     }
 
     #[test]
+    fn folder_path_and_link_context_are_hints_not_sections() {
+        let meta = json!({
+            "folder_path": "Minutes / 2026",
+            "link_context": "#dev, 2026-09-01\nBob: please read [linked document]",
+            "sync_folder": "ROOT"
+        });
+        let n = entry(normalize_document(&sref(), &meta, &seg("body text")).unwrap());
+        let i = n.summary_input.unwrap();
+        assert_eq!(i.location.as_deref(), Some("Minutes / 2026"));
+        assert!(i.referenced_in.as_deref().unwrap().contains("please read"));
+        assert_eq!(i.context, None);
+        // No background section: the hints do not appear in the entry's text.
+        assert!(n.sections.iter().all(|s| s.kind == SectionKind::Details));
+    }
+
+    #[test]
     fn title_falls_back_in_order() {
         let n = entry(
             normalize_document(

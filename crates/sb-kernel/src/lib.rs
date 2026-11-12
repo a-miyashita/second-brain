@@ -4,6 +4,7 @@ pub mod budget;
 pub mod clock;
 pub mod coverage;
 pub mod document;
+pub mod folder;
 pub mod kinds;
 pub mod links;
 pub mod model;

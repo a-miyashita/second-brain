@@ -93,34 +93,10 @@ pub fn host_allowed(account: &Account, host: &str) -> bool {
         .flatten()
         .filter_map(Value::as_str)
         .collect();
-    patterns.is_empty() || patterns.iter().any(|p| glob_match(p, host))
-}
-
-fn glob_match(pattern: &str, text: &str) -> bool {
-    let p: Vec<char> = pattern.to_lowercase().chars().collect();
-    let t: Vec<char> = text.to_lowercase().chars().collect();
-    let (mut pi, mut ti) = (0, 0);
-    let (mut star, mut mark) = (None, 0);
-    while ti < t.len() {
-        if pi < p.len() && p[pi] == '*' {
-            star = Some(pi);
-            mark = ti;
-            pi += 1;
-        } else if pi < p.len() && p[pi] == t[ti] {
-            pi += 1;
-            ti += 1;
-        } else if let Some(s) = star {
-            pi = s + 1;
-            mark += 1;
-            ti = mark;
-        } else {
-            return false;
-        }
-    }
-    while pi < p.len() && p[pi] == '*' {
-        pi += 1;
-    }
-    pi == p.len()
+    patterns.is_empty()
+        || patterns
+            .iter()
+            .any(|p| second_brain_kernel::util::glob_match(p, host))
 }
 
 impl Pipeline {
@@ -371,26 +347,5 @@ impl Pipeline {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn host_patterns() {
-        assert!(glob_match(
-            "contoso.sharepoint.com",
-            "Contoso.SharePoint.com"
-        ));
-        assert!(glob_match("*.sharepoint.com", "contoso-my.sharepoint.com"));
-        assert!(glob_match("*", "anything"));
-        assert!(!glob_match("*.sharepoint.com", "sharepoint.com"));
-        assert!(!glob_match(
-            "contoso.sharepoint.com",
-            "other.sharepoint.com"
-        ));
-        assert!(glob_match("docs.*.com", "docs.google.com"));
     }
 }

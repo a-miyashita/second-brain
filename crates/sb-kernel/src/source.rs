@@ -99,6 +99,10 @@ pub trait SyncHost: Send + Sync {
     fn is_cancelled(&self) -> bool;
     /// The current time (from the injected clock).
     fn now(&self) -> DateTime<Utc>;
+    /// Report a problem of the source that does not stop the sync, as an issue
+    /// with a stable code (for example `folder.unavailable`). The default drops
+    /// it.
+    fn issue(&self, _code: &str, _severity: crate::kinds::Severity, _message: &str) {}
 }
 
 /// A source adapter bound to one account.

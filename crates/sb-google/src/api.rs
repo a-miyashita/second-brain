@@ -254,6 +254,46 @@ impl GoogleApi {
         Ok((files, next))
     }
 
+    /// One page of the children of a folder (not trashed), with what folder
+    /// sync needs: modification time, size and shortcut target.
+    pub async fn list_children(
+        &self,
+        folder_id: &str,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<Value>, Option<String>), SourceError> {
+        let mut query = vec![
+            (
+                "q",
+                format!("'{}' in parents and trashed = false", folder_id.replace('\'', "")),
+            ),
+            ("pageSize", "1000".to_string()),
+            (
+                "fields",
+                "nextPageToken,files(id,name,mimeType,modifiedTime,size,shortcutDetails(targetId,targetMimeType))"
+                    .to_string(),
+            ),
+            ("supportsAllDrives", "true".to_string()),
+            ("includeItemsFromAllDrives", "true".to_string()),
+        ];
+        if let Some(t) = page_token {
+            query.push(("pageToken", t.to_string()));
+        }
+        let v = self
+            .get_json(&format!("{}/files", self.drive_base), &query)
+            .await?
+            .unwrap_or(Value::Null);
+        let files = v
+            .get("files")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let next = v
+            .get("nextPageToken")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        Ok((files, next))
+    }
+
     /// One page of primary-calendar events in `[time_min, time_max)`.
     pub async fn events(
         &self,

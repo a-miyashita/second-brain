@@ -329,6 +329,8 @@ impl Pipeline {
                     )?;
                     cat.resolve_issues("auth.", Some(account.id.as_str()))?;
                     cat.resolve_issues("sync.", Some(account.id.as_str()))?;
+                    // Folder problems that this run did not meet again are over.
+                    cat.resolve_unseen_issues("folder.", account.id.as_str(), run_started_at)?;
                     if let Some(s) = stop {
                         stats.stop = Some(s);
                         break;
