@@ -1,6 +1,6 @@
 # Agent integration: skill and MCP
 
-Related ADR: 0010.
+Related ADRs: 0010, 0022.
 
 ## Skill
 
@@ -10,7 +10,8 @@ Files are embedded from `crates/sb-setup/assets/skills/second-brain/`:
 SKILL.md               # frontmatter: name, description, version
 references/
   search-guide.md      # section guidance table, query tips (2-char Japanese terms work)
-  ingest-guide.md      # how to add documents, which one question to ask the user
+  ingest-guide.md      # how to add documents, which one question to ask the user,
+                       # and the read-only rules for synced folders and Slack links
 ```
 
 `SKILL.md` content outline (English, concise):
@@ -40,6 +41,14 @@ references/
      or `sb scan-links --ingest` on its own;
    - tell the user when an entry comes back `duplicate`, `not_applicable` or `failed`,
      with the reason shown in the result.
+
+7. **Folders and links are the user's settings** (ADR-0022). The agent may read them
+   (`sb folder list --json`, `sb scan-links --json`, and `sb show --meta` for
+   `folder_path` / `discovered_via`) but never runs `sb folder add|remove`,
+   `sb scan-links --ingest`, `sb sync` or `sb config set links.*`; it gives the user the
+   command. It says that documents have `overview` and `details` but usually no
+   `decisions` or `action_items`, and that a folder name says where a file is stored, not
+   what it is about. Skill version 4.
 
 - The frontmatter description lists trigger phrases in both English and Japanese.
 - The version marker is a `version:` field equal to the binary's skill version.

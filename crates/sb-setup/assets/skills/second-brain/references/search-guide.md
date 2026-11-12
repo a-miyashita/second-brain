@@ -8,7 +8,7 @@
 | "Why? What was the history?" | `details` |
 | "Who owns this task?" | `action_items` |
 | General overview | `overview` |
-| Why a document was added | `background` |
+| Why a document was added | `background` (documents added by `sb ingest --context`). Documents from synced folders or Slack links have none; see `sb show --meta` (`discovered_via`) |
 
 `details` of Slack entries is the rendered conversation itself; `details` of
 meetings is the discussion summary.
