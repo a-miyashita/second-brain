@@ -13,6 +13,21 @@ Out of scope: change feeds (Drive Changes, Graph `delta`), enumeration of sites 
 drive roots, links in sources other than Slack, links to web pages, refreshing linked
 documents by sync, deleting entries.
 
+## Status
+
+Tasks 1 to 14 are done, in the order of the plan: the kernel types and the shared folder
+walk, migration `0004`, `document-summary/v3` and the per-kind threshold, the Slack link
+extraction, the link stage, folder sync for both providers, `sb folder`, `sb scan-links`,
+the doctor checks, the setup and settings screen, the skill (version 4) and the manuals.
+Differences from the text below are written into the specs (for example, the per-folder
+breakdown is returned by `sb folder check`, not by `sb sync --json`).
+
+**Still open: the spikes.** They need real accounts and tenants, so the code was written
+and tested against mock servers. Before a release, check at least S-F1 (Graph `children`
+with `Files.Read.All` only, and the `delta` limit) and S-F2 (Drive `modifiedTime`
+semantics, shared drives). If the facts differ from ADR-0022 decision 5, add an
+Amendment to the ADR.
+
 ## Spikes (before the code that depends on them)
 
 | # | Question | Result goes to |

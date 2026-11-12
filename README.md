@@ -6,6 +6,8 @@ personal knowledge base for AI agents.
 The tool does the following:
 
 - It collects context from Slack, Google Meet notes, documents (Google Docs, SharePoint and OneDrive files) and web pages.
+  It can also sync Google Drive, SharePoint and OneDrive folders, and add the documents
+  that Slack threads link to.
 - It stores the raw data as files and keeps a catalog in SQLite.
 - It summarizes each entry with an LLM and records which model wrote each summary.
 - It lets AI agents search the catalog through an agent skill that calls the CLI
@@ -41,7 +43,7 @@ cargo run --bin sb -- doctor         # shows the health of the setup
 ```
 
 Without `SECOND_BRAIN_HOME`, the tool uses a default directory for your OS. Sync
-and `ingest` need real Slack or Google accounts. Use a test account or a temporary
+and `ingest` need real Slack, Google or Microsoft accounts. Use a test account or a temporary
 home when you try them.
 
 To install the binaries from your working copy (users install with

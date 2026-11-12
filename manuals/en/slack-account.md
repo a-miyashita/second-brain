@@ -82,6 +82,10 @@ These are the main settings:
 | `exclude_channels` | `[]` | Channels or people to skip |
 | `mention_scan` | `all` | How the tool finds threads that involve you in other channels: `all`, `search_only` or `off` |
 | `initial_days` | 30 | How many days back the first sync reads |
+| `ingest_links` | the setting `links.ingest_kinds` | The kinds of document links that the tool adds from this workspace: `google.doc`, `microsoft.file`. An empty list turns it off for this workspace. `x` removes your value |
+| `ingest_link_hosts` | `[]` | Add only links to these host names. `*` is allowed. An empty list allows all hosts |
+
+The last two settings are described in [Folders and linked documents](folders-and-links.md).
 
 The tool checks the file when you save it.
 

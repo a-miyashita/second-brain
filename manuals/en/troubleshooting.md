@@ -99,8 +99,20 @@ App**. See [Slack account](slack-account.md).
 | `path is not allowed` | The tool never reads this file. See [Adding documents](ingest.md) |
 | `not found or no access` for a Google link | None of your Google accounts can open the file. Add the right account, or ask for access |
 | A private address is refused | Set `ingest.web.allow_private` to `true` only if you trust the page |
-| `folders are not supported` | Add the files in the folder one by one |
+| `folders are not supported` | Add the files one by one, or sync the folder with `sb folder add` |
 | `Slack content is ingested by sb sync` | Use `sb sync` for Slack links |
+
+## A synced folder or a linked document is missing
+
+| Symptom | Cause and solution |
+|---|---|
+| `sb sync` shows `folder ... cannot be read` | Someone deleted the folder or took your access. Open the folder in your browser. If you lost it, run `sb folder remove <account> <folder>` |
+| `files are in scope, more than max_files` | The folder is too big. Raise `max_files` in the settings of the account, use `--include` and `--exclude`, or read fewer days |
+| A file of the folder is missing | The tool skips files of unsupported types, lock files and files that nobody changed in the days that it reads. Run `sb folder check` to see the counts, and `sb sync --since 180d` to read older files |
+| `sb folder add` says that it is not a folder | You gave the link of a file. Use the link of the folder. To add one file, use `sb ingest` |
+| A link in Slack is not added | Run `sb scan-links`. `pending` means that the kind is off or you have no account for it. `unavailable` means that no account can open it. Check `links.ingest_kinds` and your accounts |
+| The links of old threads are not added | The tool records links when it syncs a thread. Run `sb scan-links --ingest` for old threads |
+| A SharePoint or OneDrive step shows `AADSTS...` | Your organization has to approve the app. See [Microsoft account](microsoft-account.md) |
 
 ## A scheduled sync does not run
 

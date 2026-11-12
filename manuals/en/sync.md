@@ -11,9 +11,12 @@ $ sb sync
 
 The command does these steps:
 
-1. It reads new content from all enabled accounts.
-2. It writes summaries for the new and changed entries.
-3. It updates the search index.
+1. It reads new content from all enabled accounts. This includes the folders that you
+   added with `sb folder add`.
+2. It adds the documents that Slack threads link to, if you allowed this. See
+   [Folders and linked documents](folders-and-links.md).
+3. It writes summaries for the new and changed entries.
+4. It updates the search index.
 
 On the first run, the tool reads the last 30 days. After that, it reads only what is
 new.
@@ -35,12 +38,14 @@ keeps the finished work.
 | `--dry-run` | Shows what the sync would do. The command uses no network |
 | `--estimate` | Shows the number of tokens and the cost of the pending summaries |
 
+To see what a synced folder would add before the first sync, use `sb folder check`.
+
 ## Limit a sync
 
 | Option | Result |
 |---|---|
 | `--account <id>` | Sync only this account |
-| `--source <kind>` | Sync only this source kind, for example `slack.thread` |
+| `--source <kind>` | Sync only this source kind, for example `slack.thread`. `google.doc` and `microsoft.file` select the folders. `links` runs only the step for linked documents |
 | `--no-summary` | Collect data, but do not write summaries |
 | `--max-summaries <n>` | Write at most this number of summaries |
 | `--max-cost <usd>` | Stop when the estimated cost reaches this amount |
@@ -58,7 +63,8 @@ $ sb sync --since 90d
 ```
 
 The command reads only the days that you did not read before. In this example, it
-reads days 31 to 90.
+reads days 31 to 90. For a synced folder, the days are the modification dates of the
+files.
 
 You can write the date in these ways:
 

@@ -20,6 +20,7 @@ manual uses `sb`.
 | [Syncing](sync.md) | How to collect new data, and how to run it every day |
 | [Searching](search.md) | How to find and read entries |
 | [Adding documents](ingest.md) | How to add a Google Doc, a SharePoint or OneDrive file, a web page or a file |
+| [Folders and linked documents](folders-and-links.md) | How to sync a Drive, SharePoint or OneDrive folder, and how to add the documents that people link in Slack |
 | [Importing data](import.md) | How to import data from an import bundle |
 | [Summaries and cost](summaries.md) | How to choose a summarizer, and how to limit its cost |
 | [AI agents](agents.md) | How to let an AI agent search your entries |

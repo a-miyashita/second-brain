@@ -80,6 +80,13 @@ the computer that runs the command, because the browser sends the result to
 | `--label <text>` | A display name for the account |
 | `--no-browser` | Print the URL instead of opening a browser |
 
+## Sync folders and read linked documents
+
+The permission `Files.Read.All` is enough to sync a SharePoint or OneDrive folder, and
+to read the documents that people link in Slack. You do not need `Sites.Read.All`, and
+the tool never lists a whole site. It reads only the folders that you name with
+`sb folder add`. See [Folders and linked documents](folders-and-links.md).
+
 ## Check the account
 
 ```sh
