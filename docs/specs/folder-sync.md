@@ -121,7 +121,9 @@ those of the account's other calls.
      (ingest.md).
 8. **Enqueue** all `folder_new` and `folder_changed` files as `QueueItem`s with
    `reason = folder_new | folder_changed` and
-   `hint = {"folder": <key>, "folder_path": "<path>", "modified_time": "...", "etag": "..."}`,
+   `hint = {"extra": {"sync_folder": <key>, "folder_path": "<path>"}, "modified_time": "...",
+   "etag": "...", "name": "...", "size": n}` (shaped like `IngestHint`, so the fetch picks up
+   `extra`; `name` and `size` are for `sb folder check`),
    together with the folder's updated coverage, in one transaction per 500 items
    (ADR-0012). An existing queue row for the same key is replaced.
 9. **Stop conditions.** If the files in scope exceed `max_files`, nothing is enqueued for
@@ -174,6 +176,10 @@ file that was in scope and is later moved out of the folder is not touched.
   those accounts. `--source google.meet` and `--source slack` do not run it.
 - `--deep` has no extra effect on folders.
 - `sb sync --dry-run` lists the queued items and does not list folders (no network).
+- Provider access is one trait, `FolderOps` (`sb-kernel`): listing, change detection, the kinds
+  that make an entry a duplicate, and URL resolution. A source returns it from
+  `Source::folders()`. `sb folder` and the sync use the same code, so `check` shows what a
+  sync would do.
 
 ## What is stored
 
@@ -189,10 +195,12 @@ kept, and the folder keys are added to its metadata at the next fetch.
 
 ## Stats and JSON
 
-`sb.sync/v1` adds (additive) `folders`: a list of `{"account", "folder", "listed",
-"in_scope", "new", "changed", "unchanged", "duplicate", "unsupported", "excluded",
-"too_deep", "status"}`. `status` is `ok`, `too_large`, `unavailable` or `failed`. The human
-output prints one line per folder.
+A sync reports what it queued and fetched under `stats.sources` like any source
+(`<account>/google.doc`: `queued`, `new`, `updated`, ...), and its folder problems as errors
+and issues. The per-folder breakdown (`listed`, `in_scope`, `new`, `changed`, `unchanged`,
+`duplicate`, `unsupported`, `excluded`, `too_deep`, `status`) is the `FolderReport` that
+`sb folder check` prints and returns in `--json` (`sb.folder/v1`, key `check`); it is not
+part of `sb.sync/v1`.
 
 ## Errors and issues
 
@@ -200,6 +208,7 @@ output prints one line per folder.
 |---|---|---|
 | `folder.unavailable` | error | The root cannot be read (deleted, access lost). Opened per account and folder; resolved by the next successful listing |
 | `folder.too_large` | warning | Files in scope above `max_files` |
+| `folder.failed` | warning | Listing the folder failed for another reason (an API error, a next-page link that leaves the provider's host). The other folders are still synced |
 | `auth.needs_reauth` | error | As for every account |
 
 A single file that cannot be fetched is an ordinary failed queue item (`sync.queue` check

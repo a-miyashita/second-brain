@@ -313,3 +313,54 @@ async fn an_account_without_folders_is_not_synced() {
         0
     );
 }
+
+const FOLDER_URL: &str = "https://contoso.sharepoint.com/:f:/s/x/EfolderToken?e=abc";
+const FILE_URL: &str = "https://contoso.sharepoint.com/sites/x/Minutes/plan.md";
+
+#[tokio::test]
+async fn folder_add_resolves_a_sharing_link_and_refuses_files() {
+    use second_brain_microsoft::graph::share_id;
+    use second_brain_pipeline::PipelineError;
+    use second_brain_pipeline::folders::FolderAdd;
+    let e = env(false).await;
+    Mock::given(path(format!("/shares/{}/driveItem", share_id(FOLDER_URL))))
+        .respond_with(ResponseTemplate::new(200).set_body_json(folder_item("ROOT", "Minutes")))
+        .mount(&e.server)
+        .await;
+    Mock::given(path(format!("/shares/{}/driveItem", share_id(FILE_URL))))
+        .respond_with(ResponseTemplate::new(200).set_body_json(item(
+            "F1",
+            "plan.md",
+            "e1",
+            json!({}),
+        )))
+        .mount(&e.server)
+        .await;
+
+    let info =
+        e.p.folder_add("work", FOLDER_URL, &FolderAdd::default())
+            .await
+            .unwrap();
+    assert_eq!(info.folder.key, format!("{DRIVE}/ROOT"));
+    assert_eq!(info.folder.label, "Minutes");
+    assert_eq!(info.source_kind, SourceKind::MicrosoftFile);
+
+    for (url, needle) in [
+        (FILE_URL, "not a folder"),
+        ("https://example.test/x", "not a SharePoint or OneDrive URL"),
+    ] {
+        let err =
+            e.p.folder_add("work", url, &FolderAdd::default())
+                .await
+                .unwrap_err();
+        assert!(matches!(err, PipelineError::Invalid(_)), "{err:?}");
+        assert!(err.to_string().contains(needle), "{url}: {err}");
+    }
+
+    // The folder added by URL syncs like a configured one.
+    let r = e.p.sync(&opts()).await.unwrap();
+    assert!(r.stats.errors.is_empty(), "{:?}", r.stats.errors);
+    assert!(entry(&e, "F1").is_some());
+    let checks = e.p.folder_check(Some("work"), None, None).await.unwrap();
+    assert_eq!((checks[0].report.new, checks[0].report.unchanged), (0, 2));
+}

@@ -134,6 +134,12 @@ pub trait Source: Send + Sync {
         None
     }
 
+    /// Folder operations for `sb folder` and folder sync, if the source has them
+    /// (ADR-0022).
+    fn folders(&self) -> Option<&dyn crate::folder::FolderOps> {
+        None
+    }
+
     /// Whether `sync` is implemented.
     fn supports_sync(&self) -> bool {
         true

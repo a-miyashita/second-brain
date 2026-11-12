@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
-use second_brain_kernel::folder::{FolderConfig, FolderSyncParams, sync_folders};
+use second_brain_kernel::folder::{FolderConfig, FolderOps, sync_folders};
 use second_brain_kernel::source::{Located, Source, SourceError, SyncHost};
 use second_brain_kernel::util::parse_ts;
 use second_brain_kernel::{
@@ -14,7 +14,7 @@ use second_brain_kernel::{
 };
 use serde_json::{Map, Value, json};
 
-use crate::folder::{self, GraphFolderLister};
+use crate::folder::GraphFolderLister;
 use crate::graph::{GraphApi, ItemLookup};
 
 /// File types that are never worth a download.
@@ -154,7 +154,7 @@ pub(crate) fn unsupported_reason(name: &str) -> Option<String> {
 
 /// The text for an item that Graph did not return. `message` is Graph's own error text,
 /// which is how a missing permission or an administrator-consent rule becomes visible.
-fn not_found_message(status: u16, message: &str) -> String {
+pub(crate) fn not_found_message(status: u16, message: &str) -> String {
     let base = if status == 400 {
         "Graph could not resolve this URL; copy a sharing link and ingest that"
     } else {
@@ -220,6 +220,10 @@ impl Source for MicrosoftSource {
         !self.folders.is_empty()
     }
 
+    fn folders(&self) -> Option<&dyn FolderOps> {
+        self.lister.as_ref().map(|l| l as &dyn FolderOps)
+    }
+
     /// The key is known only to Graph, so a locator cannot be resolved offline.
     fn resolve(&self, _locator: &str) -> Option<SourceRef> {
         None
@@ -245,13 +249,7 @@ impl Source for MicrosoftSource {
         let Some(lister) = &self.lister else {
             return Ok(());
         };
-        let p = FolderSyncParams {
-            kind: SourceKind::MicrosoftFile,
-            lister,
-            changed: &folder::changed,
-            duplicate_kinds: &[],
-        };
-        sync_folders(host, opts, &self.folders, &p).await?;
+        sync_folders(host, opts, &self.folders, lister).await?;
         Ok(())
     }
 

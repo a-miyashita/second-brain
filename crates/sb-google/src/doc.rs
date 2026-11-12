@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use second_brain_extract::bundle::{BundleInput, DocBundle, build_bundle};
 use second_brain_kernel::document::{IngestHint, IngestSettings, normalize_document};
-use second_brain_kernel::folder::{FolderConfig, FolderSyncParams, sync_folders};
+use second_brain_kernel::folder::{FolderConfig, FolderOps, sync_folders};
 use second_brain_kernel::source::{Source, SourceError, SyncHost};
 use second_brain_kernel::util::parse_ts;
 use second_brain_kernel::{
@@ -15,7 +15,7 @@ use second_brain_kernel::{
 use serde_json::{Map, Value, json};
 
 use crate::api::{GOOGLE_DOC_MIME, GoogleApi, doc_id_from_url};
-use crate::folder::{self, DriveFolderLister};
+use crate::folder::DriveFolderLister;
 use crate::gemini;
 use crate::meet::MeetSource;
 
@@ -392,6 +392,10 @@ impl Source for GoogleSource {
         self.doc.resolve(locator)
     }
 
+    fn folders(&self) -> Option<&dyn FolderOps> {
+        self.lister.as_ref().map(|l| l as &dyn FolderOps)
+    }
+
     async fn sync(&self, host: &dyn SyncHost, opts: &SyncOptions) -> Result<(), SourceError> {
         let wants = |k: SourceKind| opts.kinds.is_empty() || opts.kinds.contains(&k);
         if self.meet.supports_sync() && wants(SourceKind::GoogleMeet) {
@@ -401,13 +405,7 @@ impl Source for GoogleSource {
             && !self.folders.is_empty()
             && let Some(lister) = &self.lister
         {
-            let p = FolderSyncParams {
-                kind: SourceKind::GoogleDoc,
-                lister,
-                changed: &folder::changed,
-                duplicate_kinds: &[SourceKind::GoogleMeet],
-            };
-            sync_folders(host, opts, &self.folders, &p).await?;
+            sync_folders(host, opts, &self.folders, lister).await?;
         }
         Ok(())
     }

@@ -124,6 +124,32 @@ pub trait FolderLister: Send + Sync {
     async fn children(&self, folder_id: &str) -> Result<Vec<Child>, SourceError>;
 }
 
+/// A folder named by a URL, as `sb folder add` resolves it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedFolder {
+    /// The `key` of the folder setting.
+    pub key: String,
+    pub name: String,
+}
+
+/// Everything a provider offers for folders. A source returns it from
+/// [`crate::source::Source::folders`].
+#[async_trait]
+pub trait FolderOps: FolderLister {
+    /// `google.doc` or `microsoft.file`.
+    fn kind(&self) -> SourceKind;
+    /// Kinds in which an existing entry with the same ID means "already known"
+    /// (a Gemini notes document that is a `google.meet` entry).
+    fn duplicate_kinds(&self) -> &'static [SourceKind] {
+        &[]
+    }
+    /// Whether a listed file differs from the `fetch_state` stored with its entry.
+    fn changed(&self, file: &FolderFile, state: &Value) -> bool;
+    /// Resolve a folder URL. An error of kind `Rejected` carries a message for
+    /// the user (not a folder, no access).
+    async fn resolve_folder(&self, url: &str) -> Result<ResolvedFolder, SourceError>;
+}
+
 /// A listed file with its place in the tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScanFile {
@@ -281,21 +307,6 @@ impl Window {
     }
 }
 
-/// How the provider compares a listed file with the state stored in the entry.
-pub type ChangedFn = dyn Fn(&FolderFile, &Value) -> bool + Send + Sync;
-
-/// Provider parameters of [`sync_folders`].
-pub struct FolderSyncParams<'a> {
-    /// `google.doc` or `microsoft.file`.
-    pub kind: SourceKind,
-    pub lister: &'a dyn FolderLister,
-    /// Whether a listed file differs from the stored `fetch_state`.
-    pub changed: &'a ChangedFn,
-    /// Kinds in which an existing entry with the same ID means "already known"
-    /// (a Gemini notes document that is a `google.meet` entry).
-    pub duplicate_kinds: &'a [SourceKind],
-}
-
 /// What happened to one folder in one run.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct FolderReport {
@@ -326,6 +337,8 @@ fn hint(cfg: &FolderConfig, f: &ScanFile) -> Value {
         "extra": {"sync_folder": cfg.key, "folder_path": f.folder_path},
         "modified_time": f.file.modified_raw,
         "etag": f.file.etag,
+        "name": f.file.name,
+        "size": f.file.size,
     })
 }
 
@@ -335,7 +348,7 @@ pub async fn sync_folders(
     host: &dyn SyncHost,
     opts: &SyncOptions,
     configs: &[FolderConfig],
-    p: &FolderSyncParams<'_>,
+    ops: &dyn FolderOps,
 ) -> Result<Vec<FolderReport>, SourceError> {
     let mut reports = Vec::new();
     for cfg in configs {
@@ -353,7 +366,7 @@ pub async fn sync_folders(
             status: "ok".into(),
             ..Default::default()
         };
-        match sync_one(host, opts, cfg, p, &mut report).await {
+        match sync_one(host, opts, cfg, ops, &mut report).await {
             Ok(()) => {}
             Err(SourceError::Cancelled) => return Err(SourceError::Cancelled),
             Err(e @ SourceError::Auth(_)) => return Err(e),
@@ -375,11 +388,11 @@ async fn sync_one(
     host: &dyn SyncHost,
     opts: &SyncOptions,
     cfg: &FolderConfig,
-    p: &FolderSyncParams<'_>,
+    ops: &dyn FolderOps,
     report: &mut FolderReport,
 ) -> Result<(), SourceError> {
     let label = &report.label.clone();
-    let Some(root_name) = p.lister.root_name(cfg).await? else {
+    let Some(root_name) = ops.root_name(cfg).await? else {
         report.status = "unavailable".into();
         host.issue(
             "folder.unavailable",
@@ -391,7 +404,7 @@ async fn sync_one(
     let run_start = opts.run_start(host.now());
     let key = cursor_key(cfg);
     let stored = host
-        .cursor(p.kind, &key)?
+        .cursor(ops.kind(), &key)?
         .and_then(|v| {
             v.get("covered_since")
                 .and_then(Value::as_str)
@@ -405,7 +418,7 @@ async fn sync_one(
         .unwrap_or(crate::coverage::DEFAULT_INITIAL_DAYS);
     let window = plan_window(stored, run_start, initial_days, opts.since, opts.until);
 
-    let scan = scan(p.lister, cfg, &root_name, &|| host.is_cancelled()).await?;
+    let scan = scan(ops, cfg, &root_name, &|| host.is_cancelled()).await?;
     report.listed = scan.files.len() as u64;
     report.unsupported = scan.unsupported;
     report.excluded = scan.excluded;
@@ -435,9 +448,9 @@ async fn sync_one(
     let mut enqueue: Vec<QueueItem> = Vec::new();
     for f in in_scope {
         let id = &f.file.id;
-        let reason = if host.entry_exists(p.kind, id)? {
-            let changed = match host.fetch_state(p.kind, id)? {
-                Some(state) => (p.changed)(&f.file, &state),
+        let reason = if host.entry_exists(ops.kind(), id)? {
+            let changed = match host.fetch_state(ops.kind(), id)? {
+                Some(state) => ops.changed(&f.file, &state),
                 None => true,
             };
             if !changed {
@@ -448,7 +461,7 @@ async fn sync_one(
             "folder_changed"
         } else {
             let mut known = false;
-            for k in p.duplicate_kinds {
+            for k in ops.duplicate_kinds() {
                 if host.entry_exists(*k, id)? {
                     known = true;
                     break;
@@ -462,7 +475,7 @@ async fn sync_one(
             "folder_new"
         };
         enqueue.push(QueueItem {
-            source_kind: p.kind,
+            source_kind: ops.kind(),
             source_id: id.clone(),
             reason: reason.into(),
             hint: hint(cfg, f),
@@ -470,7 +483,7 @@ async fn sync_one(
     }
 
     let cursor = CursorUpdate {
-        source_kind: p.kind,
+        source_kind: ops.kind(),
         key,
         value: Some(json!({
             "covered_since": ts(window.covered_since),
@@ -529,6 +542,22 @@ mod tests {
 
     /// Children by folder ID.
     struct Tree(HashMap<String, Vec<Child>>, Option<String>);
+
+    #[async_trait]
+    impl FolderOps for Tree {
+        fn kind(&self) -> SourceKind {
+            SourceKind::GoogleDoc
+        }
+        fn duplicate_kinds(&self) -> &'static [SourceKind] {
+            &[SourceKind::GoogleMeet]
+        }
+        fn changed(&self, f: &FolderFile, state: &Value) -> bool {
+            state.get("modified_time").and_then(Value::as_str) != f.modified_raw.as_deref()
+        }
+        async fn resolve_folder(&self, _url: &str) -> Result<ResolvedFolder, SourceError> {
+            Err(SourceError::Rejected("not in tests".into()))
+        }
+    }
 
     #[async_trait]
     impl FolderLister for Tree {
@@ -645,10 +674,6 @@ mod tests {
         }
     }
 
-    fn changed() -> impl Fn(&FolderFile, &Value) -> bool + Send + Sync {
-        |f, state| state.get("modified_time").and_then(Value::as_str) != f.modified_raw.as_deref()
-    }
-
     fn opts() -> SyncOptions {
         SyncOptions {
             run_started_at: Some(t("2026-09-10T00:00:00Z")),
@@ -658,14 +683,7 @@ mod tests {
     }
 
     async fn run(host: &FakeHost, tree: &Tree, o: &SyncOptions, c: &FolderConfig) -> FolderReport {
-        let ch = changed();
-        let p = FolderSyncParams {
-            kind: SourceKind::GoogleDoc,
-            lister: tree,
-            changed: &ch,
-            duplicate_kinds: &[SourceKind::GoogleMeet],
-        };
-        sync_folders(host, o, std::slice::from_ref(c), &p)
+        sync_folders(host, o, std::slice::from_ref(c), tree)
             .await
             .unwrap()
             .remove(0)

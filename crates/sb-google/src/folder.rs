@@ -2,7 +2,10 @@
 //! lister that [`second_brain_kernel::folder`] walks.
 
 use async_trait::async_trait;
-use second_brain_kernel::folder::{Child, FolderConfig, FolderFile, FolderLister};
+use second_brain_kernel::SourceKind;
+use second_brain_kernel::folder::{
+    Child, FolderConfig, FolderFile, FolderLister, FolderOps, ResolvedFolder,
+};
 use second_brain_kernel::source::SourceError;
 use second_brain_kernel::util::parse_ts;
 use serde_json::Value;
@@ -99,6 +102,58 @@ impl FolderLister for DriveFolderLister {
             }
         }
         Ok(out)
+    }
+}
+
+#[async_trait]
+impl FolderOps for DriveFolderLister {
+    fn kind(&self) -> SourceKind {
+        SourceKind::GoogleDoc
+    }
+
+    fn duplicate_kinds(&self) -> &'static [SourceKind] {
+        &[SourceKind::GoogleMeet]
+    }
+
+    fn changed(&self, file: &FolderFile, state: &Value) -> bool {
+        changed(file, state)
+    }
+
+    async fn resolve_folder(&self, url: &str) -> Result<ResolvedFolder, SourceError> {
+        let Some(id) = folder_id_from_url(url) else {
+            return Err(SourceError::Rejected(
+                "not a Google Drive folder URL (expected https://drive.google.com/drive/folders/<id>); \
+                 use `sb ingest` for a file"
+                    .into(),
+            ));
+        };
+        let Some(mut f) = self.api.file_details(&id).await? else {
+            return Err(SourceError::Rejected(
+                "the folder was not found, or this account cannot read it".into(),
+            ));
+        };
+        // A shortcut is followed to its target.
+        if str_of(&f, "mimeType") == SHORTCUT_MIME
+            && let Some(target) = f
+                .pointer("/shortcutDetails/targetId")
+                .and_then(Value::as_str)
+        {
+            f = self.api.file_details(target).await?.ok_or_else(|| {
+                SourceError::Rejected("the shortcut's target cannot be read".into())
+            })?;
+        }
+        if str_of(&f, "mimeType") != FOLDER_MIME {
+            return Err(SourceError::Rejected(
+                "that is a file, not a folder; use `sb ingest` for a file".into(),
+            ));
+        }
+        if f.get("trashed").and_then(Value::as_bool) == Some(true) {
+            return Err(SourceError::Rejected("the folder is in the trash".into()));
+        }
+        Ok(ResolvedFolder {
+            key: str_of(&f, "id").to_string(),
+            name: str_of(&f, "name").to_string(),
+        })
     }
 }
 

@@ -304,6 +304,7 @@ async fn run(ctx: &Ctx, cmd: Command) -> anyhow::Result<i32> {
         Command::Account(a) => admin::account(ctx, a).await,
         Command::Auth(a) => admin::auth(ctx, a).await,
         Command::Sync(a) => ingest::sync(ctx, a).await,
+        Command::Folder(c) => folder::run(ctx, c).await,
         Command::Refetch(a) => ingest::refetch(ctx, a).await,
         Command::Reextract(a) => ingest::reextract(ctx, a).await,
         Command::Summarize(a) => ingest::summarize(ctx, a).await,

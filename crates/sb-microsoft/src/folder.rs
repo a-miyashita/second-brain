@@ -3,7 +3,10 @@
 //! file is keyed `<driveId>/<itemId>`, like `microsoft.file` entries.
 
 use async_trait::async_trait;
-use second_brain_kernel::folder::{Child, FolderConfig, FolderFile, FolderLister};
+use second_brain_kernel::SourceKind;
+use second_brain_kernel::folder::{
+    Child, FolderConfig, FolderFile, FolderLister, FolderOps, ResolvedFolder,
+};
 use second_brain_kernel::source::SourceError;
 use second_brain_kernel::util::parse_ts;
 use serde_json::Value;
@@ -107,6 +110,60 @@ impl FolderLister for GraphFolderLister {
             }
         }
         Ok(out)
+    }
+}
+
+#[async_trait]
+impl FolderOps for GraphFolderLister {
+    fn kind(&self) -> SourceKind {
+        SourceKind::MicrosoftFile
+    }
+
+    fn changed(&self, file: &FolderFile, state: &Value) -> bool {
+        changed(file, state)
+    }
+
+    async fn resolve_folder(&self, url: &str) -> Result<ResolvedFolder, SourceError> {
+        if !second_brain_kernel::links::is_microsoft_host(
+            &url::Url::parse(url.trim())
+                .ok()
+                .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+                .unwrap_or_default(),
+        ) {
+            return Err(SourceError::Rejected(
+                "not a SharePoint or OneDrive URL (*.sharepoint.com, onedrive.live.com, 1drv.ms)"
+                    .into(),
+            ));
+        }
+        let item = match self.api.shares_item(url.trim()).await? {
+            ItemLookup::Found(v) => v,
+            ItemLookup::Missing { status, message } => {
+                return Err(SourceError::Rejected(crate::source::not_found_message(
+                    status, &message,
+                )));
+            }
+        };
+        let base = item
+            .get("remoteItem")
+            .filter(|r| r.is_object())
+            .unwrap_or(&item);
+        if item.get("deleted").is_some() {
+            return Err(SourceError::Rejected("the folder was deleted".into()));
+        }
+        if base.get("folder").is_none() {
+            return Err(SourceError::Rejected(
+                "that is a file, not a folder; use `sb ingest` for a file".into(),
+            ));
+        }
+        let Some(key) = key_of(base) else {
+            return Err(SourceError::Rejected(
+                "Graph returned no drive or item ID for the folder".into(),
+            ));
+        };
+        Ok(ResolvedFolder {
+            key,
+            name: str_at(base, "/name").unwrap_or("").to_string(),
+        })
     }
 }
 

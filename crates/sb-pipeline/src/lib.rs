@@ -3,6 +3,7 @@
 
 pub mod budget;
 pub mod error;
+pub mod folders;
 pub mod hash_upgrade;
 mod host;
 pub mod import;
