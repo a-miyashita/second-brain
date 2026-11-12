@@ -23,6 +23,7 @@ use crate::commands::{admin, setup};
 pub(crate) enum Section {
     Home,
     Accounts,
+    Folders,
     Summarizer,
     Schedule,
     Skills,
@@ -32,9 +33,10 @@ pub(crate) enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 8] = [
+    pub const ALL: [Section; 9] = [
         Section::Home,
         Section::Accounts,
+        Section::Folders,
         Section::Summarizer,
         Section::Schedule,
         Section::Skills,
@@ -47,6 +49,7 @@ impl Section {
         match self {
             Section::Home => "Home",
             Section::Accounts => "Accounts",
+            Section::Folders => "Folders",
             Section::Summarizer => "Summarizer",
             Section::Schedule => "Schedule",
             Section::Skills => "Agent skills",
@@ -64,6 +67,11 @@ impl Section {
                 "Google: needs an OAuth client of type \"Desktop app\" (see the README guide).",
                 "Slack: create an app from assets/slack-app-manifest.yaml, install it,",
                 "and copy the User OAuth Token (xoxp-...).",
+            ],
+            Section::Folders => &[
+                "Google Drive and SharePoint/OneDrive folders that `sb sync` brings in.",
+                "Enter counts what the next sync would enter; x removes a folder (its entries stay).",
+                "Options (include, exclude, depth) are in the account's config: Accounts, Enter, folders.",
             ],
             Section::Summarizer => &[
                 "The summarizer writes summaries of Slack threads and re-summarizes meetings.",
@@ -107,6 +115,9 @@ pub(crate) enum Act {
     ToggleAccount(String, bool),
     AddGoogle,
     AddSlack,
+    AddFolder,
+    CheckFolder(String, String),
+    RemoveFolder(String, String),
     MakeDefault(String),
     RemoveProfile(String),
     AddProfile,
@@ -136,11 +147,18 @@ impl Act {
             Act::EditAccount(_) => "edit config",
             Act::ToggleAccount(_, true) => "disable",
             Act::ToggleAccount(_, false) => "enable",
-            Act::AddGoogle | Act::AddSlack | Act::AddProfile | Act::AddSetting | Act::AddSecret => {
-                "add"
-            }
+            Act::AddGoogle
+            | Act::AddSlack
+            | Act::AddFolder
+            | Act::AddProfile
+            | Act::AddSetting
+            | Act::AddSecret => "add",
+            Act::CheckFolder(..) => "check",
             Act::MakeDefault(_) => "make default",
-            Act::RemoveProfile(_) | Act::RemoveSkill(_) | Act::RemoveSecret(..) => "remove",
+            Act::RemoveProfile(_)
+            | Act::RemoveSkill(_)
+            | Act::RemoveSecret(..)
+            | Act::RemoveFolder(..) => "remove",
             Act::EditSchedule(_) | Act::EditInitialDays | Act::EditSetting(_) => "edit",
             Act::ToggleSystemd => "toggle",
             Act::RegisterSchedule => "register",
@@ -200,6 +218,15 @@ pub(crate) struct ScheduleDraft {
     pub systemd: bool,
 }
 
+/// A configured folder with its coverage.
+#[derive(Debug, Clone)]
+pub(crate) struct FolderRow {
+    pub account: String,
+    pub config: second_brain_kernel::folder::FolderConfig,
+    pub covered_since: Option<String>,
+    pub listed_at: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct SkillRow {
     pub target: Target,
@@ -211,6 +238,7 @@ pub(crate) struct SkillRow {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Snapshot {
     pub accounts: Vec<Account>,
+    pub folders: Vec<FolderRow>,
     pub profiles: Vec<(String, Value)>,
     pub default_profile: Option<String>,
     pub schedule: Option<Value>,
@@ -263,6 +291,25 @@ impl AccountEditor {
             AccountKind::Microsoft => json!({"client_id": "", "tenant": "organizations"}),
             _ => json!({}),
         };
+        // Settings of ADR-0022 that are not written by default: they show the
+        // value in force (the global one for `ingest_links`) until they are set.
+        let mut defaults = defaults;
+        if let Some(d) = defaults.as_object_mut() {
+            match a.kind {
+                AccountKind::Slack => {
+                    d.insert(
+                        "ingest_links".into(),
+                        cat.setting("links.ingest_kinds")?
+                            .unwrap_or_else(|| json!([])),
+                    );
+                    d.insert("ingest_link_hosts".into(), json!([]));
+                }
+                AccountKind::Google | AccountKind::Microsoft => {
+                    d.insert("folders".into(), json!([]));
+                }
+                _ => {}
+            }
+        }
         let mut rows = Vec::new();
         if let Some(d) = defaults.as_object() {
             for (k, v) in d {
@@ -310,6 +357,8 @@ pub(crate) enum Purpose {
     Schedule(SchedField),
     InitialDays,
     AccountValue(String, String),
+    /// A folder to add to this account.
+    Folder(String),
 }
 
 /// What a picked option does.
@@ -318,6 +367,8 @@ pub(crate) enum PickPurpose {
     Preset,
     Setting(String),
     AccountValue(String, String),
+    /// Which account a new folder goes to (the choice is the account ID).
+    FolderAccount,
 }
 
 /// Overlays, topmost last.
@@ -360,13 +411,25 @@ pub(crate) enum Job {
     },
     Estimate,
     Sync,
+    AddFolder {
+        account: String,
+        url: String,
+        options: second_brain_pipeline::folders::FolderAdd,
+    },
+    CheckFolder {
+        account: String,
+        folder: String,
+    },
 }
 
 impl Job {
     /// Whether the job leaves the screen and runs in the plain terminal (it
     /// prints, prompts or opens a browser).
     pub fn suspends(&self) -> bool {
-        !matches!(self, Job::Llm { .. })
+        !matches!(
+            self,
+            Job::Llm { .. } | Job::AddFolder { .. } | Job::CheckFolder { .. }
+        )
     }
 
     pub fn title(&self) -> String {
@@ -379,6 +442,12 @@ impl Job {
                 } else {
                     format!("Saving {name}...")
                 }
+            }
+            Job::AddFolder { account, .. } => {
+                format!("Adding the folder to {account} and counting its files...")
+            }
+            Job::CheckFolder { account, .. } => {
+                format!("Listing the folder of {account} (nothing is written)...")
             }
             Job::Estimate => "Estimating the first sync (`sb sync --estimate`)".into(),
             Job::Sync => "Running `sb sync` (Ctrl+C stops it; run it again to resume)".into(),
@@ -551,7 +620,29 @@ impl App {
             .collect();
         let mut settings = cat.list_settings()?;
         settings.sort_by(|a, b| a.key.cmp(&b.key));
+        let accounts_all = cat.accounts()?;
+        let mut folders = Vec::new();
+        for a in &accounts_all {
+            let kind = match a.kind {
+                AccountKind::Google => second_brain_kernel::SourceKind::GoogleDoc,
+                AccountKind::Microsoft => second_brain_kernel::SourceKind::MicrosoftFile,
+                _ => continue,
+            };
+            for f in second_brain_kernel::folder::FolderConfig::list(&a.config) {
+                let cursor = cat
+                    .cursor(&a.id, kind, &second_brain_kernel::folder::cursor_key(&f))?
+                    .unwrap_or(Value::Null);
+                let get = |k: &str| cursor.get(k).and_then(Value::as_str).map(str::to_string);
+                folders.push(FolderRow {
+                    account: a.id.to_string(),
+                    covered_since: get("covered_since"),
+                    listed_at: get("listed_at"),
+                    config: f,
+                });
+            }
+        }
         self.data = Snapshot {
+            folders,
             accounts: cat
                 .accounts()?
                 .into_iter()
@@ -679,6 +770,56 @@ impl App {
                     Tone::Action,
                     Some(Act::AddSlack),
                 ));
+                rows
+            }
+            Section::Folders => {
+                let mut rows: Vec<Row> = d
+                    .folders
+                    .iter()
+                    .map(|f| {
+                        let label = if f.config.label.is_empty() {
+                            &f.config.key
+                        } else {
+                            &f.config.label
+                        };
+                        Row::new(
+                            format!(
+                                "{:<16} {:<22} {:<10} since {}, listed {}",
+                                f.account,
+                                label,
+                                if f.config.recursive {
+                                    "recursive"
+                                } else {
+                                    "top only"
+                                },
+                                f.covered_since
+                                    .as_deref()
+                                    .map(|s| &s[..s.len().min(10)])
+                                    .unwrap_or("-"),
+                                f.listed_at
+                                    .as_deref()
+                                    .map(|s| &s[..s.len().min(10)])
+                                    .unwrap_or("never"),
+                            ),
+                            Tone::Normal,
+                            Some(Act::CheckFolder(f.account.clone(), f.config.key.clone())),
+                        )
+                        .alt(Act::RemoveFolder(f.account.clone(), f.config.key.clone()))
+                    })
+                    .collect();
+                if self.folder_accounts().is_empty() {
+                    rows.push(Row::new(
+                        "Add a Google or Microsoft account first (Accounts).",
+                        Tone::Dim,
+                        None,
+                    ));
+                } else {
+                    rows.push(Row::new(
+                        "+ Add a folder (Drive, SharePoint or OneDrive link)",
+                        Tone::Action,
+                        Some(Act::AddFolder),
+                    ));
+                }
                 rows
             }
             Section::Summarizer => {
@@ -876,6 +1017,41 @@ impl App {
         }
     }
 
+    /// Accounts that can have folders.
+    fn folder_accounts(&self) -> Vec<String> {
+        self.data
+            .accounts
+            .iter()
+            .filter(|a| {
+                matches!(a.kind, AccountKind::Google | AccountKind::Microsoft)
+                    && a.status == AccountStatus::Active
+            })
+            .map(|a| a.id.to_string())
+            .collect()
+    }
+
+    fn folder_form(&mut self, account: &str) {
+        let form = Form::new(
+            format!("Add a folder to {account}"),
+            vec![
+                Field::text("url", "Folder URL", "").help(
+                    "A Drive folder link, or a SharePoint/OneDrive folder link (\"Copy link\").",
+                ),
+                Field::text("label", "Label", "").help("Optional; default: the folder's name."),
+                Field::toggle("recursive", "Include subfolders", true),
+                Field::text("include", "Only files matching", "")
+                    .help("Optional globs, comma-separated: *.docx, 2026/**"),
+                Field::text("exclude", "Skip files matching", "")
+                    .help("Optional globs, comma-separated: _archive/**"),
+                Field::text("initial_days", "Days back at first", "")
+                    .help("Optional; default: the first-sync days."),
+            ],
+        )
+        .note("Nothing is fetched now: the next `sb sync` brings the files in.")
+        .submit_label("Add the folder");
+        self.form(form, Purpose::Folder(account.to_string()));
+    }
+
     fn ok(&mut self, text: impl Into<String>) {
         self.status = Some(Status {
             text: text.into(),
@@ -1038,6 +1214,39 @@ impl App {
                 .note("Create the app from assets/slack-app-manifest.yaml and install it.")
                 .submit_label("Check the token and add");
                 self.form(form, Purpose::Slack);
+            }
+            Act::AddFolder => {
+                let accounts = self.folder_accounts();
+                match accounts.as_slice() {
+                    [] => self.ok("Add a Google or Microsoft account first."),
+                    [one] => {
+                        let one = one.clone();
+                        self.folder_form(&one);
+                    }
+                    _ => self.modals.push(Modal::Pick {
+                        title: "Which account?".into(),
+                        options: accounts,
+                        cursor: 0,
+                        purpose: PickPurpose::FolderAccount,
+                    }),
+                }
+            }
+            Act::CheckFolder(account, folder) => {
+                return Outcome::Job(Job::CheckFolder { account, folder });
+            }
+            Act::RemoveFolder(account, folder) => {
+                if !self.confirming() {
+                    self.confirm(
+                        format!("Remove this folder from {account}? Its entries stay."),
+                        Act::RemoveFolder(account, folder),
+                    );
+                    return Outcome::None;
+                }
+                let r = ctx
+                    .pipeline()
+                    .and_then(|p| p.folder_remove(&account, &folder).map_err(Into::into))
+                    .map(|f| format!("Removed the folder {:?} from {account}.", f.label));
+                self.report(r);
             }
             Act::MakeDefault(name) => {
                 let r = self
@@ -1413,6 +1622,7 @@ impl App {
                 let r = self.write_account_value(&id, &key, Some(json!(choice)));
                 self.report(r);
             }
+            PickPurpose::FolderAccount => self.folder_form(&choice),
             PickPurpose::Preset => {
                 let Some(preset) = second_brain_setup::llm::presets().into_iter().nth(index) else {
                     return;
@@ -1583,6 +1793,35 @@ impl App {
             Purpose::InitialDays => {
                 let v = parse_edit(&form.text("v"), Some(&json!(30)));
                 self.write_setting("sync.initial_days", v)?
+            }
+            Purpose::Folder(account) => {
+                let url = need(form.text("url"), "the folder URL")?;
+                let list = |v: String| -> Vec<String> {
+                    v.split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                };
+                let days = optional(form.text("initial_days"))
+                    .map(|d| {
+                        d.parse::<i64>().ok().filter(|n| *n > 0).ok_or_else(|| {
+                            crate::util::usage("days back is a positive whole number")
+                        })
+                    })
+                    .transpose()?;
+                return Ok(Some(Job::AddFolder {
+                    account,
+                    url,
+                    options: second_brain_pipeline::folders::FolderAdd {
+                        label: optional(form.text("label")),
+                        recursive: (!form.toggle("recursive")).then_some(false),
+                        include: list(form.text("include")),
+                        exclude: list(form.text("exclude")),
+                        initial_days: days,
+                        ..Default::default()
+                    },
+                }));
             }
             Purpose::AccountValue(id, key) => {
                 let like = self.modals.iter().rev().find_map(|m| match m {

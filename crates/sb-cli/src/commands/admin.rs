@@ -176,19 +176,67 @@ fn json_to_toml(v: &Value) -> anyhow::Result<toml::Value> {
 pub(crate) fn validate_account_config(kind: AccountKind, v: &Value) -> anyhow::Result<()> {
     match kind {
         AccountKind::Slack => {
-            serde_json::from_value::<second_brain_slack::SlackConfig>(v.clone())
+            let c = serde_json::from_value::<second_brain_slack::SlackConfig>(v.clone())
                 .map_err(|e| usage(format!("invalid Slack config: {e}")))?;
+            if let Some(kinds) = &c.ingest_links
+                && let Some(bad) = kinds
+                    .iter()
+                    .find(|k| !matches!(k.as_str(), "google.doc" | "microsoft.file"))
+            {
+                return Err(usage(format!(
+                    "invalid Slack config: ingest_links takes google.doc and microsoft.file, not {bad:?}"
+                )));
+            }
         }
         AccountKind::Google => {
             serde_json::from_value::<second_brain_google::meet::MeetConfig>(v.clone())
                 .map_err(|e| usage(format!("invalid Google config: {e}")))?;
+            validate_folders(v)?;
         }
         AccountKind::Microsoft => {
             MicrosoftConfig::from_value(v)
                 .and_then(|c| c.client().map(|_| ()))
                 .map_err(|e| usage(format!("invalid Microsoft config: {e}")))?;
+            validate_folders(v)?;
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// The `folders` list of a Google or Microsoft account config (folder-sync.md):
+/// every entry parses, has a key, and keys and labels are unique.
+fn validate_folders(config: &Value) -> anyhow::Result<()> {
+    use second_brain_kernel::folder::FolderConfig;
+    let Some(v) = config.get("folders") else {
+        return Ok(());
+    };
+    let list: Vec<FolderConfig> =
+        serde_json::from_value(v.clone()).map_err(|e| usage(format!("invalid folders: {e}")))?;
+    let mut keys = std::collections::HashSet::new();
+    let mut labels = std::collections::HashSet::new();
+    for f in &list {
+        if f.key.trim().is_empty() {
+            return Err(usage("invalid folders: every folder needs a key"));
+        }
+        if !keys.insert(f.key.clone()) {
+            return Err(usage(format!(
+                "invalid folders: key {:?} appears twice",
+                f.key
+            )));
+        }
+        if !f.label.is_empty() && !labels.insert(f.label.clone()) {
+            return Err(usage(format!(
+                "invalid folders: label {:?} appears twice",
+                f.label
+            )));
+        }
+        if f.max_files == 0 {
+            return Err(usage("invalid folders: max_files is a positive number"));
+        }
+        if f.initial_days.is_some_and(|d| d <= 0) {
+            return Err(usage("invalid folders: initial_days is a positive number"));
+        }
     }
     Ok(())
 }
@@ -980,6 +1028,49 @@ pub fn version(ctx: &Ctx) -> anyhow::Result<i32> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn folder_and_link_account_config_is_validated() {
+        let ok = |k: AccountKind, v: Value| validate_account_config(k, &v).is_ok();
+        assert!(ok(
+            AccountKind::Slack,
+            json!({"ingest_links": ["google.doc"], "ingest_link_hosts": ["*.sharepoint.com"]})
+        ));
+        assert!(ok(AccountKind::Slack, json!({"ingest_links": []})));
+        assert!(!ok(
+            AccountKind::Slack,
+            json!({"ingest_links": ["web.page"]})
+        ));
+        assert!(!ok(
+            AccountKind::Slack,
+            json!({"ingest_links": "google.doc"})
+        ));
+        assert!(!ok(AccountKind::Slack, json!({"ingest_link_hosts": "x"})));
+
+        let f = |k: &str, l: &str| json!({"key": k, "label": l});
+        assert!(ok(
+            AccountKind::Google,
+            json!({"folders": [f("A", "a"), f("B", "b")]})
+        ));
+        assert!(!ok(
+            AccountKind::Google,
+            json!({"folders": [f("A", "a"), f("A", "b")]})
+        ));
+        assert!(!ok(
+            AccountKind::Google,
+            json!({"folders": [f("A", "a"), f("B", "a")]})
+        ));
+        assert!(!ok(AccountKind::Google, json!({"folders": [f("", "a")]})));
+        assert!(!ok(AccountKind::Google, json!({"folders": "x"})));
+        assert!(!ok(
+            AccountKind::Google,
+            json!({"folders": [{"key": "A", "max_files": 0}]})
+        ));
+        assert!(!ok(
+            AccountKind::Google,
+            json!({"folders": [{"key": "A", "initial_days": -1}]})
+        ));
+    }
 
     #[test]
     fn link_and_threshold_settings_are_validated() {

@@ -112,6 +112,8 @@ fn navigation_moves_between_sections() {
     press(&mut app, &ctx, KeyCode::BackTab);
     assert_eq!(app.current(), Section::Secrets);
     press(&mut app, &ctx, KeyCode::Char('3'));
+    assert_eq!(app.current(), Section::Folders);
+    press(&mut app, &ctx, KeyCode::Char('4'));
     assert_eq!(app.current(), Section::Summarizer);
     assert!(matches!(
         press(&mut app, &ctx, KeyCode::Char('q')),
@@ -455,7 +457,7 @@ fn screen_draws_sections_and_help() {
     let s = screen(&app);
     assert!(s.contains("second-brain setup"));
     assert!(s.contains("1 Home"));
-    assert!(s.contains("8 Secrets"));
+    assert!(s.contains("9 Secrets"));
     assert!(s.contains("q quit"));
     press(&mut app, &ctx, KeyCode::Tab);
     let s = screen(&app);
@@ -465,4 +467,233 @@ fn screen_draws_sections_and_help() {
     // A small terminal still draws.
     let mut t = Terminal::new(TestBackend::new(30, 8)).unwrap();
     t.draw(|f| view::render(&app, f)).unwrap();
+}
+
+fn add_google(ctx: &Ctx, id: &str, folders: Value) {
+    let mut config = second_brain_google::default_config_json(&["docs".into()]);
+    if !folders.is_null() {
+        config["folders"] = folders;
+    }
+    ctx.catalog()
+        .unwrap()
+        .add_account(
+            &AccountId::new(id).unwrap(),
+            AccountKind::Google,
+            id,
+            Some("a@example.test"),
+            &config,
+        )
+        .unwrap();
+}
+
+#[test]
+fn folders_need_an_account_first() {
+    let (_d, ctx) = ctx();
+    add_slack(&ctx);
+    let mut app = App::new(&ctx, Start::Setup).unwrap();
+    app.goto(Section::Folders);
+    let rows = app.rows(Section::Folders);
+    assert_eq!(rows.len(), 1);
+    assert!(
+        rows[0]
+            .text
+            .contains("Add a Google or Microsoft account first")
+    );
+    assert!(rows[0].primary.is_none());
+    assert!(screen(&app).contains("Folders"));
+}
+
+#[test]
+fn folders_are_listed_checked_and_removed_after_confirmation() {
+    let (_d, ctx) = ctx();
+    add_google(
+        &ctx,
+        "work",
+        json!([{"key": "ROOT", "label": "Minutes", "url": "https://drive.google.com/drive/folders/ROOT"}]),
+    );
+    let mut app = App::new(&ctx, Start::Setup).unwrap();
+    app.goto(Section::Folders);
+    assert!(screen(&app).contains("Minutes"));
+    select(&mut app, &ctx, "Minutes");
+    let row = &app.rows(Section::Folders)[0];
+    assert!(row.text.contains("recursive") && row.text.contains("listed never"));
+
+    // Enter counts what the next sync would enter (a job in the screen).
+    match press(&mut app, &ctx, KeyCode::Enter) {
+        Outcome::Job(job @ Job::CheckFolder { .. }) => {
+            assert!(!job.suspends());
+            let Job::CheckFolder { account, folder } = job else {
+                unreachable!()
+            };
+            assert_eq!((account.as_str(), folder.as_str()), ("work", "ROOT"));
+        }
+        _ => panic!("expected the check job"),
+    }
+
+    // x asks first; "n" keeps the folder, "y" removes it and keeps nothing else.
+    press(&mut app, &ctx, KeyCode::Char('x'));
+    assert!(matches!(app.modals.last(), Some(Modal::Confirm { .. })));
+    press(&mut app, &ctx, KeyCode::Char('n'));
+    assert_eq!(app.data.folders.len(), 1);
+    press(&mut app, &ctx, KeyCode::Char('x'));
+    press(&mut app, &ctx, KeyCode::Char('y'));
+    app.reload().unwrap();
+    assert!(app.data.folders.is_empty(), "{:?}", app.status);
+    let a = ctx
+        .catalog()
+        .unwrap()
+        .account_by_str("work")
+        .unwrap()
+        .unwrap();
+    assert!(a.config["folders"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn adding_a_folder_asks_for_the_account_and_returns_the_job() {
+    let (_d, ctx) = ctx();
+    add_google(&ctx, "work", Value::Null);
+    add_google(&ctx, "home", Value::Null);
+    let mut app = App::new(&ctx, Start::Setup).unwrap();
+    app.goto(Section::Folders);
+    select(&mut app, &ctx, "Add a folder");
+    press(&mut app, &ctx, KeyCode::Enter);
+    // Two accounts: pick one.
+    assert!(matches!(app.modals.last(), Some(Modal::Pick { .. })));
+    press(&mut app, &ctx, KeyCode::Down);
+    press(&mut app, &ctx, KeyCode::Enter);
+    let Some(Modal::Form(form, _)) = app.modals.last() else {
+        panic!("no form");
+    };
+    assert!(form.title.contains("work"), "{}", form.title);
+
+    // The URL is required.
+    for _ in 0..6 {
+        press(&mut app, &ctx, KeyCode::Tab);
+    }
+    assert!(matches!(
+        press(&mut app, &ctx, KeyCode::Enter),
+        Outcome::None
+    ));
+    assert!(app.status.as_ref().is_some_and(|s| s.error));
+    for _ in 0..1 {
+        press(&mut app, &ctx, KeyCode::Tab);
+    }
+    typed(
+        &mut app,
+        &ctx,
+        "https://drive.google.com/drive/folders/ROOT",
+    );
+    press(&mut app, &ctx, KeyCode::Tab);
+    typed(&mut app, &ctx, "Minutes");
+    press(&mut app, &ctx, KeyCode::Tab);
+    // Subfolders off.
+    press(&mut app, &ctx, KeyCode::Char(' '));
+    press(&mut app, &ctx, KeyCode::Tab);
+    typed(&mut app, &ctx, "*.docx, *.pdf");
+    press(&mut app, &ctx, KeyCode::Tab);
+    press(&mut app, &ctx, KeyCode::Tab);
+    typed(&mut app, &ctx, "abc");
+    press(&mut app, &ctx, KeyCode::Tab);
+    // A day count that is not a number is refused and the form stays open.
+    assert!(matches!(
+        press(&mut app, &ctx, KeyCode::Enter),
+        Outcome::None
+    ));
+    assert!(app.status.as_ref().is_some_and(|s| s.error));
+    press(&mut app, &ctx, KeyCode::BackTab);
+    clear(&mut app, &ctx);
+    typed(&mut app, &ctx, "14");
+    press(&mut app, &ctx, KeyCode::Tab);
+    match press(&mut app, &ctx, KeyCode::Enter) {
+        Outcome::Job(Job::AddFolder {
+            account,
+            url,
+            options,
+        }) => {
+            assert_eq!(account, "work");
+            assert_eq!(url, "https://drive.google.com/drive/folders/ROOT");
+            assert_eq!(options.label.as_deref(), Some("Minutes"));
+            assert_eq!(options.recursive, Some(false));
+            assert_eq!(options.include, vec!["*.docx", "*.pdf"]);
+            assert!(options.exclude.is_empty());
+            assert_eq!(options.initial_days, Some(14));
+        }
+        _ => panic!("expected the folder job"),
+    }
+    assert!(app.modals.is_empty());
+}
+
+#[test]
+fn link_and_folder_settings_show_in_the_account_editor() {
+    let (_d, ctx) = ctx();
+    add_slack(&ctx);
+    add_google(&ctx, "work", Value::Null);
+    let cat = ctx.catalog().unwrap();
+    cat.set_setting("links.ingest_kinds", &json!(["google.doc"]))
+        .unwrap();
+    let account = |id: &str| cat.account_by_str(id).unwrap().unwrap().config;
+
+    let mut app = App::new(&ctx, Start::Account("acme-slack".into())).unwrap();
+    let Some(Modal::Account(ed)) = app.modals.last() else {
+        panic!("no editor");
+    };
+    // Not stored, so the global value is shown as the one in force.
+    let row = ed.rows.iter().find(|r| r.key == "ingest_links").unwrap();
+    assert!(row.default);
+    assert_eq!(row.value, json!(["google.doc"]));
+    assert!(ed.rows.iter().any(|r| r.key == "ingest_link_hosts"));
+
+    let go = |app: &mut App, key: &str| {
+        let Some(Modal::Account(ed)) = app.modals.last_mut() else {
+            panic!("no editor");
+        };
+        ed.cursor = ed.rows.iter().position(|r| r.key == key).unwrap();
+    };
+    // A wrong kind is refused; nothing is stored.
+    go(&mut app, "ingest_links");
+    press(&mut app, &ctx, KeyCode::Enter);
+    clear(&mut app, &ctx);
+    typed(&mut app, &ctx, "web.page");
+    press(&mut app, &ctx, KeyCode::Enter);
+    assert!(app.status.as_ref().is_some_and(|s| s.error));
+    assert!(account("acme-slack").get("ingest_links").is_none());
+    clear(&mut app, &ctx);
+    typed(&mut app, &ctx, "google.doc, microsoft.file");
+    press(&mut app, &ctx, KeyCode::Enter);
+    assert_eq!(
+        account("acme-slack")["ingest_links"],
+        json!(["google.doc", "microsoft.file"])
+    );
+    // Empty means "none for this workspace", which is not the same as unset.
+    go(&mut app, "ingest_links");
+    press(&mut app, &ctx, KeyCode::Enter);
+    clear(&mut app, &ctx);
+    press(&mut app, &ctx, KeyCode::Enter);
+    assert_eq!(account("acme-slack")["ingest_links"], json!([]));
+    press(&mut app, &ctx, KeyCode::Char('x'));
+    assert!(account("acme-slack").get("ingest_links").is_none());
+
+    // A Google account has the folders list, validated on save.
+    let mut app = App::new(&ctx, Start::Account("work".into())).unwrap();
+    go(&mut app, "folders");
+    press(&mut app, &ctx, KeyCode::Enter);
+    clear(&mut app, &ctx);
+    typed(
+        &mut app,
+        &ctx,
+        r#"[{"key": "A", "label": "x"}, {"key": "B", "label": "x"}]"#,
+    );
+    press(&mut app, &ctx, KeyCode::Enter);
+    assert!(
+        app.status.as_ref().is_some_and(|s| s.error),
+        "duplicate labels"
+    );
+    clear(&mut app, &ctx);
+    typed(
+        &mut app,
+        &ctx,
+        r#"[{"key": "A", "label": "x", "include": ["*.pdf"]}]"#,
+    );
+    press(&mut app, &ctx, KeyCode::Enter);
+    assert_eq!(account("work")["folders"][0]["include"], json!(["*.pdf"]));
 }

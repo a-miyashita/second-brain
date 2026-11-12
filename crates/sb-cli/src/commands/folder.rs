@@ -131,6 +131,30 @@ fn human_bytes(n: u64) -> String {
     }
 }
 
+/// One line for the screen: what a sync would enter.
+pub(crate) fn check_summary(c: &FolderCheck) -> String {
+    let r = &c.report;
+    if r.status != "ok" {
+        return format!(
+            "{}: {}{}",
+            r.label,
+            r.status,
+            c.problems
+                .first()
+                .map(|p| format!(" ({p})"))
+                .unwrap_or_default()
+        );
+    }
+    let mut s = format!(
+        "{}: {} files in scope ({} new, {} changed, {} unchanged); {} unsupported, {} excluded.",
+        r.label, r.in_scope, r.new, r.changed, r.unchanged, r.unsupported, r.excluded
+    );
+    if c.bytes > 0 {
+        s.push_str(&format!(" About {} to fetch.", human_bytes(c.bytes)));
+    }
+    s
+}
+
 fn print_check(c: &FolderCheck) {
     let r = &c.report;
     eprintln!(
