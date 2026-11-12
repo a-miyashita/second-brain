@@ -138,6 +138,17 @@ impl Catalog {
             .collect())
     }
 
+    /// Record the links of an entry (first reference wins), for `scan-links`.
+    pub fn record_links(
+        &self,
+        account_id: &str,
+        entry_id: i64,
+        links: &[DiscoveredLink],
+    ) -> Result<()> {
+        let now = self.now_ts();
+        self.with_tx(|tx| record_links_tx(tx, &now, account_id, entry_id, links))
+    }
+
     /// One link by key.
     pub fn link(&self, account_id: &str, link_key: &str) -> Result<Option<LinkRow>> {
         self.conn

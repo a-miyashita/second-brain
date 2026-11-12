@@ -145,7 +145,7 @@ sb scan-links [--since AGE] [--account ID] [--kind K]... [--limit N]
 
 | Option | Meaning |
 |---|---|
-| `--since AGE` | Slack entries whose `source_updated_at` is within this age. Default: all |
+| `--since AGE` | Slack entries dated (first message) within this age or after this date. Default: all |
 | `--account ID` | Only this Slack account |
 | `--kind K` | Only these kinds. With `--ingest` it also **overrides the enabled kinds** for this run (the user's explicit choice) |
 | `--limit N` | At most N links listed or ingested. Default `links.max_per_run` |

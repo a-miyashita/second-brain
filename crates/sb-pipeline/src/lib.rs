@@ -12,6 +12,7 @@ pub mod link_stage;
 pub mod ops;
 pub mod policy;
 pub mod run;
+pub mod scan_links;
 pub mod summarize;
 pub mod sync;
 

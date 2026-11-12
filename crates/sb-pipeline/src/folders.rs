@@ -294,6 +294,47 @@ impl Pipeline {
         Ok(gone)
     }
 
+    /// Whether each configured folder's root can be read now, for `sb doctor
+    /// --online`: `(account, label, Ok | reason)`. Accounts that need
+    /// re-authentication or are disabled are left out (doctor reports those).
+    pub async fn folders_online(
+        &self,
+    ) -> Result<Vec<(String, String, Result<(), String>)>, PipelineError> {
+        let mut out = Vec::new();
+        let accounts = self.catalog().accounts()?;
+        for a in accounts {
+            if !matches!(a.kind, AccountKind::Google | AccountKind::Microsoft)
+                || a.status != AccountStatus::Active
+            {
+                continue;
+            }
+            let folders = FolderConfig::list(&a.config);
+            if folders.is_empty() {
+                continue;
+            }
+            let Some(source) = self.source_for(&a)? else {
+                continue;
+            };
+            let Some(ops) = source.folders() else {
+                continue;
+            };
+            for f in folders {
+                let label = if f.label.is_empty() {
+                    f.key.clone()
+                } else {
+                    f.label.clone()
+                };
+                let res = match ops.root_name(&f).await {
+                    Ok(Some(_)) => Ok(()),
+                    Ok(None) => Err("cannot be read (deleted, or access was lost)".to_string()),
+                    Err(e) => Err(e.to_string()),
+                };
+                out.push((a.id.to_string(), label, res));
+            }
+        }
+        Ok(out)
+    }
+
     /// List the folders like a sync would and report what it would enter,
     /// without writing anything. `account` and `selector` narrow the folders.
     pub async fn folder_check(

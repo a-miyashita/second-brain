@@ -569,3 +569,18 @@ async fn folder_list_shows_coverage_and_remove_keeps_the_entries() {
             .is_empty()
     );
 }
+
+#[tokio::test]
+async fn folders_online_reports_unreadable_roots() {
+    let e = env(json!({})).await;
+    let rows = e.p.folders_online().await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].0.as_str(), rows[0].1.as_str()),
+        ("work", "Minutes")
+    );
+    assert!(rows[0].2.is_ok());
+    e.state.lock().unwrap().root_readable = false;
+    let rows = e.p.folders_online().await.unwrap();
+    assert!(rows[0].2.as_ref().unwrap_err().contains("cannot be read"));
+}

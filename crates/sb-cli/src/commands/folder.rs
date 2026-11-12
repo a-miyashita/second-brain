@@ -5,7 +5,7 @@ use second_brain_pipeline::folders::{FolderAdd, FolderCheck, FolderInfo};
 use serde_json::json;
 
 use crate::Ctx;
-use crate::cli::FolderCmd;
+use crate::cli::{FolderCmd, ScanLinksArgs};
 use crate::util::{self, exit, usage};
 
 pub async fn run(ctx: &Ctx, cmd: FolderCmd) -> anyhow::Result<i32> {
@@ -169,4 +169,96 @@ fn print_check(c: &FolderCheck) {
             }
         }
     }
+}
+
+/// `sb scan-links` (link-ingest.md).
+pub async fn scan_links(ctx: &Ctx, a: ScanLinksArgs) -> anyhow::Result<i32> {
+    use second_brain_kernel::SourceKind;
+    use second_brain_pipeline::scan_links::ScanLinksOptions;
+    let kinds = a
+        .kinds
+        .iter()
+        .map(|k| match k.parse::<SourceKind>() {
+            Ok(k @ (SourceKind::GoogleDoc | SourceKind::MicrosoftFile)) => Ok(k),
+            _ => Err(usage(format!(
+                "--kind is google.doc or microsoft.file, not {k:?}"
+            ))),
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let since = a
+        .since
+        .as_deref()
+        .map(|s| util::parse_when(s, chrono::Utc::now()))
+        .transpose()?;
+    let o = ScanLinksOptions {
+        accounts: a.accounts.clone(),
+        kinds,
+        since,
+        limit: a.limit,
+        ingest: a.ingest,
+        retry: a.retry,
+    };
+    let p = ctx.pipeline()?;
+    let r = p.scan_links(&o).await?;
+    if ctx.json {
+        ctx.out_json("sb.scan-links/v1", serde_json::to_value(&r)?);
+    } else {
+        for l in &r.links {
+            let when = l.message_date.as_deref().map(|d| &d[..10]).unwrap_or("-");
+            let mut line = format!(
+                "{:<14} {:<15} {}  {} {:?}",
+                l.status, l.source_kind, l.host, when, l.from_title
+            );
+            if let Some(uid) = &l.entry_uid {
+                line.push_str(&format!(" -> entry {uid}"));
+            }
+            println!("{line}");
+            println!("               {}", l.url);
+            if let Some(e) = &l.last_error {
+                let next = l
+                    .next_attempt_at
+                    .as_deref()
+                    .map(|n| format!(" (next try {})", &n[..10]))
+                    .unwrap_or_default();
+                println!("               {e}{next}");
+            }
+        }
+        if r.links.is_empty() {
+            println!("No document links found.");
+        }
+        if r.not_listed > 0 {
+            eprintln!("{} more links not listed (raise --limit).", r.not_listed);
+        }
+        if let Some(s) = &r.stage {
+            eprintln!(
+                "Ingest: {} due, {} ingested, {} duplicate, {} not applicable, {} unavailable, {} abandoned, {} waiting.",
+                s.due,
+                s.ingested,
+                s.duplicate,
+                s.not_applicable,
+                s.unavailable,
+                s.abandoned,
+                s.waiting
+            );
+            if s.due == 0 && a.kinds.is_empty() {
+                eprintln!(
+                    "No kind is enabled: set links.ingest_kinds (or the account's ingest_links), or pass --kind."
+                );
+            } else if s.ingested > 0 {
+                eprintln!("New entries wait for summaries: run `sb summarize` or `sb sync`.");
+            }
+        } else if r.links.iter().any(|l| l.status == "new") {
+            eprintln!(
+                "Links marked new are not recorded yet: `sb scan-links --ingest` records them."
+            );
+        }
+        for e in r.errors.iter().take(10) {
+            eprintln!("  problem: {e}");
+        }
+    }
+    Ok(if r.errors.is_empty() {
+        exit::OK
+    } else {
+        exit::PROBLEMS
+    })
 }

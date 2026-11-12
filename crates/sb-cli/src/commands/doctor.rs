@@ -92,6 +92,7 @@ fn issue_hint(code: &str, account: Option<&str>, entry_uid: Option<&str>) -> Opt
             Some(u) => format!("sb refetch --entry {u}"),
             None => "sb refetch --raw-missing".into(),
         },
+        c if c.starts_with("folder.") => format!("sb folder check {acct}"),
         c if c.starts_with("sync.") => format!("sb sync --account {acct}"),
         _ => return None,
     })
@@ -288,6 +289,11 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
         }
     }
 
+    if a.online {
+        check_folders_online(ctx, &mut r).await?;
+    }
+    check_folders(&cat, &mut r)?;
+    check_links(&cat, &mut r)?;
     check_llm(&cat, &a, &mut r).await?;
     let scheduled = check_schedule(ctx, &cat, &a, &mut r)?;
     check_runs(&cat, scheduled, &mut r)?;
@@ -722,6 +728,124 @@ fn check_runs(cat: &Catalog, scheduled: bool, r: &mut Report) -> anyhow::Result<
     Ok(())
 }
 
+/// `folders.access` (`--online`): every configured folder's root can be read.
+async fn check_folders_online(ctx: &Ctx, r: &mut Report) -> anyhow::Result<()> {
+    let rows = ctx.pipeline()?.folders_online().await?;
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let bad: Vec<String> = rows
+        .iter()
+        .filter_map(|(a, l, res)| res.as_ref().err().map(|e| format!("{a} / {l}: {e}")))
+        .collect();
+    if bad.is_empty() {
+        r.ok(
+            "folders.access",
+            Some(format!("{} folders readable", rows.len())),
+        );
+    } else {
+        r.add(
+            "folders.access",
+            Status::Error,
+            Some(bad.join("; ")),
+            Some("sb folder list; remove or fix the folder with `sb folder remove` / `sb folder add`"),
+        );
+    }
+    Ok(())
+}
+
+/// `folders.too_large`, and `docs.meet_overlap` (folder sync of a Meet notes folder).
+fn check_folders(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
+    let big: Vec<String> = cat
+        .open_issues()?
+        .into_iter()
+        .filter(|i| i.code == "folder.too_large")
+        .map(|i| i.message)
+        .collect();
+    if !big.is_empty() {
+        r.add(
+            "folders.too_large",
+            Status::Warning,
+            Some(big.join("; ")),
+            Some("raise max_files with `sb config edit --account <id>`, narrow include/exclude, or reduce initial_days"),
+        );
+    }
+    let docs = cat.list_entries(&EntryFilter {
+        source_kinds: vec![SourceKind::GoogleDoc],
+        ..Default::default()
+    })?;
+    let overlap = docs
+        .iter()
+        .filter(|d| {
+            cat.entries_by_source_id(SourceKind::GoogleMeet, &d.source_id)
+                .map(|m| !m.is_empty())
+                .unwrap_or(false)
+        })
+        .count();
+    if overlap > 0 {
+        r.add(
+            "docs.meet_overlap",
+            Status::Info,
+            Some(format!(
+                "{overlap} Drive files are both a google.doc and a google.meet entry (a synced folder holds Meet notes)"
+            )),
+            Some("do not sync the folder that holds Gemini notes; remove it with `sb folder remove`"),
+        );
+    }
+    Ok(())
+}
+
+/// `links.pending`: links waiting for an account that does not exist, and
+/// abandoned ones.
+fn check_links(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
+    use second_brain_kernel::{AccountKind, LinkStatus};
+    let accounts = cat.accounts()?;
+    let global = cat
+        .setting("links.ingest_kinds")?
+        .unwrap_or_else(|| serde_json::json!([]));
+    let has = |k: AccountKind| {
+        accounts
+            .iter()
+            .any(|a| a.kind == k && a.status == AccountStatus::Active)
+    };
+    let mut waiting: std::collections::BTreeMap<&'static str, u64> = Default::default();
+    let mut abandoned = 0u64;
+    for slack in accounts.iter().filter(|a| a.kind == AccountKind::Slack) {
+        let kinds = second_brain_pipeline::link_stage::effective_kinds(&global, slack);
+        for l in cat.list_links(Some(slack.id.as_str()), &[], u64::MAX)? {
+            if l.status == LinkStatus::Abandoned {
+                abandoned += 1;
+            }
+            if l.status == LinkStatus::Pending && kinds.contains(&l.source_kind) {
+                let (need, name) = match l.source_kind {
+                    SourceKind::MicrosoftFile => (AccountKind::Microsoft, "Microsoft"),
+                    _ => (AccountKind::Google, "Google"),
+                };
+                if !has(need) {
+                    *waiting.entry(name).or_default() += 1;
+                }
+            }
+        }
+    }
+    if waiting.is_empty() && abandoned == 0 {
+        return Ok(());
+    }
+    let mut parts: Vec<String> = waiting
+        .iter()
+        .map(|(n, c)| format!("{c} {n} links wait for a {n} account"))
+        .collect();
+    if abandoned > 0 {
+        parts.push(format!("{abandoned} links were abandoned (unreadable)"));
+    }
+    r.add(
+        "links.pending",
+        Status::Info,
+        Some(parts.join("; ")),
+        Some("sb account add google|microsoft; `sb scan-links --ingest --retry` tries abandoned links again"),
+    );
+    Ok(())
+}
+
 fn check_summaries(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
     let max: i64 = cat.setting_or("summary.max_attempts", 3i64)?;
     let count = |s: SummaryStatus| -> anyhow::Result<u64> {
@@ -998,4 +1122,155 @@ fn finish(ctx: &Ctx, r: Report, issues: Vec<Value>) -> anyhow::Result<i32> {
         Status::Warning => exit::PROBLEMS,
         _ => exit::OK,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use second_brain_kernel::links::{DiscoveredLink, classify_link};
+    use second_brain_kernel::{AccountId, AccountKind, EntryOrigin, Severity, SourceRef};
+    use second_brain_store::{EntryUpdate, Home, NormalizedUpdate, SummaryDecision};
+    use serde_json::json;
+
+    fn catalog() -> (tempfile::TempDir, Catalog) {
+        let dir = tempfile::tempdir().unwrap();
+        let cat = Catalog::create(&Home::new(dir.path().join("home"))).unwrap();
+        (dir, cat)
+    }
+
+    fn entry(cat: &Catalog, account: &str, kind: SourceKind, id: &str, links: Vec<DiscoveredLink>) {
+        cat.upsert_entry(&EntryUpdate {
+            source_ref: SourceRef {
+                account_id: AccountId::new(account).unwrap(),
+                source_kind: kind,
+                source_id: id.into(),
+                source_url: None,
+                created_at: None,
+                updated_at: None,
+            },
+            origin: EntryOrigin::Sync,
+            raw: None,
+            fetch_state: None,
+            metadata: None,
+            normalized: Some(NormalizedUpdate {
+                title: "t".into(),
+                source_url: None,
+                source_created_at: None,
+                source_updated_at: None,
+                sections: vec![],
+                summary: SummaryDecision::NoSummary,
+                links,
+            }),
+        })
+        .unwrap();
+    }
+
+    fn link(url: &str) -> DiscoveredLink {
+        DiscoveredLink {
+            link: classify_link(url).unwrap(),
+            message_ts: "1.0".into(),
+            excerpt: String::new(),
+        }
+    }
+
+    fn find<'a>(r: &'a Report, id: &str) -> Option<&'a Check> {
+        r.checks.iter().find(|c| c.id == id)
+    }
+
+    #[test]
+    fn links_wait_for_a_missing_account_only_when_their_kind_is_enabled() {
+        let (_d, cat) = catalog();
+        cat.add_account(
+            &AccountId::new("acme").unwrap(),
+            AccountKind::Slack,
+            "Acme",
+            None,
+            &json!({"ingest_links": ["google.doc", "microsoft.file"]}),
+        )
+        .unwrap();
+        entry(
+            &cat,
+            "acme",
+            SourceKind::SlackThread,
+            "C1:1.0",
+            vec![
+                link("https://docs.google.com/document/d/AAA/edit"),
+                link("https://contoso.sharepoint.com/:w:/s/t/Eabc"),
+            ],
+        );
+        let mut r = Report::default();
+        check_links(&cat, &mut r).unwrap();
+        let c = find(&r, "links.pending").expect("reported");
+        assert!(matches!(c.status, Status::Info));
+        let m = c.message.clone().unwrap();
+        assert!(
+            m.contains("1 Google links") && m.contains("1 Microsoft links"),
+            "{m}"
+        );
+
+        // With a Google account the Google link no longer waits for one.
+        cat.add_account(
+            &AccountId::new("work").unwrap(),
+            AccountKind::Google,
+            "Work",
+            None,
+            &json!({}),
+        )
+        .unwrap();
+        let mut r = Report::default();
+        check_links(&cat, &mut r).unwrap();
+        let m = find(&r, "links.pending").unwrap().message.clone().unwrap();
+        assert!(!m.contains("Google") && m.contains("Microsoft"), "{m}");
+
+        // A kind that is not enabled is not a problem.
+        cat.update_account(
+            &AccountId::new("acme").unwrap(),
+            None,
+            None,
+            Some(&json!({"ingest_links": []})),
+        )
+        .unwrap();
+        let mut r = Report::default();
+        check_links(&cat, &mut r).unwrap();
+        assert!(find(&r, "links.pending").is_none());
+    }
+
+    #[test]
+    fn folder_checks_report_size_issues_and_meet_overlap() {
+        let (_d, cat) = catalog();
+        cat.add_account(
+            &AccountId::new("work").unwrap(),
+            AccountKind::Google,
+            "Work",
+            None,
+            &json!({}),
+        )
+        .unwrap();
+        let mut r = Report::default();
+        check_folders(&cat, &mut r).unwrap();
+        assert!(r.checks.is_empty(), "nothing to report");
+
+        cat.open_issue(
+            "folder.too_large",
+            Severity::Warning,
+            Some("work"),
+            None,
+            "folder Minutes: 9000 files are in scope",
+        )
+        .unwrap();
+        entry(&cat, "work", SourceKind::GoogleDoc, "DOC1", vec![]);
+        entry(&cat, "work", SourceKind::GoogleMeet, "DOC1", vec![]);
+        entry(&cat, "work", SourceKind::GoogleDoc, "DOC2", vec![]);
+        let mut r = Report::default();
+        check_folders(&cat, &mut r).unwrap();
+        let big = find(&r, "folders.too_large").unwrap();
+        assert!(matches!(big.status, Status::Warning));
+        assert!(big.message.as_deref().unwrap().contains("9000"));
+        let o = find(&r, "docs.meet_overlap").unwrap();
+        assert!(o.message.as_deref().unwrap().starts_with("1 Drive files"));
+        assert_eq!(
+            issue_hint("folder.unavailable", Some("work"), None).as_deref(),
+            Some("sb folder check work")
+        );
+    }
 }

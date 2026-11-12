@@ -48,6 +48,8 @@ pub enum Command {
     Auth(AuthCmd),
     /// Incremental, resumable sync of all enabled accounts, then summaries.
     Sync(SyncArgs),
+    /// List the document links in Slack entries; with --ingest, ingest them.
+    ScanLinks(ScanLinksArgs),
     /// Folders of Google Drive and SharePoint/OneDrive that `sb sync` brings in.
     #[command(subcommand)]
     Folder(FolderCmd),
@@ -196,6 +198,31 @@ pub enum ConfigCmd {
         #[arg(long)]
         editor: bool,
     },
+}
+
+// ---------- links ----------
+
+#[derive(Debug, Args)]
+pub struct ScanLinksArgs {
+    /// Only entries dated within this age or after this date (`90d`, `2026-07-01`).
+    #[arg(long, value_name = "DATE|AGE")]
+    pub since: Option<String>,
+    /// Only this Slack account (repeatable).
+    #[arg(long = "account", value_name = "ID")]
+    pub accounts: Vec<String>,
+    /// Only this kind of link: google.doc or microsoft.file (repeatable). With
+    /// --ingest it also overrides the enabled kinds for this run.
+    #[arg(long = "kind", value_name = "KIND")]
+    pub kinds: Vec<String>,
+    /// At most this many links (default links.max_per_run).
+    #[arg(long, value_name = "N")]
+    pub limit: Option<u64>,
+    /// Record the links and ingest them (the enabled kinds, or --kind).
+    #[arg(long)]
+    pub ingest: bool,
+    /// With --ingest: try unavailable and abandoned links again now.
+    #[arg(long, requires = "ingest")]
+    pub retry: bool,
 }
 
 // ---------- folders ----------
