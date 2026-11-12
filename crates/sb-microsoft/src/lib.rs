@@ -2,6 +2,7 @@
 //! a thin Microsoft Graph client and the `microsoft.file` source for SharePoint
 //! and OneDrive files (ADR-0021, docs/specs/source-documents.md).
 
+pub mod folder;
 pub mod graph;
 pub mod oauth;
 pub mod source;

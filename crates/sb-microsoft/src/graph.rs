@@ -223,6 +223,63 @@ impl GraphApi {
         self.lookup(&u).await
     }
 
+    /// One page of the children of a folder. `next` is the `@odata.nextLink` of
+    /// the previous page; it is followed only on the Graph host, so the token
+    /// cannot be sent anywhere else.
+    pub async fn children_page(
+        &self,
+        drive_id: &str,
+        item_id: &str,
+        next: Option<&str>,
+    ) -> Result<(Vec<Value>, Option<String>), SourceError> {
+        let u = match next {
+            Some(link) => {
+                let u = url::Url::parse(link)
+                    .map_err(|_| SourceError::Api("the next page link is not a URL".into()))?;
+                let base =
+                    url::Url::parse(&self.base).map_err(|e| SourceError::Api(e.to_string()))?;
+                if u.scheme() != base.scheme()
+                    || u.host_str() != base.host_str()
+                    || u.port_or_known_default() != base.port_or_known_default()
+                {
+                    return Err(SourceError::Api(
+                        "the next page link points to another host; not following it".into(),
+                    ));
+                }
+                u
+            }
+            None => {
+                let mut u = self.url(&["drives", drive_id, "items", item_id, "children"])?;
+                u.query_pairs_mut()
+                    .append_pair("$top", "200")
+                    .append_pair("$select", ITEM_FIELDS);
+                u
+            }
+        };
+        let v: Value = match self.get(&u).await {
+            Ok(r) => r
+                .json()
+                .await
+                .map_err(|e| SourceError::Parse(e.to_string()))?,
+            Err(GraphError::Missing { status, message }) => {
+                return Err(SourceError::Api(format!(
+                    "Microsoft Graph {status} listing a folder: {message}"
+                )));
+            }
+            Err(GraphError::Source(e)) => return Err(e),
+        };
+        let items = v
+            .get("value")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let next = v
+            .get("@odata.nextLink")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        Ok((items, next))
+    }
+
     /// The content of a file. `None` if it is not found. Graph answers with a
     /// redirect to a pre-authenticated URL, which is fetched without the token.
     pub async fn download(
