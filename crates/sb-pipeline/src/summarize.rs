@@ -197,6 +197,8 @@ impl Pipeline {
     ) -> Result<SummarizeReport, PipelineError> {
         if !opts.estimate_only {
             self.upgrade_input_hashes()?;
+            // Aliases feed the `account_owner` hint; no network (ADR-0024).
+            crate::items::refresh_aliases(&self.catalog())?;
         }
         let policy = SummaryPolicy::load(&self.catalog())?;
         if opts.retry_failed && !opts.estimate_only {
@@ -724,6 +726,8 @@ impl Pipeline {
                 .set_summary_status(e.id, SummaryStatus::Skipped)?;
             return Ok(Outcome::Skipped);
         }
+        let mut input = input;
+        input.account_owner = crate::items::load_aliases(&self.catalog())?.names;
         let hash = policy.input_hash(&input);
         let mut generator = built.summarizer.generator(&input);
 
@@ -769,15 +773,28 @@ impl Pipeline {
         match result {
             Ok(mut out) => {
                 out.usage = usage.clone();
+                let (items, item_counts) =
+                    crate::items::validate_output(&self.catalog(), &out, &input, e)?;
+                if item_counts.dropped > 0 || item_counts.downgraded > 0 {
+                    tracing::debug!(
+                        entry = %e.entry_uid,
+                        kept = item_counts.kept,
+                        downgraded = item_counts.downgraded,
+                        dropped = item_counts.dropped,
+                        "items corrected by validation"
+                    );
+                }
                 self.catalog().commit_summary(&SummaryCommit {
                     entry_id: e.id,
-                    sections: out.to_sections(input.want_details),
+                    sections: out.to_sections(input.want_details, &items),
                     generator,
                     profile: Some(built.name.clone()),
                     input_hash: hash,
                     usage: usage.clone(),
                     cost_usd: cost,
                     run_id: self.run_id(),
+                    items,
+                    item_counts: Some(item_counts),
                 })?;
                 let cat = self.catalog();
                 cat.resolve_entry_issues("llm.failed", e.id)?;

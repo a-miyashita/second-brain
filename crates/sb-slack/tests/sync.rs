@@ -144,7 +144,7 @@ async fn llm_mock() -> MockServer {
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "choices": [{"message": {"content": "{\"overview\":\"Discussed the release.\",\"decisions\":[],\"action_items\":[]}"}}],
+            "choices": [{"message": {"content": "{\"overview\":\"Discussed the release.\",\"items\":[]}"}}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5}
         })))
         .mount(&server)

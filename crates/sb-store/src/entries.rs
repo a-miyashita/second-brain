@@ -566,6 +566,8 @@ pub(crate) fn upsert_entry_tx(
                 input_hash,
             } => {
                 write_sections(conn, entry_id, SectionOrigin::Generated, &n.sections, true)?;
+                // A native summary has no items (data-model.md invariant 7).
+                crate::items::replace_items_tx(conn, entry_id, &[])?;
                 upsert_summary_row(
                     conn,
                     entry_id,
@@ -621,6 +623,10 @@ pub struct SummaryCommit {
     pub cost_usd: Option<f64>,
     /// The run that made the call, when there is one.
     pub run_id: Option<i64>,
+    /// Validated items, replacing the entry's items (ADR-0024).
+    pub items: Vec<second_brain_kernel::NewItem>,
+    /// What validation did with the model's items; stored in `summaries.usage`.
+    pub item_counts: Option<second_brain_kernel::ItemCounts>,
 }
 
 impl Catalog {
@@ -831,10 +837,14 @@ impl Catalog {
     /// done and re-index, in one transaction (ADR-0005, ADR-0012).
     pub fn commit_summary(&self, c: &SummaryCommit) -> Result<()> {
         let now = self.now_ts();
-        let usage = serde_json::to_value(&c.usage)?;
+        let mut usage = serde_json::to_value(&c.usage)?;
+        if let (Some(counts), Some(o)) = (&c.item_counts, usage.as_object_mut()) {
+            o.insert("items".into(), serde_json::to_value(counts)?);
+        }
         self.with_tx(|tx| {
             fts::remove_entry(tx, c.entry_id)?;
             write_sections(tx, c.entry_id, SectionOrigin::Generated, &c.sections, true)?;
+            crate::items::replace_items_tx(tx, c.entry_id, &c.items)?;
             upsert_summary_row(
                 tx,
                 c.entry_id,
@@ -1072,6 +1082,8 @@ mod tests {
             },
             cost_usd: Some(0.5),
             run_id: Some(7),
+            items: vec![],
+            item_counts: None,
         })
         .unwrap();
         // The ledger row was written with the summary (ADR-0013).

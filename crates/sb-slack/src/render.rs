@@ -32,6 +32,10 @@ pub struct UserInfo {
     /// Harvested from a Slack Connect message, not from `users.list`.
     #[serde(default)]
     pub external: bool,
+    /// The email of the **authenticated user only** (alias source, ADR-0024).
+    /// Other members' emails are never stored.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub email: String,
 }
 
 impl UserInfo {
@@ -61,7 +65,18 @@ impl UserInfo {
             is_bot: m.get("is_bot").and_then(Value::as_bool).unwrap_or(false),
             deleted: m.get("deleted").and_then(Value::as_bool).unwrap_or(false),
             external: false,
+            email: String::new(),
         }
+    }
+
+    /// Keep the email of the authenticated user (a profile field).
+    pub fn with_own_email(mut self, m: &Value) -> Self {
+        self.email = m
+            .pointer("/profile/email")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        self
     }
 
     /// Build from a `user_profile` object embedded in a message.
@@ -82,6 +97,7 @@ impl UserInfo {
             is_bot: false,
             deleted: false,
             external: true,
+            email: String::new(),
         };
         u.label().is_some().then_some(u)
     }
@@ -636,6 +652,7 @@ pub fn normalize(
             want_details: false,
             location: None,
             referenced_in: None,
+            account_owner: Vec::new(),
         }),
         native_summary: None,
         links: crate::links::discover(

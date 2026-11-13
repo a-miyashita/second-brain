@@ -202,7 +202,11 @@ impl SlackSource {
             .collect();
         for m in &members {
             if let Some(id) = m.get("id").and_then(Value::as_str) {
-                dir.insert(id.to_string(), UserInfo::from_member(m));
+                let mut info = UserInfo::from_member(m);
+                if self.me.as_deref() == Some(id) {
+                    info = info.with_own_email(m);
+                }
+                dir.insert(id.to_string(), info);
             }
         }
         host.cache_put(

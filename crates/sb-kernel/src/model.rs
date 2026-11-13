@@ -196,6 +196,10 @@ pub struct SummaryInput {
     /// An excerpt of the Slack conversation that shared a document (ADR-0023).
     #[serde(default)]
     pub referenced_in: Option<String>,
+    /// Names of the user (the account owner), as a hint for recognizing them among
+    /// speakers (ADR-0024). Not part of the input hash.
+    #[serde(default)]
+    pub account_owner: Vec<String>,
 }
 
 /// Token usage and timing of a summarizer call.
@@ -237,10 +241,10 @@ impl Usage {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SummaryOutput {
     pub overview: String,
+    /// Items as the model returned them; validated before they are stored
+    /// (ADR-0024, items.md).
     #[serde(default)]
-    pub decisions: Vec<String>,
-    #[serde(default)]
-    pub action_items: Vec<String>,
+    pub items: Vec<crate::items::ItemDraft>,
     #[serde(default)]
     pub details: Option<String>,
     #[serde(skip)]
@@ -248,8 +252,14 @@ pub struct SummaryOutput {
 }
 
 impl SummaryOutput {
-    /// Render the output to `generated` sections. Empty lists produce no section.
-    pub fn to_sections(&self, want_details: bool) -> Vec<SectionDraft> {
+    /// Render the output to `generated` sections. The `decisions` and
+    /// `action_items` sections come from the validated `items`; empty lists
+    /// produce no section.
+    pub fn to_sections(
+        &self,
+        want_details: bool,
+        items: &[crate::items::NewItem],
+    ) -> Vec<SectionDraft> {
         let mut out = Vec::new();
         let overview = self.overview.trim();
         if !overview.is_empty() {
@@ -259,24 +269,7 @@ impl SummaryOutput {
                 text: overview.to_string(),
             });
         }
-        for (kind, items) in [
-            (SectionKind::Decisions, &self.decisions),
-            (SectionKind::ActionItems, &self.action_items),
-        ] {
-            let bullets: Vec<String> = items
-                .iter()
-                .map(|s| s.trim())
-                .filter(|s| !s.is_empty())
-                .map(|s| format!("- {}", s.trim_start_matches("- ")))
-                .collect();
-            if !bullets.is_empty() {
-                out.push(SectionDraft {
-                    kind,
-                    origin: SectionOrigin::Generated,
-                    text: bullets.join("\n"),
-                });
-            }
-        }
+        out.extend(crate::items::render_sections(items));
         if want_details
             && let Some(d) = self.details.as_deref().map(str::trim)
             && !d.is_empty()
@@ -504,18 +497,32 @@ mod tests {
 
     #[test]
     fn summary_output_rendering() {
+        use crate::items::{Confidence, ItemKind, NewItem};
+        let decision = NewItem {
+            ordinal: 0,
+            kind: ItemKind::Decision,
+            text: "Alice decided CSV".into(),
+            status: None,
+            owner: None,
+            requester: None,
+            due: None,
+            actors: vec![],
+            occurred_at: None,
+            confidence: Confidence::High,
+            evidence: None,
+            scope_key: "x".into(),
+        };
         let out = SummaryOutput {
             overview: " We met. ".into(),
-            decisions: vec!["Alice decided CSV".into(), "  ".into()],
-            action_items: vec![],
+            items: vec![],
             details: Some("long".into()),
             usage: Usage::default(),
         };
-        let s = out.to_sections(false);
+        let s = out.to_sections(false, &[decision]);
         assert_eq!(s.len(), 2);
         assert_eq!(s[0].text, "We met.");
         assert_eq!(s[1].kind, SectionKind::Decisions);
         assert_eq!(s[1].text, "- Alice decided CSV");
-        assert_eq!(out.to_sections(true).len(), 3);
+        assert_eq!(out.to_sections(true, &[]).len(), 2);
     }
 }

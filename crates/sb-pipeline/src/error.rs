@@ -15,6 +15,11 @@ pub enum PipelineError {
     Invalid(String),
     #[error("another sync is running")]
     Locked,
+    /// `--mine` was asked but no alias of the user is known (accounts-and-auth.md).
+    #[error(
+        "no alias of yours is known, so \"mine\" cannot be decided; add extra_aliases to an account (sb config edit --account <id>)"
+    )]
+    AliasesEmpty,
 }
 
 impl From<serde_json::Error> for PipelineError {

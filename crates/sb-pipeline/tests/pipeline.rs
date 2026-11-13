@@ -164,6 +164,7 @@ impl Source for FakeSource {
                 want_details: false,
                 location: None,
                 referenced_in: None,
+                account_owner: Vec::new(),
             }),
             native_summary: None,
             links: Vec::new(),
@@ -250,7 +251,7 @@ async fn mock_llm() -> MockServer {
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "choices": [{"message": {"content": "{\"overview\":\"They planned the CSV export.\",\"decisions\":[\"Alice decided to use CSV\"],\"action_items\":[]}"}}],
+            "choices": [{"message": {"content": "{\"overview\":\"They planned the CSV export.\",\"items\":[{\"kind\":\"decision\",\"text\":\"Alice decided to use CSV\",\"actors\":[\"Alice\"],\"confidence\":\"high\"}]}"}}],
             "usage": {"prompt_tokens": 100, "completion_tokens": 20}
         })))
         .mount(&server)
@@ -331,6 +332,106 @@ async fn sync_fetches_summarizes_and_skips_unchanged() {
     assert_eq!(r.stats.committed_entries(), 0);
     assert_eq!(r.stats.summaries.summarized, 0);
     assert_eq!(summary_calls(&llm).await, 5);
+}
+
+#[tokio::test]
+async fn items_are_validated_stored_and_rendered_with_the_summary() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"data": []})))
+        .mount(&server)
+        .await;
+    let answer = json!({
+        "overview": "They planned the export.",
+        "items": [
+            {"kind": "action", "text": "Alice ships the export", "owner": "Alice", "status": "done",
+             "confidence": "high", "evidence": "REASONABLY long message number"},
+            {"kind": "action", "text": "Alice writes the docs", "owner": "Alice", "status": "done",
+             "confidence": "high", "evidence": "a sentence nobody wrote"},
+            {"kind": "accomplishment", "text": "Release shipped", "confidence": "high",
+             "evidence": "a sentence nobody wrote"},
+            {"kind": "decision", "text": "Use CSV", "confidence": "high"}
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "choices": [{"message": {"content": answer.to_string()}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 20}
+        })))
+        .mount(&server)
+        .await;
+    let env = env(&server).await;
+    {
+        // The user's names reach the prompt as a hint (never in the hash).
+        let cat = Catalog::open(&env.home).unwrap();
+        cat.update_account(
+            &AccountId::new("acme").unwrap(),
+            None,
+            None,
+            Some(&json!({"extra_aliases": {"names": ["Alice Example"]}})),
+        )
+        .unwrap();
+    }
+    let p = pipeline(&env, None);
+    let r = p.sync(&SyncOptions::default()).await.unwrap();
+    assert_eq!(r.status, Some(RunStatus::Ok), "{:?}", r.stats.errors);
+
+    let cat = p.catalog();
+    let e = cat
+        .entry_by_key("acme", SourceKind::SlackThread, "C1:1.0")
+        .unwrap()
+        .unwrap();
+    let items = cat.items_for_entry(e.id).unwrap();
+    assert_eq!(items.len(), 3, "the unverifiable accomplishment is dropped");
+    assert_eq!(
+        items[0].item.status,
+        Some(second_brain_kernel::ItemStatus::Done)
+    );
+    assert_eq!(items[0].item.scope_key, "slack:C1");
+    assert_eq!(
+        items[1].item.status,
+        Some(second_brain_kernel::ItemStatus::Open)
+    );
+    assert_eq!(
+        items[1].item.confidence,
+        second_brain_kernel::Confidence::Low
+    );
+    assert!(items[1].item.evidence.is_none());
+    assert_eq!(items[2].item.kind, second_brain_kernel::ItemKind::Decision);
+    let usage = cat.summary(e.id).unwrap().unwrap().usage.unwrap();
+    assert_eq!(usage["items"]["dropped"], 1);
+    assert_eq!(usage["items"]["downgraded"], 2);
+    let sections = cat.sections(e.id).unwrap();
+    let actions = sections
+        .iter()
+        .find(|s| s.kind == SectionKind::ActionItems)
+        .unwrap();
+    assert!(actions.text.contains("- [done] Alice ships the export"));
+    assert!(actions.text.contains("- Alice writes the docs"));
+    assert!(sections.iter().any(|s| s.kind == SectionKind::Decisions));
+    let sum = cat.summary(e.id).unwrap().unwrap();
+    assert_eq!(
+        sum.prompt_version.as_deref(),
+        Some("conversation-summary/v2")
+    );
+    let body = String::from_utf8_lossy(
+        &server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .find(|r| {
+                r.url.path() == "/v1/chat/completions"
+                    && !String::from_utf8_lossy(&r.body).contains("ping")
+            })
+            .unwrap()
+            .body,
+    )
+    .into_owned();
+    assert!(body.contains("Account owner"));
+    assert!(body.contains("Alice Example"));
 }
 
 #[tokio::test]
@@ -637,7 +738,7 @@ async fn mock_anthropic(text: &str, input: u64, output: u64) -> MockServer {
     server
 }
 
-const GOOD: &str = r#"{"overview":"They planned the export.","decisions":[],"action_items":[]}"#;
+const GOOD: &str = r#"{"overview":"They planned the export.","items":[]}"#;
 
 async fn api_calls(llm: &MockServer) -> usize {
     llm.received_requests()
@@ -1190,7 +1291,7 @@ async fn a_cli_summary_records_the_model_the_cli_reported() {
         &stub,
         r#"#!/bin/sh
 cat > /dev/null
-printf '%s' '{"is_error":false,"result":"{\"overview\":\"o\",\"decisions\":[],\"action_items\":[]}","usage":{"input_tokens":10,"output_tokens":2},"total_cost_usd":0.001,"modelUsage":{"claude-haiku-4-5-20251001":{"outputTokens":2}}}'
+printf '%s' '{"is_error":false,"result":"{\"overview\":\"o\",\"items\":[]}","usage":{"input_tokens":10,"output_tokens":2},"total_cost_usd":0.001,"modelUsage":{"claude-haiku-4-5-20251001":{"outputTokens":2}}}'
 "#,
     )
     .unwrap();

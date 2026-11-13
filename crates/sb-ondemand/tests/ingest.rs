@@ -389,7 +389,7 @@ async fn summaries_run_for_long_documents_and_short_ones_are_skipped() {
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "choices": [{"message": {"content": "{\"overview\":\"The team will ship search in October.\",\"decisions\":[\"Ship in October\"],\"action_items\":[\"Alice owns the rollout\"]}"}}],
+            "choices": [{"message": {"content": "{\"overview\":\"The team will ship search in October.\",\"items\":[{\"kind\":\"decision\",\"text\":\"Ship in October\",\"confidence\":\"high\"},{\"kind\":\"action\",\"text\":\"Alice owns the rollout\",\"owner\":\"Alice\",\"status\":\"open\",\"confidence\":\"high\"}]}"}}],
             "usage": {"prompt_tokens": 100, "completion_tokens": 20}
         })))
         .mount(&llm)
@@ -446,7 +446,7 @@ async fn summaries_run_for_long_documents_and_short_ones_are_skipped() {
         assert!(kinds.contains(&k), "missing {k:?} in {kinds:?}");
     }
     let sum = cat.summary(e.id).unwrap().unwrap();
-    assert_eq!(sum.prompt_version.as_deref(), Some("document-summary/v3"));
+    assert_eq!(sum.prompt_version.as_deref(), Some("document-summary/v4"));
     // The user's context reached the model as a hint, outside the input tags.
     let reqs = llm.received_requests().await.unwrap();
     let body = reqs
