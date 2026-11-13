@@ -8,6 +8,7 @@ pub mod hash_upgrade;
 mod host;
 pub mod import;
 pub mod ingest;
+pub mod items;
 pub mod link_stage;
 pub mod ops;
 pub mod policy;

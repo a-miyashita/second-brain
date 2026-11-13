@@ -4,5 +4,6 @@ pub mod coverage;
 pub mod doctor;
 pub mod folder;
 pub mod ingest;
+pub mod items;
 pub mod retrieval;
 pub mod setup;

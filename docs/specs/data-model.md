@@ -1,6 +1,6 @@
 # Data model (catalog schema)
 
-Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014, 0017, 0022, 0023.
+Related ADRs: 0002, 0003, 0005, 0007, 0011, 0013, 0014, 0017, 0022, 0023, 0024.
 
 SQLite, WAL mode, `foreign_keys = ON`. Timestamps are stored as RFC 3339 text in UTC.
 IDs named `id INTEGER` are internal rowids. Entry IDs exposed to users are
@@ -30,7 +30,7 @@ Per-account settings live in `accounts.config`, not here.
 | `kind` | TEXT | `google`, `microsoft`, `slack`, `imap`, `local`, `web` |
 | `label` | TEXT | display name |
 | `identity` | TEXT | e.g. `alice@example.com`, `T0123:U0456` (Slack), `<tid>:<oid>` (Microsoft) |
-| `config` | TEXT (JSON) | source settings, e.g. Slack `full_channels` |
+| `config` | TEXT (JSON) | source settings, e.g. Slack `full_channels`. Also `aliases` (names and emails of the user, collected automatically, read-only) and `extra_aliases` (optional, user-edited); see [accounts-and-auth.md](accounts-and-auth.md#self-aliases) |
 | `status` | TEXT | `active`, `disabled`, `needs_reauth` |
 | `created_at`, `updated_at` | TEXT | |
 
@@ -123,7 +123,56 @@ At most one row per entry, overwritten on regeneration (ADR-0005).
 | `prompt_version` | TEXT NULL | e.g. `entry-summary/v1`; NULL for `source_native` |
 | `input_hash` | TEXT | `b2:<sha256 of the body>` for `llm_*` (ADR-0017); empty = unknown baseline (adopted without regenerating); the native hash for `source_native`. Pre-`b2` values are rewritten by the hash upgrade |
 | `generated_at` | TEXT | for imported entries, the original time if known |
-| `usage` | TEXT (JSON) NULL | tokens in/out, duration, and the reported `model` when there is one |
+| `usage` | TEXT (JSON) NULL | tokens in/out, duration, and the reported `model` when there is one. For prompts that extract items, also `items`: `{"kept", "downgraded", "dropped"}` (items.md) |
+
+### `items`
+
+Structured conclusions of an entry (ADR-0024, migration `0005`; semantics in
+[items.md](items.md)). **Generated data**, owned by the entry: replaced together with the
+summary in `commit_summary`, with no history.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | Internal. Not stable across re-summarization |
+| `entry_id` | INTEGER FK → entries ON DELETE CASCADE | |
+| `ordinal` | INTEGER | Position in the summary output, 0-based. Public reference: `<entry_uid>#<ordinal>` |
+| `kind` | TEXT | `decision`, `action`, `resolved`, `question`, `accomplishment` |
+| `text` | TEXT | One sentence in the summary language |
+| `status` | TEXT NULL | `action`: `open`, `done`, `dropped`. `question`: `open`, `answered`. NULL for the other kinds. The item's **own** status; the effective status is computed at query time |
+| `owner`, `requester` | TEXT NULL | Raw references as the input wrote them (names). "Mine" is decided at query time |
+| `due` | TEXT NULL | `YYYY-MM-DD` |
+| `actors` | TEXT (JSON) | Array of raw references. `[]` if unknown |
+| `occurred_at` | TEXT NULL | UTC RFC 3339; the fallback chain is in items.md |
+| `confidence` | TEXT | `high`, `medium`, `low` |
+| `evidence` | TEXT NULL | Verbatim quote, at most 200 characters |
+| `scope_key` | TEXT | `slack:<channel_id>`, `meet:<recurring_event_id>`, `meet:title:<title>`, `<source_kind>:<source_id>` |
+
+Unique: `(entry_id, ordinal)`. Indexes: `items(kind, status)`, `items(scope_key, occurred_at)`,
+`items(occurred_at)`. There is no provenance column: the generator, model, profile and
+prompt version are those of the entry's `summaries` row, written in the same transaction.
+
+### `item_links`
+
+Links between items of **different** entries (ADR-0024). **Derived and rebuildable**, like
+the search index: it can be emptied and recomputed from `items`. Created by migration
+`0005`, empty and unwritten until the reconcile stage exists (items.md).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `from_item` | INTEGER FK → items ON DELETE CASCADE | The later item: the one that closes, replaces or repeats |
+| `to_item` | INTEGER FK → items ON DELETE CASCADE | The earlier item |
+| `relation` | TEXT | `resolves`, `supersedes`, `same_as` (reserved; not written) |
+| `confidence` | TEXT | `high`, `medium`, `low` |
+| `evidence` | TEXT NULL | Quote taken from the `from` item |
+| `linked_by_model` | TEXT | Resolved model of the call that judged the pair |
+| `prompt_version` | TEXT | e.g. `item-reconcile/v1` |
+| `created_at` | TEXT | |
+
+Unique: `(from_item, to_item, relation)`. Indexes on `from_item` and `to_item`. A
+re-summarization deletes the entry's items, so both directions of its links disappear by
+cascade; the reconcile queue (migration `0006`, items.md) re-judges the entries on the
+other end.
 
 ### `llm_usage`
 
@@ -251,8 +300,8 @@ keeps backends swappable.
 
 | Key | Used by |
 |---|---|
-| `participants`: `[{name, email?}]`, `absentees` | google.meet |
-| `transcript_url`, `calendar_url`, `recurring` | google.meet |
+| `participants`: `[{name, email?}]`, `absentees`, `self_names` (names of the Calendar attendee flagged `self`, for the account's aliases) | google.meet |
+| `transcript_url`, `calendar_url`, `recurring`, `recurring_event_id` | google.meet. `recurring_event_id` is the Calendar `recurringEventId`, the stable series key for `scope_key` (ADR-0024); absent for one-off meetings and for entries fetched before it was stored (`sb refetch` fills it) |
 | `channel_id`, `channel_name`, `channel_kind` (`channel`, `private`, `dm`, `group_dm`), `thread_ts`, `message_count` | slack.* |
 | `drive_file_id`, `mime_type`, `owners`, `drive_modified_time`, `export_format` | google.doc |
 | `drive_id`, `item_id`, `drive_type`, `mime_type`, `file_name`, `owners`, `ms_modified_time`, `ms_etag` | microsoft.file |
@@ -284,6 +333,19 @@ keeps backends swappable.
 6. `llm_usage` and `budget_periods` are never rewritten or pruned by the tool, so
    the history of spend and caps can be looked up at any time. The only copy of
    a period's spend is the ledger.
+
+7. `items` rows exist only for an entry whose current summary was written by an LLM
+   generator with a prompt that extracts items. Committing a `source_native` summary
+   deletes them. Items and the `summaries` row are written in one transaction, so they
+   always agree on the generator and prompt version. An entry that falls below the summary thresholds later (`skipped`) keeps its old generated sections and therefore its old items, as before; import deletes them with the summary it replaces.
+8. No `item_links` row connects two items of the same entry.
+
+### Migration `0005` (ADR-0024)
+
+Creates `items`, `item_links` and their indexes. It changes no other table. The `sections`
+kinds do not change: the `decisions` and `action_items` sections are rendered from items.
+The `items.*` settings are code defaults, not rows. A later migration `0006` (reconcile
+stage) adds `reconcile_queue` and `llm_usage.purpose`.
 
 ### Migration `0004` (ADR-0022)
 

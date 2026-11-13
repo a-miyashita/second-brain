@@ -221,13 +221,17 @@ mod tests {
             want_details: false,
             location: None,
             referenced_in: None,
+            account_owner: Vec::new(),
         }
     }
 
     #[tokio::test]
     async fn repairs_once() {
         let (b, s) = summarizer(
-            &["oops", r#"{"overview":"fixed","decisions":["d"]}"#],
+            &[
+                "oops",
+                r#"{"overview":"fixed","items":[{"kind":"decision","text":"d"}]}"#,
+            ],
             40_000,
         );
         let out = s.summarize(&input("x".into())).await.unwrap();
@@ -237,7 +241,7 @@ mod tests {
         assert_eq!(seen[1].messages.len(), 3);
         assert_eq!(
             s.generator(&input(String::new())).prompt_version.as_deref(),
-            Some("conversation-summary/v1")
+            Some("conversation-summary/v2")
         );
     }
 
@@ -264,7 +268,7 @@ mod tests {
 
     #[tokio::test]
     async fn repair_usage_is_added_to_the_first_attempt() {
-        let (_b, s) = summarizer(&["oops", r#"{"overview":"ok"}"#], 40_000);
+        let (_b, s) = summarizer(&["oops", r#"{"overview":"ok","items":[]}"#], 40_000);
         let mut usage = Usage::default();
         let out = s
             .summarize_tracked(&input("x".into()), &mut usage)
@@ -283,7 +287,7 @@ mod tests {
             let mut n = self.0.lock().unwrap();
             *n += 1;
             Ok(Completion {
-                text: r#"{"overview":"part","decisions":[],"action_items":[]}"#.into(),
+                text: r#"{"overview":"part","items":[]}"#.into(),
                 usage: Usage {
                     calls: 1,
                     model: Some(format!("resolved-{n}")),
@@ -311,7 +315,7 @@ mod tests {
         let body: String = (0..300)
             .map(|i| format!("line {i} with some words\n"))
             .collect();
-        let ok = r#"{"overview":"part","decisions":[],"action_items":[]}"#;
+        let ok = r#"{"overview":"part","items":[]}"#;
         let (b, s) = summarizer(&[ok; 20], 2_000);
         let out = s.summarize(&input(body)).await.unwrap();
         let calls = b.seen.lock().unwrap().len();

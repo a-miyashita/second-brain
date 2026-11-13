@@ -1,6 +1,6 @@
 # Search
 
-Related ADR: 0004.
+Related ADRs: 0004, 0024.
 
 ## Query model
 
@@ -50,6 +50,25 @@ section unless `--all-sections` is given.
 | "Who owns this task?" | `action_items` |
 | General overview | `overview` |
 | Why a document was added | `background` |
+
+## Questions without a keyword
+
+Search needs a term. "What are my TODOs today?", "What happened yesterday?" and "What did
+I do this year?" have none, and a term such as "TODO" matches only the entries that
+happen to contain it. Those questions are answered by period and kind, not by terms
+(ADR-0024):
+
+| Question type | Use |
+|---|---|
+| "What happened today / this week?" | `sb recent --since today` (or `7d`) |
+| "My TODOs", "what is due", "what am I waiting for" | `sb items --kind action --status open --mine` (`--due-by`, `--asked-by-me`) |
+| "What did I do / finish in the last N months?" | `sb items --status done --mine --since Nd`, with kinds `accomplishment`, `resolved`, `action` |
+| "What is still unanswered?" | `sb items --kind question --status open` |
+| A topic or a named thing | `sb search` |
+
+The `decisions` and `action_items` sections that search returns are rendered from the
+same items, so `sb search --section action_items` and `sb items --kind action` agree.
+Details: [items.md](items.md).
 
 ## Future: vectors and hybrid search
 

@@ -1,6 +1,6 @@
 # Summarization
 
-Related ADRs: 0005, 0013, 0014, 0015, 0017, 0022, 0023.
+Related ADRs: 0005, 0013, 0014, 0015, 0017, 0022, 0023, 0024.
 
 ## Output structure
 
@@ -8,19 +8,30 @@ Summarizers must return JSON matching:
 
 ```json
 {"overview": "2-4 sentences",
- "decisions": ["who decided what"],
- "action_items": ["who does what by when"],
+ "items": [{"kind": "decision|action|resolved|question|accomplishment",
+            "text": "one sentence", "owner": "...", "requester": "...",
+            "due": "YYYY-MM-DD", "status": "open|done|dropped",
+            "actors": ["..."], "confidence": "high|medium|low",
+            "evidence": "verbatim quote"}],
  "details": "optional; only for sources whose details are generated (meetings)"}
 ```
 
-These are rendered to Markdown sections with `origin = generated`:
+`items` replaces the `decisions` and `action_items` arrays of the v1 prompts (ADR-0024).
+Its fields, rules, validation and rendering are in [items.md](items.md). The output is
+rendered to Markdown sections with `origin = generated` and to `items` rows:
 
 - `overview` as text;
-- `decisions` and `action_items` as bullet lists; empty arrays produce no section;
+- `decisions` and `action_items` as bullet lists **rendered from the items**; empty lists
+  produce no section. The other item kinds are rows only;
 - `details` as text, only when requested for the source kind.
 
-Invalid JSON is retried once with a repair instruction. If it fails again, the entry
-gets `summary_status = failed` and an `llm.bad_output` issue.
+Output from a v1 prompt (stored summaries, `decisions` and `action_items` arrays) is still
+displayed as it was stored; it has no items.
+
+Invalid JSON, or output without `items`, is retried once with a repair instruction. If it
+fails again, the entry gets `summary_status = failed` and an `llm.bad_output` issue. Items
+that fail the mechanical checks of items.md are corrected or dropped; that is not a
+failure.
 
 ## Commit and resume rules (ADR-0012)
 
@@ -42,8 +53,10 @@ gets `summary_status = failed` and an `llm.bad_output` issue.
 
 - Write only what the input says. No speculation.
 - Keep proper nouns, numbers and dates verbatim.
-- Decisions say who decided what. Action items say who, what and by when; the owner
-  is omitted if unknown.
+- Items (ADR-0024, [items.md](items.md)): only what the input states; one fact, one item;
+  a status change needs a verbatim quote; `done` and `dropped` are never inferred from
+  silence; a quote is never translated; a relative date is resolved against the entry
+  date or left in the text. The owner is omitted if unknown.
 - Chit-chat gets a one-line overview and empty lists.
 - Output language: the setting `summary.language`: `auto` (same as the input,
   default), `ja` or `en`.
@@ -52,9 +65,12 @@ Prompts are embedded per purpose, each with a version:
 
 | Prompt | Used for |
 |---|---|
-| `conversation-summary/v1` | slack.* |
-| `meeting-summary/v1` | google.meet from transcript. Also produces `details` |
-| `document-summary/v3` | google.doc, microsoft.file, web.page, local.file, mail.*. Like v2, plus the labeled inputs `location` and `referenced_in` and the rules below (ADR-0023). New and changed entries use it; stored v2 summaries stay until `sb resummarize` |
+| `conversation-summary/v2` | slack.*. Produces `items` (ADR-0024). Adds the labeled input `account_owner` |
+| `meeting-summary/v2` | google.meet from transcript. Produces `items` and `details`. Adds `account_owner` |
+| `document-summary/v4` | google.doc, microsoft.file, web.page, local.file, mail.*. Like v3, plus `items` and `account_owner` (ADR-0024). New and changed entries use it; stored v3 summaries stay until `sb resummarize` |
+| `item-reconcile/v1` | The reconcile stage (items.md, later phase). Input: item pairs and their quotes only |
+| `conversation-summary/v1`, `meeting-summary/v1` | The previous prompts, kept so that stored summaries stay attributed. They produce `decisions` and `action_items` arrays and no items |
+| `document-summary/v3` | The previous document prompt (ADR-0023): the labeled inputs `location` and `referenced_in` and the rules below, no items. Kept so that stored summaries stay attributed |
 | `document-summary/v2` | The previous document prompt, kept so that stored summaries stay attributed. The body is wrapped in delimiters and the system prompt states that it is untrusted data, not instructions (ADR-0014). The user context is a separate hint |
 
 ## Input construction
@@ -88,7 +104,8 @@ Rules of `document-summary/v3` for them:
   ignored.
 
 `input_hash` stays the hash of the body alone, so a change of a hint does not regenerate a
-summary; `sb resummarize --entry <uid>` applies it.
+summary; `sb resummarize --entry <uid>` applies it. The same holds for `account_owner`
+(items.md): a changed alias never regenerates a summary.
 
 - `input_hash` is `b2:` followed by the SHA-256 of the **body alone** (ADR-0017).
   The model, the provider, the profile and the prompt version are not part of it. A
@@ -101,8 +118,10 @@ summary; `sb resummarize --entry <uid>` applies it.
 - **Long inputs:** if the body exceeds the profile's `max_input_chars` (default
   40 000, tunable per profile), it is summarized map-reduce style:
   1. split into chunks on message or paragraph boundaries;
-  2. produce partial summaries;
-  3. make a final merge call.
+  2. produce partial summaries (each with its items);
+  3. make a final merge call. It removes duplicate items and keeps the latest status of an
+     action that appears in several chunks. Item evidence is verified against the whole
+     body after the merge (items.md).
 
   Head+tail truncation is not used, because transcripts are routinely longer than
   the limit and the middle would be lost.
@@ -334,7 +353,16 @@ Selecting a profile:
 - `summary.profile.<source_kind> = "..."` overrides the default per source kind.
 - `native` is a reserved profile name (not definable).
   `summary.profile.google.meet = "native"` means "keep Gemini notes, do not
-  summarize". This is the default for google.meet.
+  summarize".
+- **`google.meet` (ADR-0024):** `summary.profile.google.meet` if set, else
+  `summary.profile.default` if set, else `native`. So a configured LLM profile now
+  summarizes meetings (and extracts their items), and an installation without any profile
+  still keeps Gemini's notes. The built-in default `native` of this key is removed; an
+  explicit stored `native` is kept. A native summary has no items.
+  - When the effective profile of an entry changes from `native` to an LLM profile, the
+    existing rule applies: a native summary is replaced by the first LLM one, so such
+    entries become `pending` the next time they are normalized, and are summarized under
+    the budget caps. `sb summarize --estimate` shows the cost first.
 
 ### Local LLM servers (`kind = "local_llm"`)
 
@@ -425,7 +453,13 @@ sb resummarize [--account A] [--source K] [--since D] [--until D] [--entry UID].
    transaction replace the `generated` sections and the `summaries` row and
    re-index. The limits and graceful-stop rules above apply.
 6. `--native` (google.meet only) re-extracts Gemini notes from raw data and records
-   `source_native` again.
+   `source_native` again. The entry's items are deleted (data-model.md invariant 7).
+7. The transaction of step 5 also replaces the entry's `items` (items.md) and, once the
+   reconcile stage exists, queues the entry and its link partners for it.
+8. **Items backfill.** Entries summarized with an older prompt have no items. The new
+   prompt versions make them eligible without `--force`, so `sb resummarize --profile P
+   --since 180d --estimate` followed by the same command without `--estimate` fills them.
+   `sb doctor` reports how many entries still lack items (`items.coverage`).
 
 ## Hash upgrade (ADR-0017)
 

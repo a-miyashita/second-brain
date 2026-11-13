@@ -110,8 +110,15 @@ snapshot it needs is passed in through its context.
 - **Links.** `normalize` also returns the document links of the entry and the excerpt
   around each (link-ingest.md "Finding links"). It does not fetch them, and the
   `details` section is unchanged.
-- Summary input: the rendered conversation, with prompt `conversation-summary/v1`.
-  The thresholds come from summarization.md.
+- Summary input: the rendered conversation, with prompt `conversation-summary/v2`, which
+  also extracts items (items.md). The thresholds come from summarization.md.
+- **Items.** `scope_key` is `slack:<channel_id>`. `occurred_at` of an item is the time of
+  the message that holds its quote, read from the rendered `HH:MM` line and the nearest
+  date header, in `slack.day_timezone`. People appear as the names the rendering gives
+  them (real name, then display name, then handle), so item owners are names, not user
+  IDs, and "mine" is matched by name (accounts-and-auth.md#self-aliases). A `slack.day`
+  entry ends at local midnight, so a conversation that crosses it is two entries; the
+  items of the two are related only through the reconcile step (ADR-0024).
 
 ## Sync algorithm
 

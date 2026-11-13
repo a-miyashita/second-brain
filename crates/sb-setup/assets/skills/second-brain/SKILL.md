@@ -6,14 +6,34 @@ description: >-
   for questions about past discussions, decisions, owners, meetings, history or
   context ("what did we decide about X", "who owns Y", "when did we discuss Z",
   "why did we choose W"), and in Japanese (「〜について何を決めた？」「担当は誰？」
-  「前に話した〜」「議事録」「経緯」「Slackで話した〜」).
-version: 4
+  「前に話した〜」「議事録」「経緯」「Slackで話した〜」). Also for questions about
+  tasks and periods without a keyword ("what are my TODOs", "what happened today",
+  "what did I do last quarter", 「今日のTODOは？」「やることは？」「今週何があった？」
+  「この半年で何をした？」「返事待ちは？」).
+version: 5
 ---
 
 # second-brain
 
 The user's knowledge base is searched with the `sb` command (also installed as
 `second-brain`). Always use `--json`: the output is a stable, versioned contract.
+
+## 0. Pick the right command
+
+- **A topic, a name, a decision, "why"** → `sb search` (section 1).
+- **A period, "my TODOs", "what is due", "what am I waiting for", "what happened
+  today", "what did I do over N months"** → no keyword exists, so do **not** guess one.
+  Use `sb items` (structured tasks, decisions, accomplishments) or `sb recent`
+  (entries by activity time). Read
+  [references/items-guide.md](references/items-guide.md) first. In short:
+
+  ```sh
+  sb items --kind action --status open --mine --json     # my open TODOs
+  sb recent --since today --json                         # what happened today
+  ```
+
+  Always read `coverage` in the answer: it says how many entries in the period could
+  not produce items. Never answer "nothing" from an empty list alone.
 
 ## 1. Search first — never read everything
 

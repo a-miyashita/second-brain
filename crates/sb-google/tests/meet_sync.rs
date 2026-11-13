@@ -178,6 +178,7 @@ async fn calendar_strategy_native_summary_and_skip_unchanged() {
             second_brain_kernel::util::parse_ts("2026-09-09T01:00:00Z")
         );
         assert_eq!(e.metadata["recurring"], true);
+        assert_eq!(e.metadata["recurring_event_id"], "r1");
         assert_eq!(e.metadata["has_transcript"], true);
         assert_eq!(e.metadata["absentees"][0]["name"], "Bob Example");
         let sum = cat.summary(e.id).unwrap().unwrap();

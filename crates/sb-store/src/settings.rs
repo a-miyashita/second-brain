@@ -17,7 +17,6 @@ pub fn default_value(key: &str) -> Option<Value> {
         "summary.min_chars.google.doc" => json!(0),
         "summary.min_chars.microsoft.file" => json!(0),
         "summary.min_messages" => json!(3),
-        "summary.profile.google.meet" => json!("native"),
         "summary.budget.weekly_usd" => json!(2.0),
         "summary.budget.monthly_usd" => json!(10.0),
         "summary.budget.timezone" => json!(os_timezone()),
@@ -45,6 +44,12 @@ pub fn default_value(key: &str) -> Option<Value> {
         "ingest.web.max_redirects" => json!(5),
         "ingest.web.allow_private" => json!(false),
         "ingest.local.deny" => json!([]),
+        "items.min_confidence" => json!("medium"),
+        "items.max_per_entry" => json!(30),
+        "items.stale_days" => json!(30),
+        "items.candidate_days" => json!(60),
+        "items.candidate_min_similarity" => json!(0.2),
+        "items.link_min_confidence" => json!("medium"),
         _ => return None,
     })
 }
@@ -89,6 +94,12 @@ const KNOWN_KEYS: &[&str] = &[
     "ingest.web.max_redirects",
     "ingest.web.allow_private",
     "ingest.local.deny",
+    "items.min_confidence",
+    "items.max_per_entry",
+    "items.stale_days",
+    "items.candidate_days",
+    "items.candidate_min_similarity",
+    "items.link_min_confidence",
     "skills.installed",
     "schedule.registered",
 ];
@@ -208,13 +219,6 @@ impl Catalog {
                 });
             }
         }
-        if !items.iter().any(|i| i.key == "summary.profile.google.meet") {
-            items.push(SettingItem {
-                key: "summary.profile.google.meet".into(),
-                value: json!("native"),
-                default: true,
-            });
-        }
         items.sort_by(|a, b| a.key.cmp(&b.key));
         Ok(items)
     }
@@ -242,11 +246,14 @@ mod tests {
             cat.setting_or::<u64>("pipeline.commit_batch", 0).unwrap(),
             20
         );
-        assert_eq!(
-            cat.setting("summary.profile.google.meet").unwrap(),
-            Some(json!("native"))
+        // Meet follows the default profile (ADR-0024): no built-in `native`.
+        assert!(
+            cat.setting("summary.profile.google.meet")
+                .unwrap()
+                .is_none()
         );
         assert!(cat.setting("summary.profile.default").unwrap().is_none());
+        assert_eq!(cat.setting_or::<u64>("items.stale_days", 0).unwrap(), 30);
     }
 
     #[test]

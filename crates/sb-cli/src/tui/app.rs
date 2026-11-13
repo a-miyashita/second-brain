@@ -268,7 +268,7 @@ pub(crate) struct AccountEditor {
 }
 
 /// Keys of an account config shown but not edited here.
-const READ_ONLY_ACCOUNT_KEYS: &[&str] = &["scopes"];
+const READ_ONLY_ACCOUNT_KEYS: &[&str] = &["scopes", "aliases"];
 
 /// Settings that `sb` maintains itself.
 const READ_ONLY_SETTINGS: &[&str] = &["backup.last_at", "skills.installed", "schedule.registered"];

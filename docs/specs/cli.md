@@ -1,6 +1,6 @@
 # CLI specification
 
-Related ADRs: 0001, 0009, 0010, 0014, 0015, 0020, 0022.
+Related ADRs: 0001, 0009, 0010, 0014, 0015, 0020, 0022, 0024.
 
 The binary is `second-brain`, with alias `sb`. Examples use `sb`.
 
@@ -96,6 +96,8 @@ Common filters: `--account`, `--source <source_kind>`, `--since`, `--until`,
 | `sb search <term>... [--section K] [--source ..] [--account ..] [--since ..] [--until ..] [--limit N]` | M | See [search.md](search.md) |
 | `sb show <entry_uid> [--section K]... [--raw [--role R]] [--meta]` | M | Print an entry (Markdown by default). `--raw` prints the raw file path(s) and, with `--role`, the content |
 | `sb list [filters] [--limit N]` | M | List entries, newest first |
+| `sb recent [--since D] [--until D] [--source K].. [--account A].. [--section K].. [--with-items] [--limit N]` | 2 | Entries by activity time, newest first, with their summary sections and no keyword. Default `--since 1d`. For "what happened today". `--json` schema `sb.recent/v1` ([items.md](items.md#sb-recent), ADR-0024) |
+| `sb items [--kind K].. [--status S].. [--mine \| --owner NAME \| --asked-by-me] [--since D] [--until D] [--due-by D] [--account A].. [--source K].. [--scope KEY] [--min-confidence C] [--stale \| --not-stale] [--candidates] [--limit N]` | 2 | Structured items (decisions, actions, resolved matters, open questions, accomplishments) by kind, effective status, person and period. `--mine` uses the accounts' aliases. `--candidates` adds possible resolutions of open items. `--json` schema `sb.items/v1`, with a `coverage` object ([items.md](items.md#sb-items), ADR-0024) |
 | `sb stats` | M | Counts by account, source, raw status and summary status/model, and summarization spend against the weekly and monthly budget (ADR-0013) |
 | `sb budget [--weeks N] [--months N] [--by-model]` | M | Summarization spend (computed by this tool) against the weekly and monthly budget: current periods, history, total and breakdown by model. See [summarization.md](summarization.md#history) (ADR-0013) |
 | `sb review [filters] [--channel ..] [--limit N] [--detail-lines N] [--full] [--all]` | M | Show generated sections next to the source text (Slack: the rendered conversation; Meet: the transcript excerpt) to check summary quality by eye. Newest first; `--all` includes entries without summaries. Also useful before and after `sb resummarize` |
@@ -107,6 +109,7 @@ Common filters: `--account`, `--source <source_kind>`, `--since`, `--until`,
 | `sb doctor [--online] [--fix]` | M | See [doctor.md](doctor.md) |
 | `sb index rebuild` | M | Rebuild the active search backend(s) |
 | `sb mcp` | 2 | Run the MCP server over stdio |
+| `sb reconcile [--since D] [--entry UID].. [--rebuild] [--estimate] [--dry-run] [--max-cost USD] [--time-limit DUR]` | 3 | Link items of different entries (`resolves`, `supersedes`) with one small LLM call per entry. Also the last stage of `sb sync`. Built after `sb items --candidates` has been used ([items.md](items.md#reconcile-stage-later-phase), ADR-0024) |
 | `sb version` | M | Version, build target, skill version |
 
 ### Implementation notes
@@ -124,6 +127,8 @@ Options added during implementation (all additive):
 - `sb account add google --no-browser`, `sb account add microsoft --no-browser`, `sb auth login <id> --no-browser`,
   `sb auth status --online`, `sb account remove <id> --purge --yes`.
 - `sb summarize --estimate`.
+- `D` of `sb recent` and `sb items` accepts `today` (local midnight in the OS time zone) in addition to the forms of `sb sync --since`.
+- `sb items --mine` exits with 64 and error code `aliases.empty` when no alias is known (accounts-and-auth.md#self-aliases).
 - Error codes in `sb.error/v1` include `usage`, `home.not_initialized`,
   `sync.locked`, `entry.not_found`, `account.not_found` and `failed`.
 

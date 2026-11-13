@@ -115,3 +115,13 @@ above; the rest of this ADR stands.
   never triggers it.
 - The provider table gains `codex_cli` and `antigravity_cli` (`llm_cli`), with the same
   empty-directory isolation. Their rules are in ADR-0017, Part 2.
+
+### 2026-11-13: structured items
+
+See [ADR-0024](0024-structured-items-and-cross-entry-links.md). The summary output gains
+`items` (decisions, actions, resolved matters, open questions, accomplishments), written
+with the summary in one transaction. Items are `generated` data: they are overwritten on
+regeneration and have no history, so the overwrite rule of this ADR holds for them. The
+`decisions` and `action_items` sections are rendered from the items. Links between items
+of different entries are a separate derived layer (ADR-0002), not part of the summary
+output.

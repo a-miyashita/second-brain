@@ -298,6 +298,7 @@ pub async fn run(ctx: &Ctx, a: DoctorArgs) -> anyhow::Result<i32> {
     let scheduled = check_schedule(ctx, &cat, &a, &mut r)?;
     check_runs(&cat, scheduled, &mut r)?;
     check_summaries(&cat, &mut r)?;
+    check_items(&cat, &mut r)?;
     check_budget(&cat, &mut r)?;
     check_skills(&a, &mut r)?;
 
@@ -910,6 +911,96 @@ fn check_summaries(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `items.coverage` and `accounts.aliases` (doctor.md, ADR-0024).
+fn check_items(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
+    let c = second_brain_pipeline::items::global_coverage(cat)?;
+    if c.entries_in_range > 0 {
+        let msg = format!(
+            "{} of {} entries have no items ({} unsummarized, {} from older prompts, {} native)",
+            c.entries_without_items, c.entries_in_range, c.unsummarized, c.predate_items, c.native
+        );
+        if c.entries_without_items == 0 {
+            r.ok("items.coverage", Some(msg));
+        } else {
+            r.add(
+                "items.coverage",
+                Status::Info,
+                Some(msg),
+                Some("sb resummarize --profile <name> --since 180d --estimate"),
+            );
+        }
+    }
+    // Meet notes and transcripts go to an LLM when a profile applies (ADR-0024).
+    if let Ok(policy) = second_brain_pipeline::policy::SummaryPolicy::load(cat)
+        && let Some(p) = policy.profile_name(SourceKind::GoogleMeet)
+        && p != second_brain_llm::NATIVE
+        && cat.count_entries(&EntryFilter {
+            source_kinds: vec![SourceKind::GoogleMeet],
+            ..Default::default()
+        })? > 0
+    {
+        r.add(
+            "meet.profile",
+            Status::Info,
+            Some(format!(
+                "Meet notes and transcripts are summarized by profile {p:?} (they are sent to its provider)"
+            )),
+            Some("sb config set summary.profile.google.meet native  # to keep Gemini's notes"),
+        );
+    }
+    let mut empty: Vec<String> = Vec::new();
+    let mut total = 0usize;
+    for a in cat.accounts()? {
+        if !matches!(
+            a.kind,
+            second_brain_kernel::AccountKind::Slack
+                | second_brain_kernel::AccountKind::Google
+                | second_brain_kernel::AccountKind::Microsoft
+        ) || a.status == second_brain_kernel::AccountStatus::Disabled
+        {
+            continue;
+        }
+        total += 1;
+        let has = |key: &str| {
+            a.config.get(key).is_some_and(|o| {
+                ["names", "emails"].iter().any(|l| {
+                    o.get(l)
+                        .and_then(Value::as_array)
+                        .is_some_and(|x| !x.is_empty())
+                })
+            })
+        };
+        if !has("aliases") && !has("extra_aliases") {
+            empty.push(a.id.to_string());
+        }
+    }
+    if total > 0 {
+        let union_empty = second_brain_pipeline::items::load_aliases(cat)?
+            .set
+            .is_empty();
+        if union_empty && c.entries_with_items > 0 {
+            r.add(
+                "accounts.aliases",
+                Status::Warning,
+                Some("no alias of yours is known, so `sb items --mine` cannot answer".into()),
+                Some("run `sb sync` (names come from the first run; a Slack email only when the user cache refreshes), or add extra_aliases with `sb config edit --account <id>`"),
+            );
+        } else if !empty.is_empty() {
+            r.add(
+                "accounts.aliases",
+                Status::Info,
+                Some(format!("no aliases yet for: {}", empty.join(", "))),
+                Some(
+                    "sb auth login <id>, or add extra_aliases with `sb config edit --account <id>`",
+                ),
+            );
+        } else {
+            r.ok("accounts.aliases", None);
+        }
+    }
+    Ok(())
+}
+
 fn check_budget(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
     let policy = second_brain_pipeline::policy::SummaryPolicy::load(cat)?;
     let b = second_brain_pipeline::budget::status(cat, &policy)?;
@@ -1175,6 +1266,39 @@ mod tests {
 
     fn find<'a>(r: &'a Report, id: &str) -> Option<&'a Check> {
         r.checks.iter().find(|c| c.id == id)
+    }
+
+    #[test]
+    fn alias_check_reports_missing_aliases() {
+        let (_d, cat) = catalog();
+        cat.add_account(
+            &AccountId::new("acme").unwrap(),
+            AccountKind::Slack,
+            "Acme",
+            Some("T1:U1"),
+            &json!({}),
+        )
+        .unwrap();
+        let mut r = Report::default();
+        check_items(&cat, &mut r).unwrap();
+        let c = find(&r, "accounts.aliases").expect("reported");
+        assert!(matches!(c.status, Status::Info));
+        assert!(c.message.clone().unwrap().contains("acme"));
+        cat.update_account(
+            &AccountId::new("acme").unwrap(),
+            None,
+            None,
+            Some(&json!({"extra_aliases": {"names": ["Dana"]}})),
+        )
+        .unwrap();
+        let mut r = Report::default();
+        check_items(&cat, &mut r).unwrap();
+        assert!(matches!(
+            find(&r, "accounts.aliases").unwrap().status,
+            Status::Ok
+        ));
+        // An empty catalog has no coverage to report.
+        assert!(find(&r, "items.coverage").is_none());
     }
 
     #[test]

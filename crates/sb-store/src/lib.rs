@@ -9,6 +9,7 @@ pub mod error;
 pub mod fts;
 pub mod home;
 pub mod import;
+pub mod items;
 pub mod links;
 pub mod lock;
 pub mod perms;
@@ -28,6 +29,7 @@ pub use entries::{
 };
 pub use error::{Result, StoreError};
 pub use home::Home;
+pub use items::{ItemFilter, ItemRow, ItemsCoverage, RecentFilter};
 pub use links::{LinkOutcome, LinkRow, link_backoff, record_link_outcome_tx};
 pub use lock::SyncLock;
 pub use runs::{Issue, Run};

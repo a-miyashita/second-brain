@@ -179,6 +179,7 @@ pub fn normalize_document(
             want_details: false,
             location: meta_str(fetch_metadata, keys::FOLDER_PATH).map(str::to_string),
             referenced_in: meta_str(fetch_metadata, keys::LINK_CONTEXT).map(str::to_string),
+            account_owner: Vec::new(),
         }),
         native_summary: None,
         links: Vec::new(),

@@ -78,6 +78,12 @@ Crate dependency rules:
   stage lives in `sb-pipeline`, reuses the ingest path, and is the only place where one
   account's output (a Slack link) drives another account's source (a Google or Microsoft
   account). Sources never call each other.
+- **Items** (ADR-0024). The item types and the pure rules (evidence check, `occurred_at`,
+  `scope_key`, alias matching, effective status, candidate pairs) live in `sb-kernel`
+  and need no I/O. `sb-llm` holds the prompts. `sb-store` stores `items` and `item_links`
+  and writes items in `commit_summary`. `sb-pipeline` validates the model output before the
+  commit. A **reconcile** stage (later phase) runs after summarize in `sb sync`; it is the
+  only stage that reads items across entries with an LLM.
 - `sb-pipeline` wires everything together. `sb-cli` and `sb-mcp` depend on
   `sb-pipeline` and `sb-store`.
 - Only `sb-cli` (and `sb-mcp` for its server loop) may print to stdout.
@@ -93,6 +99,7 @@ Crate dependency rules:
 | `Normalized` | Title, timestamps, metadata JSON, extracted sections, `SummaryInput`, optional native summary, and for Slack entries the document links found (`links`, ADR-0022) |
 | `SummaryInput` | The summarizer's input: kind, prompt, title, date, body, and the optional hints `context`, `location`, `referenced_in` (ADR-0023) |
 | `SectionKind` | `overview`, `decisions`, `action_items`, `details`, `background` |
+| `Item`, `ItemKind`, `ItemStatus`, `Confidence` | A structured conclusion of an entry and its parts (ADR-0024, [items.md](items.md)). `SummaryOutput` carries `items: Vec<ItemDraft>` |
 | `SectionOrigin` | `generated`, `extracted`, `user` |
 | `Generator` | `generator_kind`, `provider`, `model`, `prompt_version` |
 | Traits | `Source`, `Summarizer`, `SearchBackend`, `Notifier`, `Clock` (for testing) |

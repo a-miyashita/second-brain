@@ -112,11 +112,15 @@ impl SummaryPolicy {
     }
 
     /// The profile name for a source kind (may be `native`), if any.
+    ///
+    /// `google.meet` follows the default profile like the other kinds and keeps
+    /// Gemini's notes (`native`) only when no profile is configured (ADR-0024).
     pub fn profile_name(&self, kind: SourceKind) -> Option<&str> {
         self.per_kind
             .get(&kind)
             .or(self.default_profile.as_ref())
             .map(String::as_str)
+            .or((kind == SourceKind::GoogleMeet).then_some(NATIVE))
     }
 
     pub fn profile(&self, name: &str) -> Option<&Profile> {
@@ -268,6 +272,7 @@ mod tests {
                 want_details: false,
                 location: None,
                 referenced_in: None,
+                account_owner: Vec::new(),
             }),
             native_summary: native.then(Generator::gemini_meet_notes),
             links: Vec::new(),

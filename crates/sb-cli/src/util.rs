@@ -76,6 +76,9 @@ pub fn parse_date(s: &str, end_of_day: bool) -> anyhow::Result<DateTime<Utc>> {
 /// time, or an age such as `90d` or `12w` (before `now`).
 pub fn parse_when(s: &str, now: DateTime<Utc>) -> anyhow::Result<DateTime<Utc>> {
     let t = s.trim();
+    if t.eq_ignore_ascii_case("today") {
+        return Ok(local_midnight(now));
+    }
     if let Some((n, unit)) = t.split_at_checked(t.len().saturating_sub(1))
         && let Ok(n) = n.parse::<i64>()
         && n >= 0
@@ -96,6 +99,18 @@ pub fn parse_when(s: &str, now: DateTime<Utc>) -> anyhow::Result<DateTime<Utc>> 
             "invalid time {s:?} (use YYYY-MM-DD, an RFC 3339 time, or an age like 90d or 12w)"
         ))
     })
+}
+
+/// The start of the local day that contains `now`, as a UTC instant.
+pub fn local_midnight(now: DateTime<Utc>) -> DateTime<Utc> {
+    use chrono::TimeZone;
+    let local = now.with_timezone(&chrono::Local);
+    local
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .and_then(|n| chrono::Local.from_local_datetime(&n).earliest())
+        .map(|t| t.with_timezone(&Utc))
+        .unwrap_or(now)
 }
 
 /// Parse durations like `90s`, `30m`, `2h`, `1h30m`.

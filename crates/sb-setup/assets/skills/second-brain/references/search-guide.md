@@ -33,6 +33,13 @@ Each hit has `entry_uid`, `title`, `source_kind`, `account` (`id`, `label`),
 link (Slack permalink, Google Doc), falling back to a transcript link or the local
 raw file path.
 
+## No keyword?
+
+For "my TODOs", "what happened today" or "what did I do last quarter", search is the
+wrong tool: use `sb items` and `sb recent`
+([items-guide.md](items-guide.md)). The `decisions` and `action_items` sections that
+search returns are rendered from the same items.
+
 ## Listing and browsing
 
 - `sb list --json --source google.meet --since 2026-09-01 --limit 20` lists

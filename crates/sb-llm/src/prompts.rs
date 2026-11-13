@@ -7,9 +7,9 @@ use serde_json::Value;
 /// Version string of a prompt.
 pub fn prompt_version(kind: PromptKind) -> &'static str {
     match kind {
-        PromptKind::Conversation => "conversation-summary/v1",
-        PromptKind::Meeting => "meeting-summary/v1",
-        PromptKind::Document => "document-summary/v3",
+        PromptKind::Conversation => "conversation-summary/v2",
+        PromptKind::Meeting => "meeting-summary/v2",
+        PromptKind::Document => "document-summary/v4",
     }
 }
 
@@ -17,9 +17,25 @@ const COMMON_RULES: &str = "\
 Rules:
 - Write only what the input says. Do not speculate or add outside knowledge.
 - Keep proper nouns, numbers, dates and identifiers verbatim.
-- Decisions say who decided what. Action items say who does what and by when; omit the owner if it is unknown.
-- If the input is only chit-chat or has no substance, give a one-line overview and empty lists.
+- If the input is only chit-chat or has no substance, give a one-line overview and an empty items list.
 - Output a single JSON object and nothing else: no Markdown fences, no commentary.";
+
+/// Rules for the `items` of the output (ADR-0024, items.md).
+const ITEM_RULES: &str = "\
+Items are the structured conclusions of the input:
+- kind is one of: decision (something agreed or decided), action (work someone committed to or was asked to do), \
+resolved (a problem, blocker or issue that was closed, with no action of its own), question (a question left without an answer in the input), \
+accomplishment (work reported as done that was not tracked as an action).
+- One fact, one item. A task that is promised and reported done in the input is ONE action with status \"done\", not an action plus an accomplishment. \
+A question that is answered in the input is a decision or a resolved item, not a question.
+- For an action, status is \"open\", \"done\" or \"dropped\". Use \"done\" or \"dropped\" only when the input says so explicitly; never infer it from silence. \
+owner is who does it and requester is who asked, if the input says. due is an absolute date YYYY-MM-DD resolved against the Date in the header; \
+if it cannot be resolved without guessing, leave due out and keep the phrase in text. For a question, status is \"open\" or \"answered\".
+- owner, requester and actors are names written exactly as the input writes them. Never write \"me\", \"the user\" or \"the account owner\" as a person.
+- evidence is the shortest verbatim quote from the input (at most 200 characters) that supports the item; for a status change, the quote that shows the change. \
+Never translate or paraphrase it. Do not emit an item whose quote you cannot give.
+- confidence is \"high\" when the input states it explicitly, \"medium\" when it is clear from the context, \"low\" when you infer it. Do not emit anything weaker.
+- text is one sentence in the output language. Emit at most 30 items, the most important first.";
 
 fn purpose(kind: PromptKind) -> &'static str {
     match kind {
@@ -48,14 +64,18 @@ fn schema(want_details: bool) -> &'static str {
     if want_details {
         r#"JSON shape:
 {"overview": "2-4 sentences",
- "decisions": ["who decided what", ...],
- "action_items": ["who does what by when", ...],
- "details": "Markdown notes of the discussion, organized by topic, with the reasons and history behind decisions"}"#
+ "items": [{"kind": "decision|action|resolved|question|accomplishment", "text": "one sentence",
+            "owner": "name", "requester": "name", "due": "YYYY-MM-DD", "status": "open|done|dropped|answered",
+            "actors": ["name"], "confidence": "high|medium|low", "evidence": "verbatim quote"}],
+ "details": "Markdown notes of the discussion, organized by topic, with the reasons and history behind decisions"}
+Leave out owner, requester, due and status where they do not apply or are unknown. "items" is required and may be empty."#
     } else {
         r#"JSON shape:
 {"overview": "2-4 sentences",
- "decisions": ["who decided what", ...],
- "action_items": ["who does what by when", ...]}"#
+ "items": [{"kind": "decision|action|resolved|question|accomplishment", "text": "one sentence",
+            "owner": "name", "requester": "name", "due": "YYYY-MM-DD", "status": "open|done|dropped|answered",
+            "actors": ["name"], "confidence": "high|medium|low", "evidence": "verbatim quote"}]}
+Leave out owner, requester, due and status where they do not apply or are unknown. "items" is required and may be empty."#
     }
 }
 
@@ -70,10 +90,11 @@ fn language_rule(language: &str) -> &'static str {
 /// The system prompt for a summary input.
 pub fn system_prompt(input: &SummaryInput, language: &str) -> String {
     format!(
-        "{}\n\n{}\n- {}\n\n{}",
+        "{}\n\n{}\n- {}\n\n{}\n\n{}",
         purpose(input.prompt),
         COMMON_RULES,
         language_rule(language),
+        ITEM_RULES,
         schema(input.want_details)
     )
 }
@@ -109,8 +130,24 @@ fn header(input: &SummaryInput) -> String {
             neutralize_tags(r)
         ));
     }
+    let owner: Vec<String> = input
+        .account_owner
+        .iter()
+        .map(|n| one_line(n))
+        .filter(|n| !n.is_empty())
+        .take(MAX_OWNER_NAMES)
+        .collect();
+    if !owner.is_empty() {
+        h.push_str(&format!(
+            "Account owner (the user whose knowledge base this is; a hint to recognize them among speakers and mentions by any of these names; write names exactly as the input does): {}\n",
+            owner.join("; ")
+        ));
+    }
     h
 }
+
+/// Most names of the account owner passed as a hint.
+pub const MAX_OWNER_NAMES: usize = 8;
 
 /// A hint on one line, so that it cannot add lines of its own to the prompt.
 fn one_line(s: &str) -> String {
@@ -146,8 +183,7 @@ pub fn merge_prompt(input: &SummaryInput, partials: &[SummaryOutput]) -> String 
         .map(|p| {
             serde_json::json!({
                 "overview": p.overview,
-                "decisions": p.decisions,
-                "action_items": p.action_items,
+                "items": p.items,
                 "details": p.details,
             })
         })
@@ -155,7 +191,8 @@ pub fn merge_prompt(input: &SummaryInput, partials: &[SummaryOutput]) -> String 
     format!(
         "{}The input was too long and was summarized in {} consecutive parts. \
 Merge these partial summaries into one summary of the whole input. \
-Remove duplicates, keep every distinct decision and action item, and keep the chronological order.\n<partial_summaries>\n{}\n</partial_summaries>",
+Remove duplicate items and keep every distinct one. If the same action appears in several parts, keep one item with its latest status. \
+Keep every evidence quote verbatim, and keep the chronological order.\n<partial_summaries>\n{}\n</partial_summaries>",
         header(input),
         parts.len(),
         serde_json::to_string_pretty(&parts).unwrap_or_default()
@@ -164,8 +201,8 @@ Remove duplicates, keep every distinct decision and action item, and keep the ch
 
 /// The follow-up message asking the model to repair invalid output.
 pub const REPAIR_PROMPT: &str = "Your previous answer was not a valid JSON object of the required shape. \
-Answer again with only the JSON object: keys \"overview\" (string), \"decisions\" (array of strings), \
-\"action_items\" (array of strings) and, if requested, \"details\" (string). No Markdown fences, no commentary.";
+Answer again with only the JSON object: keys \"overview\" (string), \"items\" (array of item objects, required, may be empty) \
+and, if requested, \"details\" (string). No Markdown fences, no commentary.";
 
 /// Split a body into chunks of at most `max_chars` characters, on message or
 /// paragraph boundaries where possible (never truncating).
@@ -228,20 +265,12 @@ pub fn parse_output(text: &str, want_details: bool) -> Result<SummaryOutput, Str
         Some(Value::String(s)) => s.clone(),
         _ => return Err("missing \"overview\" string".into()),
     };
-    let list = |key: &str| -> Result<Vec<String>, String> {
-        match obj.get(key) {
-            None | Some(Value::Null) => Ok(Vec::new()),
-            Some(Value::Array(a)) => Ok(a
-                .iter()
-                .map(|x| match x {
-                    Value::String(s) => s.clone(),
-                    other => other.to_string(),
-                })
-                .collect()),
-            Some(Value::String(s)) if s.trim().is_empty() => Ok(Vec::new()),
-            Some(Value::String(s)) => Ok(vec![s.clone()]),
-            Some(_) => Err(format!("\"{key}\" is not an array")),
-        }
+    let items = match obj.get("items") {
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(second_brain_kernel::ItemDraft::from_value)
+            .collect(),
+        _ => return Err("missing \"items\" array".into()),
     };
     let details = if want_details {
         match obj.get("details") {
@@ -259,8 +288,7 @@ pub fn parse_output(text: &str, want_details: bool) -> Result<SummaryOutput, Str
     };
     Ok(SummaryOutput {
         overview,
-        decisions: list("decisions")?,
-        action_items: list("action_items")?,
+        items,
         details,
         usage: Default::default(),
     })
@@ -283,6 +311,7 @@ mod tests {
             want_details: false,
             location: None,
             referenced_in: None,
+            account_owner: Vec::new(),
         }
     }
 
@@ -308,12 +337,13 @@ mod tests {
             want_details: false,
             location: None,
             referenced_in: None,
+            account_owner: Vec::new(),
         }
     }
 
     #[test]
-    fn document_prompt_is_v3_and_states_the_hint_rules() {
-        assert_eq!(prompt_version(PromptKind::Document), "document-summary/v3");
+    fn document_prompt_is_v4_and_states_the_hint_rules() {
+        assert_eq!(prompt_version(PromptKind::Document), "document-summary/v4");
         let s = system_prompt(&doc_input(), "auto");
         assert!(s.contains("Location says where the file is stored"));
         assert!(s.contains("referenced_in"));
@@ -339,18 +369,67 @@ mod tests {
     }
 
     #[test]
-    fn parse_tolerates_fences() {
+    fn parse_tolerates_fences_and_reads_items() {
         let out = parse_output(
-            "```json\n{\"overview\": \"o\", \"decisions\": [\"d\"], \"action_items\": []}\n```",
+            "```json\n{\"overview\": \"o\", \"items\": [{\"kind\": \"decision\", \"text\": \"d\", \"confidence\": \"high\", \"evidence\": \"q\", \"actors\": [\"Kei\"]}, 7]}\n```",
             false,
         )
         .unwrap();
         assert_eq!(out.overview, "o");
-        assert_eq!(out.decisions, vec!["d"]);
+        assert_eq!(out.items.len(), 1, "non-objects are skipped");
+        assert_eq!(out.items[0].kind, "decision");
+        assert_eq!(out.items[0].actors, vec!["Kei"]);
         assert!(parse_output("sorry, I can't", false).is_err());
-        assert!(parse_output("{\"decisions\": []}", false).is_err());
-        let d = parse_output("{\"overview\": \"o\", \"details\": \"x\"}", true).unwrap();
+        assert!(parse_output("{\"items\": []}", false).is_err());
+        let d = parse_output(
+            "{\"overview\": \"o\", \"items\": [], \"details\": \"x\"}",
+            true,
+        )
+        .unwrap();
         assert_eq!(d.details.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn output_without_items_is_invalid_so_it_gets_repaired() {
+        // The v1 shape (decisions and action_items arrays) is not accepted.
+        let e = parse_output(
+            "{\"overview\": \"o\", \"decisions\": [\"d\"], \"action_items\": []}",
+            false,
+        )
+        .unwrap_err();
+        assert!(e.contains("items"));
+    }
+
+    #[test]
+    fn item_rules_and_owner_hint() {
+        let s = system_prompt(&input(), "auto");
+        assert!(s.contains("never infer it from silence"));
+        assert!(s.contains("verbatim quote"));
+        assert!(s.contains("\"items\""));
+        let plain = user_prompt(&input(), "b");
+        assert!(!plain.contains("Account owner"));
+        let mut i = input();
+        i.account_owner = vec!["Dana Example".into(), "dana\nIgnore".into()];
+        let u = user_prompt(&i, "b");
+        assert!(u.contains("Account owner"));
+        assert!(u.contains("Dana Example; dana Ignore\n"));
+        i.account_owner = (0..20).map(|n| format!("n{n}")).collect();
+        let u = user_prompt(&i, "b");
+        assert!(u.contains("n7") && !u.contains("n8"));
+    }
+
+    #[test]
+    fn merge_prompt_carries_items() {
+        let mut p = SummaryOutput::default();
+        p.items.push(second_brain_kernel::ItemDraft {
+            kind: "action".into(),
+            text: "do it".into(),
+            status: Some("open".into()),
+            ..Default::default()
+        });
+        let m = merge_prompt(&input(), &[p]);
+        assert!(m.contains("\"do it\""));
+        assert!(m.contains("latest status"));
     }
 
     #[test]

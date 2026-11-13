@@ -187,7 +187,13 @@ impl MeetSource {
                             .and_then(Value::as_str)
                             .or(email)
                             .unwrap_or("");
-                        json!({"name": name, "email": email})
+                        // `self` marks the calendar owner: the source of the user's name
+                        // aliases (accounts-and-auth.md "Self aliases").
+                        if a.get("self").and_then(Value::as_bool) == Some(true) {
+                            json!({"name": name, "email": email, "self": true})
+                        } else {
+                            json!({"name": name, "email": email})
+                        }
                     })
                     .collect();
                 for att in ev
@@ -219,6 +225,7 @@ impl MeetSource {
                             "event_title": ev.get("summary"),
                             "event_start": ev.pointer("/start/dateTime").or_else(|| ev.pointer("/start/date")),
                             "recurring": ev.get("recurringEventId").is_some(),
+                            "recurring_event_id": ev.get("recurringEventId"),
                             "event_url": ev.get("htmlLink"),
                             "attendees": attendees,
                         }),
@@ -616,10 +623,21 @@ pub fn normalize(input: &NormalizeInput) -> Result<NormalizeOutcome, SourceError
         || parsed.recurring_in_title
         || recurring_suffix
         || s("folder_name").is_some_and(|f| f.to_lowercase().contains("(recurring)"));
+    // Names of the calendar owner, kept for the account's aliases.
+    let self_names: Vec<&str> = meta
+        .get("attendees")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|a| a.get("self").and_then(Value::as_bool) == Some(true))
+        .filter_map(|a| a.get("name").and_then(Value::as_str))
+        .collect();
     let metadata = json!({
         "participants": participants,
         "absentees": parsed.absentees,
         "recurring": recurring,
+        "recurring_event_id": s("recurring_event_id"),
+        "self_names": self_names,
         "calendar_url": parsed.calendar_url.clone().or_else(|| s("event_url").map(str::to_string)),
         "transcript_url": parsed.transcript_url,
         "has_transcript": has_transcript,
@@ -653,6 +671,7 @@ pub fn normalize(input: &NormalizeInput) -> Result<NormalizeOutcome, SourceError
             want_details: true,
             location: None,
             referenced_in: None,
+            account_owner: Vec::new(),
         }),
         native_summary: Some(Generator::gemini_meet_notes()),
         links: Vec::new(),
@@ -725,7 +744,9 @@ mod tests {
     fn separate_transcript_wins_and_dates_come_from_metadata() {
         let notes = "## Sync\n\n### Summary\n\nx\n\n# **📖 Transcript**\n\nembedded words\n";
         let meta = json!({"event_start": "2026-09-03T00:15:00Z", "modified_time": "2026-09-03T01:00:00Z",
-                          "attendees": [{"name": "Dana", "email": "dana@example.test"}]});
+                          "recurring_event_id": "series_1",
+                          "attendees": [{"name": "Dana", "email": "dana@example.test", "self": true},
+                                        {"name": "Kei", "email": "kei@example.test"}]});
         let NormalizeOutcome::Entry(n) =
             normalize(&input(notes, Some("separate \\- words"), meta)).unwrap()
         else {
@@ -739,6 +760,8 @@ mod tests {
             n.metadata["participants"][0]["name"], "Dana",
             "calendar attendees without an Invited line"
         );
+        assert_eq!(n.metadata["recurring_event_id"], "series_1");
+        assert_eq!(n.metadata["self_names"], json!(["Dana"]));
         assert_eq!(n.native_summary, Some(Generator::gemini_meet_notes()));
         assert_eq!(
             n.source_url.as_deref(),
