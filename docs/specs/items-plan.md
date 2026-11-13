@@ -149,7 +149,7 @@ release.
 | Risk | Mitigation |
 |---|---|
 | The model invents completions | Quote required and checked; unverified `done` becomes `open`; nothing is closed by silence or by similarity |
-| Names do not match across sources ("Akihiro" vs "宮下 暁弘") | Aliases from every account, token-set matching, `basis` in the output, `extra_aliases`; the failure is a missing item, not a wrong one |
+| Names do not match across sources ("Dana" vs "山田 太郎") | Aliases from every account, token-set matching, `basis` in the output, `extra_aliases`; the failure is a missing item, not a wrong one |
 | Short Slack threads carry no items | `coverage.unsummarized` and `sb recent` with `details_excerpt`; lower `summary.min_chars` is a cost decision for the user |
 | Cost of Meet transcripts | Budget caps, `--estimate` before the first sync, rollout in steps |
 | Mixed catalog gives partial answers | `coverage` in every answer and the skill rule not to say "nothing" |

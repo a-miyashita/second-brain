@@ -117,6 +117,8 @@ impl Catalog {
                 )?;
             }
             tx.execute("DELETE FROM summaries WHERE entry_id = ?1", [entry_id])?;
+            // Items belong to the summary that produced them (data-model.md invariant 7).
+            tx.execute("DELETE FROM items WHERE entry_id = ?1", [entry_id])?;
             if summary_status == "done" {
                 let g = w.summary.as_ref().map(|(g, _)| g.clone()).unwrap_or(Generator {
                     kind: second_brain_kernel::GeneratorKind::Unknown,

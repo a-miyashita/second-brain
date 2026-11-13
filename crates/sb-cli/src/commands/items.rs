@@ -185,6 +185,15 @@ fn due_date(s: &str, now: chrono::DateTime<chrono::Utc>) -> anyhow::Result<Strin
     if chrono::NaiveDate::parse_from_str(t, "%Y-%m-%d").is_ok() {
         return Ok(t.to_string());
     }
+    // An age ("7d") would point into the past; "due within 7 days" is not what it means.
+    if t.len() > 1
+        && t[..t.len() - 1].chars().all(|c| c.is_ascii_digit())
+        && matches!(t.chars().last(), Some('d' | 'w'))
+    {
+        return Err(usage(format!(
+            "--due-by takes a date or `today`, not an age like {t:?}"
+        )));
+    }
     let at = parse_when(t, now)?;
     Ok(at
         .with_timezone(&chrono::Local)

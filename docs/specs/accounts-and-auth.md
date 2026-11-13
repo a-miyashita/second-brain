@@ -156,7 +156,7 @@ the user. Aliases are collected from the accounts, with no input from the user. 
 stored in the account `config`:
 
 ```json
-{"aliases": {"names": ["Akihiro Miyashita", "akihiro"], "emails": ["a@example.com"],
+{"aliases": {"names": ["Dana Example", "dana"], "emails": ["a@example.com"],
              "refreshed_at": "2026-11-13T01:02:03Z"},
  "extra_aliases": {"names": [], "emails": []}}
 ```
@@ -186,10 +186,10 @@ present in real responses before the design is relied on.
 A reference from an item (owner, requester, actor) matches the user when, after
 normalization (NFKC, lowercase, runs of whitespace and punctuation collapsed):
 
-1. it equals an alias name, or
+1. it equals an alias name (also with all spaces removed, so "山田太郎" matches "山田 太郎"), or
 2. it has two or more tokens and its **token set** equals the token set of an alias name
-   (so "Miyashita Akihiro" matches "Akihiro Miyashita"), or
-3. it contains an alias email (basis `email`; used when the input writes an address).
+   (so "Example Dana" matches "Dana Example"), or
+3. it contains an alias email as a whole address (basis `email`; used when the input writes an address). `jo@x.com` is not found in `kajo@x.com` or `jo@x.com.evil`.
 
 A single token such as a first name matches only when it equals a **whole** alias name; a
 prefix or a substring never matches. The result carries `basis: "email"` or `"name"` so

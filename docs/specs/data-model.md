@@ -337,7 +337,7 @@ keeps backends swappable.
 7. `items` rows exist only for an entry whose current summary was written by an LLM
    generator with a prompt that extracts items. Committing a `source_native` summary
    deletes them. Items and the `summaries` row are written in one transaction, so they
-   always agree on the generator and prompt version.
+   always agree on the generator and prompt version. An entry that falls below the summary thresholds later (`skipped`) keeps its old generated sections and therefore its old items, as before; import deletes them with the summary it replaces.
 8. No `item_links` row connects two items of the same entry.
 
 ### Migration `0005` (ADR-0024)

@@ -26,6 +26,10 @@ pub fn prompt_extracts_items(version: &str) -> bool {
     ITEM_PROMPT_VERSIONS.contains(&version)
 }
 
+/// Shortest quote (in normalized characters) that can back a completion claim.
+/// A bare "done" or "ok" proves nothing about which task was finished.
+pub const MIN_COMPLETION_EVIDENCE_CHARS: usize = 6;
+
 /// Longest evidence quote that is kept, in characters.
 pub const MAX_EVIDENCE_CHARS: usize = 200;
 /// Most actors kept per item.
@@ -379,9 +383,16 @@ pub fn validate_items(
             .parse::<Confidence>()
             .unwrap_or(Confidence::Low);
         let quote = clean(&d.evidence).map(|q| clip_chars(&q, MAX_EVIDENCE_CHARS));
+        let completion_claim = matches!(kind, ItemKind::Resolved | ItemKind::Accomplishment)
+            || matches!(
+                status,
+                Some(ItemStatus::Done | ItemStatus::Dropped | ItemStatus::Answered)
+            );
         let verified = quote.as_deref().is_some_and(|q| {
             let nq = normalize_for_match(q);
-            !nq.is_empty() && norm_body.contains(&nq)
+            !nq.is_empty()
+                && (!completion_claim || nq.chars().count() >= MIN_COMPLETION_EVIDENCE_CHARS)
+                && norm_body.contains(&nq)
         });
         let mut downgraded = false;
         if !verified {
@@ -532,6 +543,13 @@ pub fn normalize_meeting_title(title: &str) -> String {
     tokens.join(" ")
 }
 
+/// A rendered message line is `<stamp> <speaker>: <body>`; require a short speaker
+/// label so that a stamp-like continuation line of a message does not start a block.
+fn has_speaker(rest: &str) -> bool {
+    rest.find(": ")
+        .is_some_and(|i| i > 0 && i <= 80 && !rest[..i].contains('\n'))
+}
+
 fn parse_stamp(line: &str) -> Option<(Option<NaiveDate>, (u32, u32), usize)> {
     // `YYYY-MM-DD HH:MM ` or `HH:MM ` at the start of a message block.
     let b = line.as_bytes();
@@ -548,6 +566,7 @@ fn parse_stamp(line: &str) -> Option<(Option<NaiveDate>, (u32, u32), usize)> {
         && line.as_bytes()[10] == b' '
         && line.is_char_boundary(16)
         && let Some(t) = hm(&line[11..16])
+        && has_speaker(line[16..].trim_start())
     {
         return Some((Some(d), t, 16));
     }
@@ -555,6 +574,7 @@ fn parse_stamp(line: &str) -> Option<(Option<NaiveDate>, (u32, u32), usize)> {
         && line.is_char_boundary(5)
         && let Some(t) = hm(&line[..5])
         && line.as_bytes()[5] == b' '
+        && has_speaker(line[5..].trim_start())
     {
         return Some((None, t, 5));
     }
@@ -694,6 +714,36 @@ fn token_set(s: &str) -> BTreeSet<&str> {
     s.split(' ').filter(|t| !t.is_empty()).collect()
 }
 
+/// Whether `haystack` holds `email` as a whole address, not inside a longer one
+/// (`jo@x.com` is not in `kajo@x.com` or `jo@x.com.evil`).
+fn contains_email(haystack: &str, email: &str) -> bool {
+    let mut from = 0;
+    while let Some(pos) = haystack[from..].find(email) {
+        let start = from + pos;
+        let end = start + email.len();
+        let before = haystack[..start].chars().next_back();
+        let mut after = haystack[end..].chars();
+        let next = after.next();
+        let next2 = after.next();
+        let word = |c: char| c.is_alphanumeric() || matches!(c, '.' | '_' | '%' | '+' | '-');
+        let ok_before = before.is_none_or(|c| !word(c));
+        let ok_after = match next {
+            None => true,
+            Some(c) if c.is_alphanumeric() || matches!(c, '-' | '_') => false,
+            Some('.') => !next2.is_some_and(|c| c.is_alphanumeric()),
+            Some(_) => true,
+        };
+        if ok_before && ok_after {
+            return true;
+        }
+        from = start + email.len().max(1);
+        if from >= haystack.len() {
+            break;
+        }
+    }
+    false
+}
+
 impl AliasSet {
     pub fn new<S: AsRef<str>>(names: &[S], emails: &[S]) -> Self {
         let mut n: Vec<String> = Vec::new();
@@ -723,7 +773,7 @@ impl AliasSet {
     /// Whether a reference written in an input is the user (accounts-and-auth.md "Matching").
     pub fn matches(&self, reference: &str) -> Option<MatchBasis> {
         let lower = reference.to_lowercase();
-        if self.emails.iter().any(|e| lower.contains(e.as_str())) {
+        if self.emails.iter().any(|e| contains_email(&lower, e)) {
             return Some(MatchBasis::Email);
         }
         let r = normalize_name(reference);
@@ -1050,6 +1100,32 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_word_cannot_back_a_completion() {
+        let meta = json!({});
+        let c = ctx(SourceKind::GoogleDoc, &meta);
+        let body = "Kei: ok\nDana: done";
+        let (items, counts) = validate_items(
+            &[
+                draft("action", Some("done"), "done"),
+                draft("accomplishment", None, "ok"),
+                draft("decision", None, "ok"),
+            ],
+            body,
+            &c,
+        );
+        assert_eq!(items.len(), 2, "the accomplishment is dropped");
+        assert_eq!(items[0].status, Some(ItemStatus::Open));
+        assert_eq!(items[0].confidence, Confidence::Low);
+        assert_eq!(items[1].kind, ItemKind::Decision);
+        assert_eq!(
+            items[1].confidence,
+            Confidence::High,
+            "short quotes are fine for a decision"
+        );
+        assert_eq!(counts.dropped, 1);
+    }
+
+    #[test]
     fn invalid_fields_are_repaired_or_dropped() {
         let meta = json!({});
         let c = ctx(SourceKind::GoogleDoc, &meta);
@@ -1122,6 +1198,10 @@ mod tests {
         // A quote on a continuation line belongs to its message.
         let t = occurred_at(&c, body, Some("the spec")).unwrap();
         assert_eq!(t, Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap());
+        // A stamp-like line without a speaker belongs to the message above it.
+        let body = "09:00 Kei: plan\n10:30 works for me\n13:30 Dana: ok";
+        let t = occurred_at(&c, body, Some("works for me")).unwrap();
+        assert_eq!(t, Utc.with_ymd_and_hms(2026, 11, 12, 0, 0, 0).unwrap());
         // Multi-day body with date stamps.
         let body = "2026-11-10 23:05 Kei: hi\n2026-11-11 08:00 Dana: done";
         let t = occurred_at(&c, body, Some("dana: done")).unwrap();
@@ -1139,12 +1219,12 @@ mod tests {
     fn sections_are_rendered_from_items() {
         let meta = json!({});
         let c = ctx(SourceKind::GoogleDoc, &meta);
-        let body = "q";
+        let body = "the team agreed and the work was finished";
         let drafts = vec![
-            draft("decision", None, "q"),
-            draft("action", Some("done"), "q"),
-            draft("action", Some("open"), "q"),
-            draft("question", None, "q"),
+            draft("decision", None, "the team agreed"),
+            draft("action", Some("done"), "work was finished"),
+            draft("action", Some("open"), "the team agreed"),
+            draft("question", None, "the team agreed"),
         ];
         let (items, _) = validate_items(&drafts, body, &c);
         let s = render_sections(&items);
@@ -1156,25 +1236,24 @@ mod tests {
 
     #[test]
     fn alias_matching() {
-        let a = AliasSet::new(
-            &["Akihiro Miyashita", "akihiro", "宮下 暁弘"],
-            &["a.m@example.com"],
-        );
-        assert_eq!(a.matches("Akihiro Miyashita"), Some(MatchBasis::Name));
-        assert_eq!(a.matches("Miyashita, Akihiro"), Some(MatchBasis::Name));
-        assert_eq!(a.matches("AKIHIRO"), Some(MatchBasis::Name));
-        assert_eq!(a.matches("宮下暁弘"), Some(MatchBasis::Name));
-        assert_eq!(a.matches("Akihiro S"), None);
+        let a = AliasSet::new(&["Dana Example", "dana", "山田 太郎"], &["a.m@example.com"]);
+        assert_eq!(a.matches("Dana Example"), Some(MatchBasis::Name));
+        assert_eq!(a.matches("Example, Dana"), Some(MatchBasis::Name));
+        assert_eq!(a.matches("DANA"), Some(MatchBasis::Name));
+        assert_eq!(a.matches("山田太郎"), Some(MatchBasis::Name));
+        assert_eq!(a.matches("Dana S"), None);
         assert_eq!(a.matches("Akira"), None);
-        assert_eq!(
-            a.matches("Miyashita"),
-            None,
-            "a surname alone never matches"
-        );
+        assert_eq!(a.matches("Example"), None, "a surname alone never matches");
         assert_eq!(
             a.matches("Ask A.M. <A.M@Example.com>"),
             Some(MatchBasis::Email)
         );
+        let e = AliasSet::new(&[] as &[&str], &["jo@x.com"]);
+        assert_eq!(e.matches("Jo <jo@x.com>"), Some(MatchBasis::Email));
+        assert_eq!(e.matches("jo@x.com."), Some(MatchBasis::Email));
+        assert_eq!(e.matches("kajo@x.com"), None);
+        assert_eq!(e.matches("jo@x.com.evil"), None);
+        assert_eq!(e.matches("jo@x.community"), None);
         assert!(AliasSet::default().is_empty());
         assert_eq!(AliasSet::default().matches("anyone"), None);
     }

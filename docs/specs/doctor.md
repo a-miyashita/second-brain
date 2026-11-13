@@ -35,6 +35,7 @@ Related ADRs: 0003, 0009, 0011, 0017, 0022, 0024.
 | `docs.meet_overlap` | A Drive file ID that is both a `google.doc` and a `google.meet` entry (a folder sync of a Meet notes folder) | info | — |
 | `meet.transcripts` | Share of meet entries without a transcript (informational) | info | — |
 | `items.coverage` | Entries with a summary but no items, split into: summarized with a prompt older than the item prompts, `source_native`, and below the summary thresholds. Informational: the count tells how much of the past `sb items` cannot see | info | — (`sb resummarize --estimate`, summarization.md) |
+| `meet.profile` | Meet entries exist and `google.meet` resolves to an LLM profile: says that notes and transcripts are sent to that provider (ADR-0024) | info | — (`sb config set summary.profile.google.meet native` keeps Gemini's notes) |
 | `accounts.aliases` | Every enabled account has at least one alias, and the union of all aliases is not empty. Without aliases `sb items --mine` fails (accounts-and-auth.md#self-aliases) | info per account; warning when the union is empty and the catalog has items | — (`sb auth login <id>`, or `extra_aliases` in `sb config edit --account <id>`) |
 | `skills.version` | Installed skills match the binary's embedded version | warning | reinstall |
 | `index.consistency` | FTS row count matches the sections count | warning | `index rebuild` |

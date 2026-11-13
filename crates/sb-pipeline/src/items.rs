@@ -236,7 +236,17 @@ pub fn query_items(
             settings.stale_days,
             now,
         );
-        if !q.statuses.is_empty() && !eff.is_some_and(|s| q.statuses.contains(&s)) {
+        // Kinds without a status match `done` only when they report finished work
+        // (resolved, accomplishment); decisions never match a status filter.
+        let status_ok = q.statuses.is_empty()
+            || match eff {
+                Some(s) => q.statuses.contains(&s),
+                None => {
+                    matches!(it.kind, ItemKind::Resolved | ItemKind::Accomplishment)
+                        && q.statuses.contains(&EffectiveStatus::Done)
+                }
+            };
+        if !status_ok {
             continue;
         }
         if let Some(want) = q.stale

@@ -897,6 +897,16 @@ fn recent_and_items_answer_questions_without_a_keyword() {
         Some(64)
     );
 
+    // A status filter keeps finished work of kinds without a status, never decisions.
+    let v = json_of(&sb(&home, &["items", "--status", "done", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 1);
+    assert_eq!(v["items"][0]["kind"], "accomplishment");
+    let v = json_of(&sb(&home, &["items", "--status", "open", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 2);
+    // An age is not a due date.
+    let o = sb(&home, &["items", "--due-by", "7d", "--json"]);
+    assert_eq!(o.status.code(), Some(64));
+
     // `sb recent` is by activity time and needs no keyword.
     let v = json_of(&sb(
         &home,

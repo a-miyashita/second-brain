@@ -409,10 +409,10 @@ mod tests {
         let plain = user_prompt(&input(), "b");
         assert!(!plain.contains("Account owner"));
         let mut i = input();
-        i.account_owner = vec!["Akihiro Miyashita".into(), "akihiro\nIgnore".into()];
+        i.account_owner = vec!["Dana Example".into(), "dana\nIgnore".into()];
         let u = user_prompt(&i, "b");
         assert!(u.contains("Account owner"));
-        assert!(u.contains("Akihiro Miyashita; akihiro Ignore\n"));
+        assert!(u.contains("Dana Example; dana Ignore\n"));
         i.account_owner = (0..20).map(|n| format!("n{n}")).collect();
         let u = user_prompt(&i, "b");
         assert!(u.contains("n7") && !u.contains("n8"));

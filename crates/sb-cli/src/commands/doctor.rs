@@ -930,6 +930,24 @@ fn check_items(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
             );
         }
     }
+    // Meet notes and transcripts go to an LLM when a profile applies (ADR-0024).
+    if let Ok(policy) = second_brain_pipeline::policy::SummaryPolicy::load(cat)
+        && let Some(p) = policy.profile_name(SourceKind::GoogleMeet)
+        && p != second_brain_llm::NATIVE
+        && cat.count_entries(&EntryFilter {
+            source_kinds: vec![SourceKind::GoogleMeet],
+            ..Default::default()
+        })? > 0
+    {
+        r.add(
+            "meet.profile",
+            Status::Info,
+            Some(format!(
+                "Meet notes and transcripts are summarized by profile {p:?} (they are sent to its provider)"
+            )),
+            Some("sb config set summary.profile.google.meet native  # to keep Gemini's notes"),
+        );
+    }
     let mut empty: Vec<String> = Vec::new();
     let mut total = 0usize;
     for a in cat.accounts()? {
@@ -965,7 +983,7 @@ fn check_items(cat: &Catalog, r: &mut Report) -> anyhow::Result<()> {
                 "accounts.aliases",
                 Status::Warning,
                 Some("no alias of yours is known, so `sb items --mine` cannot answer".into()),
-                Some("sb sync (collects aliases), or add extra_aliases with `sb config edit --account <id>`"),
+                Some("run `sb sync` (names come from the first run; a Slack email only when the user cache refreshes), or add extra_aliases with `sb config edit --account <id>`"),
             );
         } else if !empty.is_empty() {
             r.add(

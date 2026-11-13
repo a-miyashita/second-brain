@@ -102,7 +102,7 @@ For every item returned by the model:
    - a `resolved` or `accomplishment` item is dropped;
    - an `answered` question becomes `open`, confidence `low`;
    - any other item is kept with confidence `low`.
-4. An item without a quote is treated as not verified.
+4. An item without a quote is treated as not verified. A **completion claim** (`done`, `dropped`, `answered`, `resolved`, `accomplishment`) also needs a quote of at least 6 normalized characters: a bare "done" or "ok" proves nothing about which task was finished.
 5. `due` that is not a valid date becomes `null`. An unknown `kind` or `status` drops the
    item. `confidence` outside the three values becomes `low`.
 6. Empty `text` drops the item.
@@ -117,7 +117,7 @@ Deterministic, with a fallback chain:
 - **Slack:** the time of the message that contains the quote. The body is the rendered
   conversation (`HH:MM Name: body`, with date headers when it spans days), so the line of
   the quote gives the clock time, and the nearest date header above it, or the entry date,
-  gives the day, in `slack.day_timezone`. If the quote is not found: `source_updated_at`.
+  gives the day, in `slack.day_timezone`. A line starts a message block only when it has the shape `<stamp> <speaker>: `, so a stamp-like continuation line does not. A message that quotes a forged line can still be misread; the time is a best effort. If the quote is not found: `source_updated_at`.
 - **Meet:** `source_created_at` (the meeting start).
 - **Documents:** `source_updated_at`, else `source_created_at`.
 - Always a UTC RFC 3339 instant in the store.
@@ -206,12 +206,12 @@ sb items [--kind K].. [--status S].. [--mine | --owner NAME | --asked-by-me]
 | Option | Meaning |
 |---|---|
 | `--kind` | `decision`, `action`, `resolved`, `question`, `accomplishment`. Default: all |
-| `--status` | Matches the **effective** status (below): `open`, `done`, `dropped`, `answered`, `superseded`. Default: any |
+| `--status` | Matches the **effective** status (below): `open`, `done`, `dropped`, `answered`, `superseded`. Default: any. Kinds without a status (`resolved`, `accomplishment`) match `done` only; `decision` never matches a status filter |
 | `--mine` | The owner matches an alias of the user; for kinds without an owner, an actor does. See [accounts-and-auth.md](accounts-and-auth.md#self-aliases). Exit with code 64 and error `aliases.empty` when no alias is known |
 | `--owner NAME` | The owner matches this name (same normalization) |
 | `--asked-by-me` | The `requester` matches an alias: what the user is waiting for |
 | `--since`, `--until` | On `occurred_at`. To list everything that is still open, omit `--since` |
-| `--due-by D` | Actions with `due` on or before D. Overdue ones included |
+| `--due-by D` | Actions with `due` on or before D (`YYYY-MM-DD` or `today`; an age like `7d` is refused). Overdue ones included |
 | `--min-confidence` | Default `items.min_confidence` (`medium`). Lower-confidence items are counted in `hidden_low_confidence` |
 | `--stale`, `--not-stale` | Only (or without) open items older than `items.stale_days` |
 | `--candidates` | Add candidate resolutions to open actions and questions (below) |
