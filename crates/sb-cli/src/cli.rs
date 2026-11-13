@@ -71,6 +71,10 @@ pub enum Command {
     Show(ShowArgs),
     /// List entries, newest first.
     List(ListArgs),
+    /// Entries by activity time, with their summaries and no keyword.
+    Recent(RecentArgs),
+    /// Structured items: decisions, actions, resolved matters, questions, accomplishments.
+    Items(ItemsArgs),
     /// Counts by account, source, raw status and summary status/model.
     Stats,
     /// Summarization spend against the weekly and monthly budget.
@@ -595,6 +599,74 @@ pub struct ListArgs {
     #[command(flatten)]
     pub filters: Filters,
     #[arg(long, default_value_t = 20)]
+    pub limit: u64,
+}
+
+#[derive(Debug, Args)]
+pub struct RecentArgs {
+    /// Start of the range: a date, an RFC 3339 time, an age (1d, 12w) or `today`.
+    #[arg(long, value_name = "WHEN", default_value = "1d")]
+    pub since: String,
+    /// End of the range (exclusive).
+    #[arg(long, value_name = "WHEN")]
+    pub until: Option<String>,
+    #[arg(long = "source", value_name = "KIND")]
+    pub sources: Vec<String>,
+    #[arg(long = "account", value_name = "ID")]
+    pub accounts: Vec<String>,
+    /// Sections to show (default: overview, decisions, action_items).
+    #[arg(long = "section", value_name = "KIND")]
+    pub sections: Vec<String>,
+    /// Add the items of each entry.
+    #[arg(long)]
+    pub with_items: bool,
+    #[arg(long, default_value_t = 30)]
+    pub limit: u64,
+}
+
+#[derive(Debug, Args)]
+pub struct ItemsArgs {
+    /// decision, action, resolved, question or accomplishment (repeatable).
+    #[arg(long = "kind", value_name = "KIND")]
+    pub kinds: Vec<String>,
+    /// Effective status: open, done, dropped, answered or superseded (repeatable).
+    #[arg(long = "status", value_name = "STATUS")]
+    pub statuses: Vec<String>,
+    /// Items whose owner (or, for kinds without one, an actor) is you.
+    #[arg(long, conflicts_with_all = ["owner", "asked_by_me"])]
+    pub mine: bool,
+    /// Items whose owner matches this name.
+    #[arg(long, value_name = "NAME", conflicts_with = "asked_by_me")]
+    pub owner: Option<String>,
+    /// Items you asked others for (the requester is you).
+    #[arg(long)]
+    pub asked_by_me: bool,
+    #[arg(long, value_name = "WHEN")]
+    pub since: Option<String>,
+    #[arg(long, value_name = "WHEN")]
+    pub until: Option<String>,
+    /// Actions due on or before this date (overdue included); `today` works.
+    #[arg(long, value_name = "DATE")]
+    pub due_by: Option<String>,
+    #[arg(long = "account", value_name = "ID")]
+    pub accounts: Vec<String>,
+    #[arg(long = "source", value_name = "KIND")]
+    pub sources: Vec<String>,
+    /// Only this scope key, e.g. slack:C0123.
+    #[arg(long, value_name = "KEY")]
+    pub scope: Option<String>,
+    /// Lowest confidence shown: high, medium or low (default: items.min_confidence).
+    #[arg(long, value_name = "LEVEL")]
+    pub min_confidence: Option<String>,
+    /// Only open items with no newer item in their scope for items.stale_days.
+    #[arg(long, conflicts_with = "not_stale")]
+    pub stale: bool,
+    #[arg(long)]
+    pub not_stale: bool,
+    /// Add possible resolutions (from other entries) to open actions and questions.
+    #[arg(long)]
+    pub candidates: bool,
+    #[arg(long, default_value_t = 50)]
     pub limit: u64,
 }
 

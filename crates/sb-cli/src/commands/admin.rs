@@ -173,7 +173,63 @@ fn json_to_toml(v: &Value) -> anyhow::Result<toml::Value> {
 }
 
 /// Check an account's `config` against its source's schema.
+/// `aliases` and `extra_aliases` hold `names` and `emails` as lists of strings
+/// (accounts-and-auth.md "Self aliases").
+fn validate_aliases(v: &Value) -> anyhow::Result<()> {
+    for key in ["aliases", "extra_aliases"] {
+        let Some(o) = v.get(key) else { continue };
+        let obj = o
+            .as_object()
+            .ok_or_else(|| usage(format!("invalid {key}: expected an object")))?;
+        for list in ["names", "emails"] {
+            if let Some(l) = obj.get(list)
+                && !l
+                    .as_array()
+                    .is_some_and(|a| a.iter().all(|x| x.is_string()))
+            {
+                return Err(usage(format!(
+                    "invalid {key}.{list}: expected a list of strings"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The aliases of a Microsoft sign-in, from the claims of its ID token.
+fn microsoft_aliases(
+    tokens: &second_brain_microsoft::oauth::Tokens,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<Value> {
+    let c = tokens.id_claims()?;
+    let s = |k: &str| {
+        c.get(k)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .map(str::to_string)
+    };
+    let names: Vec<String> = s("name").into_iter().collect();
+    let emails: Vec<String> = s("preferred_username")
+        .into_iter()
+        .chain(s("email"))
+        .filter(|e| e.contains('@'))
+        .fold(Vec::new(), |mut v, e| {
+            if !v.iter().any(|x: &String| x.eq_ignore_ascii_case(&e)) {
+                v.push(e);
+            }
+            v
+        });
+    if names.is_empty() && emails.is_empty() {
+        return None;
+    }
+    Some(second_brain_pipeline::items::aliases_value(
+        &names, &emails, now,
+    ))
+}
+
 pub(crate) fn validate_account_config(kind: AccountKind, v: &Value) -> anyhow::Result<()> {
+    validate_aliases(v)?;
     match kind {
         AccountKind::Slack => {
             let c = serde_json::from_value::<second_brain_slack::SlackConfig>(v.clone())
@@ -493,6 +549,7 @@ async fn add_google(
         cat.set_secret(&scope, GOOGLE_CLIENT, &Secret::new(client_json))?;
     }
     cat.set_secret(&scope, GOOGLE_REFRESH, &refresh)?;
+    second_brain_pipeline::items::refresh_aliases(&cat)?;
     if ctx.json {
         ctx.out_json(
             "sb.account/v1",
@@ -540,12 +597,16 @@ async fn add_microsoft(
     }
     config.scopes = tokens.scopes.clone();
     let name = identity.username.clone().unwrap_or_else(|| id.to_string());
+    let mut config_value = config.to_value();
+    if let Some(a) = microsoft_aliases(&tokens, cat.now()) {
+        config_value["aliases"] = a;
+    }
     cat.add_account(
         &aid,
         AccountKind::Microsoft,
         &label.unwrap_or_else(|| name.clone()),
         Some(&identity.id()),
-        &config.to_value(),
+        &config_value,
     )?;
     cat.set_secret(&SecretScope::Account(aid), MICROSOFT_REFRESH, &refresh)?;
     if ctx.json {
@@ -604,6 +665,7 @@ async fn add_slack(
         &config,
     )?;
     cat.set_secret(&SecretScope::Account(aid), SLACK_TOKEN, &token)?;
+    second_brain_pipeline::items::refresh_aliases(&cat)?;
     if ctx.json {
         ctx.out_json(
             "sb.account/v1",
@@ -946,12 +1008,19 @@ pub async fn auth(ctx: &Ctx, c: AuthCmd) -> anyhow::Result<i32> {
                     })?;
                     cat.set_secret(&scope, MICROSOFT_REFRESH, &refresh)?;
                     config.scopes = tokens.scopes.clone();
-                    cat.update_account(
-                        &a.id,
-                        None,
-                        Some(&identity.id()),
-                        Some(&config.to_value()),
-                    )?;
+                    // Keep the other keys of the stored config (folders, extra aliases).
+                    let mut merged = a.config.clone();
+                    if let (Some(m), Some(c)) =
+                        (merged.as_object_mut(), config.to_value().as_object())
+                    {
+                        for (k, v) in c {
+                            m.insert(k.clone(), v.clone());
+                        }
+                    }
+                    if let Some(al) = microsoft_aliases(&tokens, cat.now()) {
+                        merged["aliases"] = al;
+                    }
+                    cat.update_account(&a.id, None, Some(&identity.id()), Some(&merged))?;
                     identity.id()
                 }
                 AccountKind::Slack => {

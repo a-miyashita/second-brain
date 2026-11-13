@@ -315,6 +315,8 @@ async fn run(ctx: &Ctx, cmd: Command) -> anyhow::Result<i32> {
         Command::Search(a) => retrieval::search(ctx, a),
         Command::Show(a) => retrieval::show(ctx, a),
         Command::List(a) => retrieval::list(ctx, a),
+        Command::Recent(a) => items::recent(ctx, a),
+        Command::Items(a) => items::items(ctx, a),
         Command::Stats => retrieval::stats(ctx),
         Command::Budget(a) => budget::run(ctx, a),
         Command::Review(a) => retrieval::review(ctx, a),

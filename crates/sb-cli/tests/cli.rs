@@ -678,3 +678,247 @@ fn microsoft_accounts_and_sharepoint_links() {
         .unwrap();
     assert_eq!(ms["identity"], "tid:oid");
 }
+
+/// Seed an entry with items through the library, as a summary commit does.
+fn seed_entry_with_items(
+    cat: &second_brain_store::Catalog,
+    source_id: &str,
+    at: &str,
+    items: Vec<second_brain_kernel::NewItem>,
+) {
+    use second_brain_kernel::util::parse_ts;
+    use second_brain_kernel::{
+        EntryOrigin, Generator, GeneratorKind, SectionDraft, SectionKind, SectionOrigin,
+        SourceKind, SourceRef, Usage,
+    };
+    use second_brain_store::{EntryUpdate, NormalizedUpdate, SummaryCommit, SummaryDecision};
+    let t = parse_ts(at);
+    let id = cat
+        .upsert_entry(&EntryUpdate {
+            source_ref: SourceRef {
+                account_id: AccountId::new("work-slack").unwrap(),
+                source_kind: SourceKind::SlackThread,
+                source_id: source_id.into(),
+                source_url: Some(format!("https://example.test/{source_id}")),
+                created_at: t,
+                updated_at: t,
+            },
+            origin: EntryOrigin::Sync,
+            raw: None,
+            fetch_state: None,
+            metadata: None,
+            normalized: Some(NormalizedUpdate {
+                title: format!("#dev {source_id}"),
+                source_url: Some(format!("https://example.test/{source_id}")),
+                source_created_at: t,
+                source_updated_at: t,
+                sections: vec![],
+                summary: SummaryDecision::Pending,
+                links: vec![],
+            }),
+        })
+        .unwrap()
+        .entry_id;
+    cat.commit_summary(&SummaryCommit {
+        entry_id: id,
+        sections: vec![SectionDraft {
+            kind: SectionKind::Overview,
+            origin: SectionOrigin::Generated,
+            text: format!("Overview of {source_id}"),
+        }],
+        generator: Generator {
+            kind: GeneratorKind::LlmApi,
+            provider: "anthropic".into(),
+            model: "claude-haiku-4-5".into(),
+            prompt_version: Some("conversation-summary/v2".into()),
+        },
+        profile: Some("fast".into()),
+        input_hash: "b2:x".into(),
+        usage: Usage::default(),
+        cost_usd: Some(0.0),
+        run_id: None,
+        items,
+        item_counts: None,
+    })
+    .unwrap();
+}
+
+#[test]
+fn recent_and_items_answer_questions_without_a_keyword() {
+    use second_brain_kernel::util::parse_ts;
+    use second_brain_kernel::{Confidence, ItemKind, ItemStatus, NewItem};
+
+    let d = tempfile::tempdir().unwrap();
+    let home = d.path().join("h");
+    assert!(sb(&home, &["setup", "home", "--yes"]).status.success());
+    let item = |ord, kind, status, text: &str, owner: &str, at: &str| NewItem {
+        ordinal: ord,
+        kind,
+        text: text.into(),
+        status,
+        owner: Some(owner.into()),
+        requester: None,
+        due: (kind == ItemKind::Action).then(|| "2026-11-20".to_string()),
+        actors: vec![owner.into()],
+        occurred_at: parse_ts(at),
+        confidence: Confidence::High,
+        evidence: Some("q".into()),
+        scope_key: "slack:C1".into(),
+    };
+    {
+        let cat = second_brain_store::Catalog::open(&second_brain_store::Home::new(&home)).unwrap();
+        cat.add_account(
+            &AccountId::new("work-slack").unwrap(),
+            AccountKind::Slack,
+            "Work",
+            Some("T1:U1"),
+            &json!({}),
+        )
+        .unwrap();
+        seed_entry_with_items(
+            &cat,
+            "C1:1.0",
+            "2026-10-01T01:00:00Z",
+            vec![
+                item(
+                    0,
+                    ItemKind::Action,
+                    Some(ItemStatus::Open),
+                    "update the csv export spec",
+                    "Dana Example",
+                    "2026-10-01T01:00:00Z",
+                ),
+                item(
+                    1,
+                    ItemKind::Action,
+                    Some(ItemStatus::Open),
+                    "book the venue",
+                    "Kei",
+                    "2026-10-01T02:00:00Z",
+                ),
+            ],
+        );
+        seed_entry_with_items(
+            &cat,
+            "C1:2.0",
+            "2026-10-05T01:00:00Z",
+            vec![item(
+                0,
+                ItemKind::Accomplishment,
+                None,
+                "updated the csv export spec",
+                "Dana Example",
+                "2026-10-05T01:00:00Z",
+            )],
+        );
+    }
+
+    // "Mine" needs aliases; none are known yet.
+    let o = sb(&home, &["items", "--mine", "--json"]);
+    assert_eq!(o.status.code(), Some(64));
+    assert_eq!(json_of(&o)["error"]["code"], "aliases.empty");
+
+    // extra_aliases fix it without any other input.
+    {
+        let cat = second_brain_store::Catalog::open(&second_brain_store::Home::new(&home)).unwrap();
+        cat.update_account(
+            &AccountId::new("work-slack").unwrap(),
+            None,
+            None,
+            Some(&json!({"extra_aliases": {"names": ["Example Dana"]}})),
+        )
+        .unwrap();
+    }
+    let v = json_of(&sb(
+        &home,
+        &[
+            "items",
+            "--kind",
+            "action",
+            "--status",
+            "open",
+            "--mine",
+            "--candidates",
+            "--json",
+        ],
+    ));
+    assert_eq!(v["schema"], "sb.items/v1");
+    let items = v["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "only Dana's action");
+    assert_eq!(items[0]["text"], "update the csv export spec");
+    assert!(items[0]["item_ref"].as_str().unwrap().ends_with("#0"));
+    assert_eq!(items[0]["mine"]["match"], "owner");
+    assert_eq!(items[0]["mine"]["basis"], "name");
+    assert_eq!(items[0]["effective_status"], "open");
+    assert_eq!(
+        items[0]["extracted_by"]["prompt_version"],
+        "conversation-summary/v2"
+    );
+    assert_eq!(items[0]["entry"]["cite_url"], "https://example.test/C1:1.0");
+    // The later accomplishment in the same channel is offered as a lead, not applied.
+    let cands = items[0]["candidates"].as_array().unwrap();
+    assert_eq!(cands.len(), 1);
+    assert_eq!(cands[0]["text"], "updated the csv export spec");
+    assert!(
+        cands[0]["reason"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r == "same_scope")
+    );
+    assert_eq!(
+        items[0]["stale"], true,
+        "old open items are flagged, never closed"
+    );
+    assert_eq!(v["coverage"]["entries_in_range"], 2);
+    assert_eq!(v["coverage"]["entries_with_items"], 2);
+
+    // Not stale / stale filters, kinds, and owners.
+    // Only open items can be stale; the accomplishment has no status.
+    let v = json_of(&sb(&home, &["items", "--not-stale", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 1);
+    assert_eq!(v["items"][0]["kind"], "accomplishment");
+    let v = json_of(&sb(&home, &["items", "--stale", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 2);
+    let v = json_of(&sb(
+        &home,
+        &["items", "--kind", "accomplishment", "--mine", "--json"],
+    ));
+    assert_eq!(v["items"].as_array().unwrap().len(), 1);
+    let v = json_of(&sb(&home, &["items", "--owner", "kei", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 1);
+    // Both actions are due 2026-11-20: due on that day counts, the day before does not.
+    let v = json_of(&sb(&home, &["items", "--due-by", "2026-11-20", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 2);
+    let v = json_of(&sb(&home, &["items", "--due-by", "2026-11-19", "--json"]));
+    assert_eq!(v["items"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        sb(&home, &["items", "--kind", "bogus"]).status.code(),
+        Some(64)
+    );
+
+    // `sb recent` is by activity time and needs no keyword.
+    let v = json_of(&sb(
+        &home,
+        &[
+            "recent",
+            "--since",
+            "2026-10-04",
+            "--until",
+            "2026-10-31",
+            "--with-items",
+            "--json",
+        ],
+    ));
+    assert_eq!(v["schema"], "sb.recent/v1");
+    let entries = v["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["sections"]["overview"], "Overview of C1:2.0");
+    assert_eq!(entries[0]["items_available"], true);
+    assert_eq!(entries[0]["items"].as_array().unwrap().len(), 1);
+    let v = json_of(&sb(&home, &["recent", "--since", "today", "--json"]));
+    assert_eq!(v["entries"].as_array().unwrap().len(), 0);
+    let o = sb(&home, &["recent", "--since", "2026-10-01"]);
+    assert!(o.status.success());
+    assert!(String::from_utf8_lossy(&o.stdout).contains("Overview of C1:2.0"));
+}

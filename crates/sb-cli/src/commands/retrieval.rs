@@ -14,7 +14,7 @@ use crate::util::{
 };
 
 /// Account labels by ID.
-fn labels(cat: &Catalog) -> anyhow::Result<HashMap<String, String>> {
+pub(crate) fn labels(cat: &Catalog) -> anyhow::Result<HashMap<String, String>> {
     Ok(cat
         .accounts()?
         .into_iter()
@@ -33,7 +33,7 @@ pub(crate) fn cite_url(cat: &Catalog, e: &Entry) -> anyhow::Result<Option<String
         .map(|r| cat.home().resolve_rel(&r.path).display().to_string()))
 }
 
-fn account_json(labels: &HashMap<String, String>, id: &str) -> Value {
+pub(crate) fn account_json(labels: &HashMap<String, String>, id: &str) -> Value {
     json!({"id": id, "label": labels.get(id).cloned().unwrap_or_else(|| id.to_string())})
 }
 
