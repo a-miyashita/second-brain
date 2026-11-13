@@ -6,6 +6,8 @@ release is prepared; see `docs/specs/release.md`.
 
 ## Unreleased
 
+## 0.3.0 - 2026-11-13
+
 ### Added
 
 - `sb ingest` reads files from SharePoint and OneDrive (ADR-0021). Add an account with
@@ -43,6 +45,8 @@ release is prepared; see `docs/specs/release.md`.
   `sb config set summary.min_chars.microsoft.file 400`.
 - In `sb setup` and `sb config`, the sections after Accounts move by one place, and the
   keys `1` to `9` change the section.
+- The catalog gets a new table, `discovered_links` (migration 0004). The migration runs
+  on the next command.
 
 ## 0.2.1 - 2026-11-03
 
