@@ -19,6 +19,10 @@ pub const FILES: &[(&str, &str)] = &[
         "references/ingest-guide.md",
         include_str!("../assets/skills/second-brain/references/ingest-guide.md"),
     ),
+    (
+        "references/items-guide.md",
+        include_str!("../assets/skills/second-brain/references/items-guide.md"),
+    ),
 ];
 
 /// An agent that can load the skill.
