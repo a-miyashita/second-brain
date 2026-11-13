@@ -1,6 +1,6 @@
 # Accounts and authentication
 
-Related ADRs: 0003, 0006, 0007, 0021, 0022.
+Related ADRs: 0003, 0006, 0007, 0021, 0022, 0024.
 
 ## Google
 
@@ -148,6 +148,59 @@ ADR-0003.
 For each account it shows: kind, identity, status, last successful use, scopes (for
 Google and Microsoft), and, with `--online`, a live check (Google and Microsoft token
 refresh, Slack `auth.test`). A Microsoft check refreshes the token, which rotates it.
+
+## Self aliases
+
+"Mine" in `sb items --mine` (ADR-0024) is decided at query time against the **aliases** of
+the user. Aliases are collected from the accounts, with no input from the user. They are
+stored in the account `config`:
+
+```json
+{"aliases": {"names": ["Akihiro Miyashita", "akihiro"], "emails": ["a@example.com"],
+             "refreshed_at": "2026-11-13T01:02:03Z"},
+ "extra_aliases": {"names": [], "emails": []}}
+```
+
+- `aliases` is written by `sb`; the settings screen shows it read-only (like `scopes`).
+  It is replaced whole at each refresh.
+- `extra_aliases` is optional and edited by the user (`sb config edit --account <id>`). It
+  is never overwritten. It exists to correct a wrong or missing alias without asking the
+  user in the normal flow.
+- The user is one person across accounts, so **"me" is the union** of the `aliases` and
+  `extra_aliases` of all enabled accounts. A Slack workspace and a Google account need no
+  explicit pairing.
+
+### Sources and refresh
+
+| Account | Names | Emails | Refreshed |
+|---|---|---|---|
+| Slack | In the cached user directory entry of the `user_id` in `identity`: `real_name`, `display_name`, `name` (the handle). The users cache (`users_cache_days` of the account `config`) already holds them | `profile.email` of **that member only** (scope `users:read.email`, already requested), stored in the directory entry of the authenticated user. Other members' emails are never stored | Recomputed from the cache (no network) at `account add` and at the start of every summarize stage, and written only when it changed. The first sync fills the directory |
+| Google | From data already stored: the `name` of a Meet `participants` entry whose email equals the identity, and `self_names` (the name of the Calendar attendee with `self: true`) in the entry metadata (source-google-meet.md); the three most frequent forms are kept. No new scope: `profile` is not requested | The identity (the `email` of the ID token) | Same as Slack: a pass over stored metadata, no network |
+| Microsoft | The `name` claim of the ID token (the `profile` scope is already requested) | `preferred_username` and `email` claims when they look like emails | At `account add` and `auth login`, from the ID token. A re-login keeps the other keys of the stored config (folders, `extra_aliases`) |
+
+Spikes S-I3 and S-I4 ([items-plan.md](items-plan.md)) check that these fields are
+present in real responses before the design is relied on.
+
+### Matching
+
+A reference from an item (owner, requester, actor) matches the user when, after
+normalization (NFKC, lowercase, runs of whitespace and punctuation collapsed):
+
+1. it equals an alias name, or
+2. it has two or more tokens and its **token set** equals the token set of an alias name
+   (so "Miyashita Akihiro" matches "Akihiro Miyashita"), or
+3. it contains an alias email (basis `email`; used when the input writes an address).
+
+A single token such as a first name matches only when it equals a **whole** alias name; a
+prefix or a substring never matches. The result carries `basis: "email"` or `"name"` so
+that an agent can treat a name match as weaker. If no alias is known, `--mine` fails with
+`aliases.empty` (exit 64) and tells the user to add `extra_aliases`.
+
+### Prompt hint
+
+The union of the **names** (not the emails), at most 8, goes to the summarizer as the
+labeled input `account_owner` (items.md). Names are already present in the body that is
+sent, so no new category of data leaves the machine.
 
 ## Folders and link settings in the account `config` (ADR-0022)
 

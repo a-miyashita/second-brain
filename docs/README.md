@@ -31,6 +31,7 @@ substantially different decision, write a new ADR that supersedes the old one.
 | [0021](adrs/0021-microsoft-sharepoint-onedrive-ingest.md) | Microsoft accounts and single-item ingest for SharePoint and OneDrive (`microsoft.file`) |
 | [0022](adrs/0022-folder-sync-and-slack-link-ingest.md) | Folder sync for Google Drive and SharePoint/OneDrive, and ingest of document links found in Slack |
 | [0023](adrs/0023-document-location-and-link-context-for-summaries.md) | Location and link context for document summaries; documents always summarized |
+| [0024](adrs/0024-structured-items-and-cross-entry-links.md) | Structured items, time-based retrieval and cross-entry links |
 
 ## Specs (`specs/`)
 
@@ -44,6 +45,8 @@ Specs describe how things work and may be edited as the design evolves.
 | [search.md](specs/search.md) | Query model, FTS5 trigram + LIKE, future vector/hybrid |
 | [summarization.md](specs/summarization.md) | Prompts, profiles, providers, budget, `resummarize` |
 | [accounts-and-auth.md](specs/accounts-and-auth.md) | Google and Microsoft OAuth, Slack tokens, re-authentication |
+| [items.md](specs/items.md) | Items extracted with summaries, `sb recent`, `sb items`, effective status, candidate pairs, reconcile stage |
+| [items-plan.md](specs/items-plan.md) | Spikes, tasks, order and tests for ADR-0024 |
 | [source-slack.md](specs/source-slack.md) | Slack sync and entries |
 | [source-google-meet.md](specs/source-google-meet.md) | Meet discovery strategies and Gemini notes parsing |
 | [import-format.md](specs/import-format.md) | Import bundle format (`second-brain-import/v1`) |

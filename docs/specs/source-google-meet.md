@@ -1,6 +1,6 @@
 # Source: Google Meet (`google.meet`)
 
-Related ADRs: 0002, 0005, 0006, 0008.
+Related ADRs: 0002, 0005, 0006, 0008, 0024.
 
 ## What an entry is
 
@@ -128,7 +128,10 @@ processing has proven sufficient for Gemini notes and transcripts.
   document).
 - **Metadata:** `participants`, `absentees`, `recurring` (the event has
   `recurringEventId`, or the folder or title carries "(recurring)"),
-  `calendar_url`, `transcript_url`, `has_transcript`.
+  `recurring_event_id` (the Calendar `recurringEventId` itself, when the event has one;
+  the stable series key of the item `scope_key`, ADR-0024), `self_names` (the name of
+  the Calendar attendee flagged `self`, an alias source), `calendar_url`,
+  `transcript_url`, `has_transcript`.
 - **Dates** come from API timestamps, not from the document text, whose date
   formats vary.
 
@@ -144,23 +147,40 @@ processing has proven sufficient for Gemini notes and transcripts.
   (`{"last_time_max", "covered_since"}`; `last_time_max` is now also the forward
   cursor), `drive` (`{"modified_after", "covered_since"}`) and `drive_folder`
   (`{"id"}`, the detected "Meet Recordings" folder).
-- Calendar event details (title, start, recurring, link, attendees) travel as the
-  queue `hint` and are stored in the entry metadata at fetch time, so that
-  `normalize` (and `sb reextract`) can use them without network access.
+- Calendar event details (title, start, recurring, `recurringEventId`, link, attendees)
+  travel as the queue `hint` and are stored in the entry metadata at fetch time, so that
+  `normalize` (and `sb reextract`) can use them without network access. The `recurring`
+  boolean stays for compatibility. Each attendee keeps `self` (and `displayName`) where
+  Calendar reports them; the account's name aliases are derived from it
+  ([accounts-and-auth.md](accounts-and-auth.md#self-aliases)). Entries fetched before
+  this change get `recurring_event_id` and the `self` flag from `sb refetch`; until then
+  their item scope falls back to the normalized title.
 - The fetch stage parses the exported notes once, so documents that are not
   Gemini notes (agenda docs) are dropped before any raw data is written.
 
 ## Summarization
 
-- Default profile for google.meet: `native`. The Gemini notes are kept and no LLM
-  call is made.
-- `sb resummarize --source google.meet --profile <P>`:
-  - uses the transcript, with prompt `meeting-summary/v1`, which also produces
-    `details`;
-  - replaces the four generated sections;
-  - uses map-reduce for long transcripts.
-- If there is no transcript, the notes text is used and a warning is shown.
-- `--native` restores Gemini's version from the raw notes.
+- **Profile (ADR-0024):** `summary.profile.google.meet`, else `summary.profile.default`,
+  else `native`. With an LLM profile configured, meetings are summarized by it, so their
+  decisions, actions, resolved matters, open questions and accomplishments are extracted
+  as items ([items.md](items.md)). With no profile, or with `native`, the Gemini notes
+  are kept, no LLM call is made and the entry has no items. Installations that stored
+  `summary.profile.google.meet = native` keep it.
+- With an LLM profile:
+  - the input is the transcript, with prompt `meeting-summary/v2`, which produces
+    `items` and `details`;
+  - the four generated sections are replaced;
+  - map-reduce is used for long transcripts (transcripts are routinely longer than
+    `max_input_chars`); an hour-long meeting is typically several calls;
+  - Gemini's own "next steps" and "decisions" are **not** sent when a transcript exists:
+    items come from what was said, and each carries a quote from the transcript.
+- If there is no transcript, the notes text is used and a warning is shown. Items then
+  come from Gemini's text, and the quotes are checked against it.
+- `sb resummarize --source google.meet --profile <P>` applies the same to stored entries.
+- `--native` restores Gemini's version from the raw notes and removes the items.
+- Existing entries with a native summary become `pending` when they are normalized again
+  under an LLM profile (summarization.md). Run `sb summarize --estimate` first: the
+  transcript makes a meeting entry much larger than a Slack thread.
 
 ## Refetch for imported entries
 

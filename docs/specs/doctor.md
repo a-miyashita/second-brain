@@ -1,6 +1,6 @@
 # `sb doctor`
 
-Related ADRs: 0003, 0009, 0011, 0017, 0022.
+Related ADRs: 0003, 0009, 0011, 0017, 0022, 0024.
 
 `sb doctor [--online] [--fix] [--json]` runs health checks and lists open issues.
 
@@ -34,6 +34,8 @@ Related ADRs: 0003, 0009, 0011, 0017, 0022.
 | `links.pending` | Links of an enabled kind that are `pending` because the kind has no eligible account (per kind), and the number of `abandoned` links (link-ingest.md) | info | — |
 | `docs.meet_overlap` | A Drive file ID that is both a `google.doc` and a `google.meet` entry (a folder sync of a Meet notes folder) | info | — |
 | `meet.transcripts` | Share of meet entries without a transcript (informational) | info | — |
+| `items.coverage` | Entries with a summary but no items, split into: summarized with a prompt older than the item prompts, `source_native`, and below the summary thresholds. Informational: the count tells how much of the past `sb items` cannot see | info | — (`sb resummarize --estimate`, summarization.md) |
+| `accounts.aliases` | Every enabled account has at least one alias, and the union of all aliases is not empty. Without aliases `sb items --mine` fails (accounts-and-auth.md#self-aliases) | info per account; warning when the union is empty and the catalog has items | — (`sb auth login <id>`, or `extra_aliases` in `sb config edit --account <id>`) |
 | `skills.version` | Installed skills match the binary's embedded version | warning | reinstall |
 | `index.consistency` | FTS row count matches the sections count | warning | `index rebuild` |
 | `disk.usage` | Size of home; warn when free disk space < 1 GB | warning | — |
