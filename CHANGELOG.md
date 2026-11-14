@@ -6,6 +6,40 @@ release is prepared; see `docs/specs/release.md`.
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-13
+
+### Added
+
+- `sb items` lists structured items that are pulled out of each entry when it is
+  summarized (ADR-0024): decisions, actions, resolved matters, open questions and
+  accomplishments. Filter by `--kind`, `--status`, `--mine`, `--owner`,
+  `--asked-by-me`, `--since`/`--until`, `--due-by`, `--stale` and more.
+  `--candidates` shows possible resolutions for open actions and questions.
+- `sb recent` shows entries by activity time with their summaries, without a keyword
+  (for example `sb recent --since today`).
+- `--json` output of the new commands: `sb.items/v1` and `sb.recent/v1`.
+- Settings `items.min_confidence`, `items.max_per_entry`, `items.stale_days`,
+  `items.candidate_days`, `items.candidate_min_similarity` and
+  `items.link_min_confidence`.
+- `sb` learns which names and emails are yours from your Slack, Google and Microsoft
+  accounts, so `--mine` works without setup. Correct them with `extra_aliases` in
+  `sb config edit --account <id>`. Only your own Slack email is stored.
+- `sb doctor` checks items and aliases.
+- The `second-brain` skill is version 5. It answers questions that have no keyword,
+  such as "what are my TODOs?" or "what happened this week?". Run
+  `sb setup skills --target all` to update it.
+
+### Changed
+
+- New and changed entries are summarized with the v4 prompts, which also return items.
+  Stored summaries stay as they are until you run `sb resummarize`; items appear for
+  those entries after that.
+- Google Meet summaries follow the default summary profile. The built-in
+  `summary.profile.google.meet = native` default is removed; set it yourself if you
+  want to keep it.
+- Catalog migration 0005 adds the `items` and `item_links` tables. It runs on the
+  next command.
+
 ## 0.3.0 - 2026-11-13
 
 ### Added
